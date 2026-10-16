@@ -119,6 +119,14 @@ export default {
     hu: 'Üzenet',
     ko: '메시지',
   },
+  blankPayload: {
+    zh: '空白消息',
+    en: 'Blank message',
+    tr: 'Boş mesaj',
+    ja: '空白メッセージ',
+    hu: 'Üres üzenet',
+    ko: '빈 메시지',
+  },
   addProfile: {
     zh: '新增预设',
     en: 'Add Preset',

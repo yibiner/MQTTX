@@ -100,7 +100,7 @@
         ></el-table-column>
         <el-table-column :label="$t('configs.message')" min-width="220" show-overflow-tooltip>
           <template slot-scope="{ row }">
-            <span class="message-preset-payload">{{ row.payload }}</span>
+            <MessagePreview :payload="row.payload" />
           </template>
         </el-table-column>
         <el-table-column :label="$t('common.oper')" width="110" align="center">
@@ -237,6 +237,7 @@
 <script lang="ts">
 import { Component, Vue, Watch } from 'vue-property-decorator'
 import MyDialog from '@/components/MyDialog.vue'
+import MessagePreview from '@/components/MessagePreview.vue'
 import {
   getClientProfiles,
   deleteClientProfile,
@@ -297,7 +298,7 @@ interface MessagePresetForm {
 }
 
 @Component({
-  components: { MyDialog },
+  components: { MyDialog, MessagePreview },
 })
 export default class Configs extends Vue {
   private activeTab: DialogType = 'server'
@@ -327,7 +328,20 @@ export default class Configs extends Vue {
       clientId: [{ required: true, message: this.$t('configs.requiredField'), trigger: 'blur' }],
       name: [{ required: true, message: this.$t('configs.requiredField'), trigger: 'blur' }],
       topic: [{ required: true, message: this.$t('configs.requiredField'), trigger: 'blur' }],
-      payload: [{ required: true, message: this.$t('configs.requiredField'), trigger: 'blur' }],
+      payload: [
+        {
+          // A message made only of spaces and line breaks is not a usable payload: report it as
+          // missing instead of storing a preset whose message looks empty in the list.
+          validator: (rule: unknown, value: string, callback: (error?: Error) => void) => {
+            if (typeof value !== 'string' || value.trim() === '') {
+              callback(new Error(this.$t('configs.requiredField') as string))
+              return
+            }
+            callback()
+          },
+          trigger: 'blur',
+        },
+      ],
     }
   }
 
@@ -507,10 +521,6 @@ export default class Configs extends Vue {
   .client-profile-unit {
     margin-left: 8px;
     color: var(--color-text-default);
-  }
-  .message-preset-payload {
-    white-space: pre-wrap;
-    word-break: break-all;
   }
 }
 </style>

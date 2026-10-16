@@ -40,6 +40,39 @@ export function isLargeData(message: string, maxPayloadDisplaySize = DEFAULT_MAX
   return message.length >= maxPayloadDisplaySize
 }
 
+/**
+ * One-line preview of a message for the lists that show it (message presets, publish history).
+ *
+ * A message saved from a formatted editor starts with an indentation or a line break while those
+ * lists only show the first line of a cell: the row then looks empty and the message appears not
+ * to be configured at all. JSON is therefore compacted with JSON.parse/stringify (spaces inside
+ * string values are content and are kept), everything else has its line breaks and repeated
+ * whitespace collapsed into single spaces.
+ *
+ * @returns the preview, or an empty string when there is nothing visible to show (empty,
+ *          whitespace-only or non-string input), so callers can render their own placeholder.
+ */
+export function toSingleLinePreview(value?: string | null): string {
+  if (typeof value !== 'string') {
+    return ''
+  }
+  const text = value.trim()
+  if (!text) {
+    return ''
+  }
+  if (text.startsWith('{') || text.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed !== null && typeof parsed === 'object') {
+        return JSON.stringify(parsed)
+      }
+    } catch (error) {
+      // Not valid JSON (unquoted template variables, single quotes, ...): collapse it below.
+    }
+  }
+  return text.replace(/\s+/g, ' ')
+}
+
 export function calculateTextSize(text: string, decimals = 2) {
   const blob = new Blob([text], { type: 'text/plain' })
   const bytes = blob.size

@@ -1,5 +1,11 @@
 import { expect } from 'chai'
-import { isLargeData, calculateTextSize, DEFAULT_MAX_PAYLOAD_DISPLAY_SIZE, SHOW_MAX_LENGTH } from '@/utils/data'
+import {
+  isLargeData,
+  calculateTextSize,
+  toSingleLinePreview,
+  DEFAULT_MAX_PAYLOAD_DISPLAY_SIZE,
+  SHOW_MAX_LENGTH,
+} from '@/utils/data'
 
 describe('data utility functions', () => {
   describe('DEFAULT_MAX_PAYLOAD_DISPLAY_SIZE', () => {
@@ -53,6 +59,39 @@ describe('data utility functions', () => {
     it('should use specified number of decimal places', () => {
       const string = 'a'.repeat(1500)
       expect(calculateTextSize(string, 3)).to.equal('1.465 KB')
+    })
+  })
+
+  describe('toSingleLinePreview', () => {
+    it('compacts formatted JSON into a single line without formatting whitespace', () => {
+      const payload = '{\n    "cmd": "BINDING",\n    "ts": 0,\n    "nested": {\n        "a": 1\n    }\n}'
+      expect(toSingleLinePreview(payload)).to.equal('{"cmd":"BINDING","ts":0,"nested":{"a":1}}')
+      expect(toSingleLinePreview(payload)).to.not.contain('\n')
+    })
+
+    it('keeps spaces that are part of a string value', () => {
+      expect(toSingleLinePreview('{\n  "msg": "hello world"\n}')).to.equal('{"msg":"hello world"}')
+    })
+
+    it('collapses a plain multi-line message into one line', () => {
+      expect(toSingleLinePreview('  first line\n\n   second   line  ')).to.equal('first line second line')
+    })
+
+    it('keeps a single line message untouched', () => {
+      expect(toSingleLinePreview('{"a":1}')).to.equal('{"a":1}')
+      expect(toSingleLinePreview('hello world')).to.equal('hello world')
+    })
+
+    it('returns an empty preview for a message without visible content', () => {
+      expect(toSingleLinePreview('   \n\t\n  ')).to.equal('')
+      expect(toSingleLinePreview('')).to.equal('')
+      expect(toSingleLinePreview(undefined)).to.equal('')
+      expect(toSingleLinePreview(null)).to.equal('')
+    })
+
+    it('falls back to collapsing when the JSON is not parseable', () => {
+      const payload = '{\n  "ts": ${timestamp}\n}'
+      expect(toSingleLinePreview(payload)).to.equal('{ "ts": ${timestamp} }')
     })
   })
 })
