@@ -22,6 +22,14 @@ import time from './time'
  * - `${rssi:-30..-60}` — a random integer between both bounds (inclusive), drawn fresh on every
  *                        send. Bounds may be given in any order and may be negative.
  *
+ * User-defined variables ("全局变量" in the preset manager) are referenced with the same `${name}`
+ * syntax and can be used in a topic as well as in a payload. They are looked up before the inline
+ * config above, so defining `rssi` as a global variable turns `${rssi:-30..-60}` into that value
+ * while every payload that does not define `rssi` stays unchanged. A value may reference further
+ * placeholders (e.g. `requestNo = ${count:1000}`); a placeholder that cannot be resolved is left
+ * in the text and reported by `resolvePayloadVariables`, so the publish path can refuse to send it
+ * instead of publishing the raw template.
+ *
  * The payload stored in the publish history keeps the raw template, so every re-send gets a
  * fresh value, while the actually published message carries the real data.
  *
@@ -48,7 +56,15 @@ export const PAYLOAD_VARIABLES: PayloadVariable[] = [
 const VARIABLE_TOKEN_START = '${'
 const VARIABLE_TOKEN_END = '}'
 const COUNTER_STORE_KEY = 'payloadCounters'
-const NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*/
+/**
+ * A variable name that can be referenced as `${name}`. Anchored, so text that merely contains a
+ * `${` sequence (e.g. `${HOME}/x`) is not treated as a variable either.
+ */
+export const PAYLOAD_VARIABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/** Whether `name` is one of the built-in variables, whose names are reserved. */
+export const isBuiltinPayloadVariable = (name: string): boolean =>
+  PAYLOAD_VARIABLES.some((variable) => variable.name === name)
 
 // ---------------------------------------------------------------------------
 // Counter persistence (electron-store when available, memory as test fallback)
@@ -197,8 +213,7 @@ const scanPlaceholders = (payload: string): Placeholder[] => {
     const separatorIndex = raw.indexOf(':')
     const name = separatorIndex === -1 ? raw : raw.slice(0, separatorIndex)
     const config = separatorIndex === -1 ? undefined : raw.slice(separatorIndex + 1)
-    NAME_PATTERN.lastIndex = 0
-    if (name && NAME_PATTERN.test(name)) {
+    if (name && PAYLOAD_VARIABLE_NAME_PATTERN.test(name)) {
       found.push({ start, end, name, config: config ? config : undefined })
     }
     index = end + VARIABLE_TOKEN_END.length
@@ -227,82 +242,229 @@ const parseRange = (config: string): [number, number] | undefined => {
 const randomIntInRange = (min: number, max: number, rand: () => number): number =>
   min + Math.floor(rand() * (max - min + 1))
 
+// ---------------------------------------------------------------------------
+// Scoped resolution
+// ---------------------------------------------------------------------------
+export interface PayloadVariableOptions {
+  /**
+   * User-defined variables, keyed by name. The caller passes the scopes merged from the closest
+   * one to the outermost one (message preset → client preset → server preset → global variables),
+   * so a name that is defined closer to the message wins.
+   */
+  variables?: { [name: string]: string }
+  now?: Date
+  rand?: () => number
+  /** Whether the counters used by this text are persisted (default true). */
+  commitCounters?: boolean
+}
+
+export interface PayloadVariableResult {
+  /** the text with every resolvable placeholder replaced; unresolved ones stay verbatim */
+  text: string
+  /** names that neither a built-in variable, a user variable nor an inline config could resolve */
+  unresolved: string[]
+}
+
+interface ResolveContext {
+  variables: { [name: string]: string }
+  now: Date
+  rand: () => number
+  /** resolved value per variable name, so every occurrence of a name stays consistent */
+  values: Map<string, string | number>
+  /** counters to persist once the text was built: name -> next value */
+  usedCounters: Map<string, number>
+}
+
+/** How often a variable may reference another variable before it counts as unresolvable. */
+const MAX_VARIABLE_DEPTH = 10
+
+function expandText(text: string, context: ResolveContext, stack: string[], unresolved: Set<string>): string {
+  const placeholders = scanPlaceholders(text)
+  if (!placeholders.length) {
+    return text
+  }
+
+  let result = ''
+  let index = 0
+  for (const placeholder of placeholders) {
+    const value = resolvePlaceholderValue(placeholder, context, stack, unresolved)
+    if (value === undefined) {
+      // Unknown variable: copy it over verbatim, the caller reports it.
+      result += text.slice(index, placeholder.end + VARIABLE_TOKEN_END.length)
+      index = placeholder.end + VARIABLE_TOKEN_END.length
+      continue
+    }
+    const isQuotedJsonString = text[placeholder.start - 1] === '"' && text[placeholder.end + 1] === '"'
+    if (isQuotedJsonString && typeof value === 'number') {
+      // "${timestamp}" -> 1791979522744 (drop the quotes so JSON numbers keep their type)
+      result += text.slice(index, placeholder.start - 1) + String(value)
+      index = placeholder.end + VARIABLE_TOKEN_END.length + 1
+    } else {
+      result += text.slice(index, placeholder.start) + String(value)
+      index = placeholder.end + VARIABLE_TOKEN_END.length
+    }
+  }
+  return result + text.slice(index)
+}
+
+function resolvePlaceholderValue(
+  placeholder: Placeholder,
+  context: ResolveContext,
+  stack: string[],
+  unresolved: Set<string>,
+): string | number | undefined {
+  const cached = context.values.get(placeholder.name)
+  if (cached !== undefined) {
+    return cached
+  }
+
+  // Built-in names are reserved, so they are checked before any user-defined variable.
+  const builtin = PAYLOAD_VARIABLES.find((variable) => variable.name === placeholder.name)
+  if (builtin) {
+    const value = builtin.value(context.now)
+    context.values.set(placeholder.name, value)
+    return value
+  }
+
+  // A user-defined variable is an explicit value and therefore wins over the inline default of
+  // `${name:config}`; an empty value counts as "not defined" and falls through to it.
+  const defined = context.variables[placeholder.name]
+  if (defined !== undefined && defined.trim() !== '') {
+    if (stack.includes(placeholder.name) || stack.length >= MAX_VARIABLE_DEPTH) {
+      // Self reference or a reference cycle: report it instead of expanding forever.
+      unresolved.add(placeholder.name)
+      return undefined
+    }
+    const value = expandText(defined, context, [...stack, placeholder.name], unresolved)
+    context.values.set(placeholder.name, value)
+    return value
+  }
+
+  if (placeholder.config !== undefined) {
+    const range = parseRange(placeholder.config)
+    if (range) {
+      const value = randomIntInRange(range[0], range[1], context.rand)
+      context.values.set(placeholder.name, value)
+      return value
+    }
+    const init = parseCounterInit(placeholder.config)
+    if (init !== undefined) {
+      const value = readPayloadCounter(placeholder.name) ?? init
+      context.usedCounters.set(placeholder.name, value + 1)
+      context.values.set(placeholder.name, value)
+      return value
+    }
+  }
+
+  unresolved.add(placeholder.name)
+  return undefined
+}
+
+/**
+ * A resolver bound to one message.
+ *
+ * A placeholder is resolved by the first of these that matches, which keeps existing payload
+ * templates working while letting a user-defined variable take the place of an inline default:
+ *
+ * 1. built-in variables (`${timestamp}`, `${uuid}`, ...) — their names are reserved
+ * 2. `variables[name]` — user-defined variables, the closest scope wins
+ * 3. the inline config, i.e. `${count:3}` (counter) or `${rssi:-30..-60}` (random range)
+ *
+ * A variable value may contain placeholders itself (e.g. `requestNo = ${count:1000}`); they are
+ * expanded recursively, up to `MAX_VARIABLE_DEPTH` levels, and a value that references itself is
+ * reported instead of being expanded forever.
+ *
+ * Unresolved placeholders are copied over verbatim, so the caller decides what to do with them:
+ * the publish path asks the user before sending them. Their names are listed by `unresolved`.
+ */
+export interface PayloadVariableResolver {
+  /** replaces every resolvable placeholder of one text (a topic or a payload) */
+  resolve: (text: string) => string
+  /** names that neither a built-in variable, a user variable nor an inline config could resolve */
+  readonly unresolved: string[]
+  /** persists the counters this resolver used; does nothing when `commitCounters` is false */
+  commit: () => void
+}
+
+/**
+ * Creates the resolver of one message.
+ *
+ * Sharing it between the topic and the payload keeps the whole message consistent: the same
+ * variable gets the same value in both, and a counter used in both (`${count:1}` in the topic and
+ * in the payload) advances exactly once. The counters are only persisted on `commit()`, so a
+ * caller that resolves once to check for unresolved names and then again for the message it
+ * really sends does not advance them twice.
+ */
+export const createPayloadVariableResolver = (options: PayloadVariableOptions = {}): PayloadVariableResolver => {
+  const context: ResolveContext = {
+    variables: options.variables ?? {},
+    now: options.now ?? new Date(),
+    rand: options.rand ?? Math.random,
+    values: new Map(),
+    usedCounters: new Map(),
+  }
+  const unresolved = new Set<string>()
+  return {
+    resolve: (text: string) => expandText(text, context, [], unresolved),
+    get unresolved(): string[] {
+      return Array.from(unresolved)
+    },
+    commit: () => {
+      if (options.commitCounters === false) {
+        return
+      }
+      // Commit the counter increments only once the texts were built successfully.
+      context.usedCounters.forEach((value, name) => writePayloadCounter(name, value))
+      context.usedCounters.clear()
+    },
+  }
+}
+
+/** Resolves a single text with a resolver of its own, see `createPayloadVariableResolver`. */
+export const resolvePayloadVariables = (text: string, options: PayloadVariableOptions = {}): PayloadVariableResult => {
+  if (!text || !text.includes(VARIABLE_TOKEN_START)) {
+    return { text, unresolved: [] }
+  }
+
+  const resolver = createPayloadVariableResolver(options)
+  const resolved = resolver.resolve(text)
+  resolver.commit()
+  return { text: resolved, unresolved: resolver.unresolved }
+}
+
 /**
  * Replaces every known placeholder in the payload with its current value.
  *
  * All variables of one payload share the same `now`, and a counter that appears several times
  * in one message is incremented only once per send, so every occurrence stays consistent.
  * Unknown placeholders are left untouched.
+ *
+ * @deprecated use `resolvePayloadVariables` when the caller also needs the list of placeholders
+ *             that could not be resolved (the publish path blocks those instead of sending them).
  */
 export const applyPayloadVariables = (
   payload: string,
   now: Date = new Date(),
   rand: () => number = Math.random,
-): string => {
-  if (!payload || !payload.includes(VARIABLE_TOKEN_START)) {
-    return payload
-  }
+): string => resolvePayloadVariables(payload, { now, rand }).text
 
-  const placeholders = scanPlaceholders(payload)
-  if (!placeholders.length) {
-    return payload
-  }
-
-  // Resolve every unique variable name once per message.
-  const values = new Map<string, string | number>()
-  const usedCounters: Array<{ name: string; value: number }> = []
-  for (const placeholder of placeholders) {
-    if (values.has(placeholder.name)) {
-      continue
+/**
+ * Names of the placeholders that the given texts cannot resolve, in order of first appearance.
+ *
+ * The publish paths use it as a gate before they resolve for real: a probe must not advance
+ * counters, and an unresolved `${name}` has to be reported instead of being published as it is.
+ */
+export const collectUnresolvedVariables = (
+  variables: { [name: string]: string },
+  texts: Array<string | undefined | null>,
+): string[] => {
+  const resolver = createPayloadVariableResolver({ variables, commitCounters: false })
+  texts.forEach((text) => {
+    if (text) {
+      resolver.resolve(text)
     }
-    const timeVariable = PAYLOAD_VARIABLES.find((v) => v.name === placeholder.name)
-    if (timeVariable) {
-      values.set(placeholder.name, timeVariable.value(now))
-      continue
-    }
-    if (placeholder.config === undefined) {
-      continue
-    }
-    const range = parseRange(placeholder.config)
-    if (range) {
-      values.set(placeholder.name, randomIntInRange(range[0], range[1], rand))
-      continue
-    }
-    const init = parseCounterInit(placeholder.config)
-    if (init === undefined) {
-      continue
-    }
-    const value = readPayloadCounter(placeholder.name) ?? init
-    usedCounters.push({ name: placeholder.name, value })
-    values.set(placeholder.name, value)
-  }
-
-  let result = ''
-  let index = 0
-  for (const placeholder of placeholders) {
-    const value = values.get(placeholder.name)
-    const isQuotedJsonString =
-      value !== undefined && payload[placeholder.start - 1] === '"' && payload[placeholder.end + 1] === '"'
-    if (value === undefined) {
-      // Unknown variable: copy it over verbatim.
-      result += payload.slice(index, placeholder.end + VARIABLE_TOKEN_END.length)
-      index = placeholder.end + VARIABLE_TOKEN_END.length
-    } else if (isQuotedJsonString && typeof value === 'number') {
-      // "${timestamp}" -> 1791979522744 (drop the quotes so JSON numbers keep their type)
-      result += payload.slice(index, placeholder.start - 1) + String(value)
-      index = placeholder.end + VARIABLE_TOKEN_END.length + 1
-    } else {
-      result += payload.slice(index, placeholder.start) + String(value)
-      index = placeholder.end + VARIABLE_TOKEN_END.length
-    }
-  }
-  result += payload.slice(index)
-
-  // Commit counter increments only after the payload was built successfully.
-  for (const counter of usedCounters) {
-    writePayloadCounter(counter.name, counter.value + 1)
-  }
-  return result
+  })
+  return resolver.unresolved
 }
 
 export default applyPayloadVariables

@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid'
  * - Server presets: a fixed broker address (dev / test / production), with a friendly alias.
  * - Client presets: a reusable MQTT identity (clientId / username / password / behaviour).
  * - Message presets: a reusable topic + message pair, selectable in the publish window.
+ * - Global variables: named values referenced as `${name}` in every topic and message.
  *
  * Server/client presets are offered as pickers when creating a new connection, message
  * presets appear directly in the send window. Everything the picker fills in stays editable.
@@ -125,4 +126,46 @@ export const deleteMessagePreset = (id: string): void => {
     MESSAGE_PRESETS_KEY,
     getMessagePresets().filter((preset) => preset.id !== id),
   )
+}
+
+const GLOBAL_VARIABLES_KEY = 'globalVariables'
+
+export const getGlobalVariables = (): GlobalVariableModel[] => readList(GLOBAL_VARIABLES_KEY)
+
+export const getGlobalVariable = (id: string): GlobalVariableModel | undefined =>
+  getGlobalVariables().find((variable) => variable.id === id)
+
+export function saveGlobalVariable(variable: Omit<GlobalVariableModel, 'id'> & { id?: string }): GlobalVariableModel {
+  const variables = getGlobalVariables()
+  const saved: GlobalVariableModel = { ...variable, id: variable.id ?? uuidv4() } as GlobalVariableModel
+  const index = variables.findIndex((item) => item.id === saved.id)
+  if (index === -1) {
+    variables.unshift(saved)
+  } else {
+    variables.splice(index, 1, saved)
+  }
+  writeList(GLOBAL_VARIABLES_KEY, variables)
+  return saved
+}
+
+export const deleteGlobalVariable = (id: string): void => {
+  writeList(
+    GLOBAL_VARIABLES_KEY,
+    getGlobalVariables().filter((variable) => variable.id !== id),
+  )
+}
+
+/**
+ * The `{ name: value }` view of the global variables, as consumed by the payload variable
+ * resolver. The list is newest first and the first definition of a name wins, so a duplicated
+ * name (the dialog prevents them, an edited config.json may not) is resolved predictably.
+ */
+export const getGlobalVariableMap = (): { [name: string]: string } => {
+  const map: { [name: string]: string } = {}
+  getGlobalVariables().forEach((variable) => {
+    if (variable.name && !(variable.name in map)) {
+      map[variable.name] = variable.value
+    }
+  })
+  return map
 }

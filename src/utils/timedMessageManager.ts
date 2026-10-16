@@ -4,9 +4,10 @@ import useServices from '@/database/useServices'
 import time from '@/utils/time'
 import { getMessageId } from '@/utils/idGenerator'
 import { ignoreQoS0Message } from '@/utils/mqttUtils'
-import { applyPayloadVariables } from '@/utils/payloadVariables'
+import { collectUnresolvedVariables, createPayloadVariableResolver } from '@/utils/payloadVariables'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import { DEFAULT_HISTORY_MAX_COUNT } from '@/utils/data'
+import { getGlobalVariableMap } from '@/utils/configProfiles'
 
 /**
  * Global registry of running timed messages, keyed by connection.
@@ -253,25 +254,34 @@ async function publishWithoutView(connectionId: string, message: MessageModel, t
       getLog().warn(`Timed message skipped: connection ${connectionId} is not connected`)
       return
     }
+    // User-defined variables ("全局变量") refill on every tick, exactly like the built-in ones.
+    // Without the connection page there is nobody to ask for confirmation, so a tick with an
+    // unresolved placeholder is skipped instead of publishing the raw template; the probe below
+    // does not touch the counters, the message that really goes out is resolved once more.
+    const variables = getGlobalVariableMap()
+    const texts = ['Plaintext', 'JSON'].includes(type) ? [message.topic, message.payload as string] : [message.topic]
+    const unresolved = collectUnresolvedVariables(variables, texts)
+    if (unresolved.length) {
+      getLog().warn(`Timed message skipped: unresolved variables ${unresolved.join(', ')} (connection ${connectionId})`)
+      return
+    }
+    const resolver = createPayloadVariableResolver({ variables })
+    const wireTopic = resolver.resolve(message.topic)
     let filledPayload: string | Buffer | undefined = message.payload
     if (filledPayload && ['JSON', 'Plaintext'].includes(type)) {
-      filledPayload = applyPayloadVariables(filledPayload as string)
+      filledPayload = resolver.resolve(filledPayload as string)
     }
+    resolver.commit()
     await saveTimedMessageHistory(connectionId, message, filledPayload, type)
     const wirePayload = convertPayloadForFallback(filledPayload, type)
     if (wirePayload === undefined || wirePayload === '') {
       return
     }
-    client.publish(
-      message.topic,
-      wirePayload,
-      { qos: message.qos, retain: message.retain },
-      (err: Error | undefined) => {
-        if (err) {
-          getLog().error(`Timed message publish failed: ${err.toString()}`)
-        }
-      },
-    )
+    client.publish(wireTopic, wirePayload, { qos: message.qos, retain: message.retain }, (err: Error | undefined) => {
+      if (err) {
+        getLog().error(`Timed message publish failed: ${err.toString()}`)
+      }
+    })
   } catch (error) {
     getLog().error(`Timed message publish failed: ${(error as Error).toString()}`)
   }

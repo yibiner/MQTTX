@@ -262,6 +262,17 @@ declare global {
     payload: string
   }
 
+  /**
+   * A user-defined payload variable. Every message can reference it as `${name}` in its topic and
+   * its payload; the value may itself contain placeholders (built-in ones, counters, or other
+   * variables).
+   */
+  interface GlobalVariableModel {
+    id: string
+    name: string
+    value: string
+  }
+
   interface HistoryMessagePayloadModel {
     connectionId?: string
     id?: string

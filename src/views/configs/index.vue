@@ -6,6 +6,7 @@
         <el-tab-pane :label="$t('configs.serverProfiles')" name="server"></el-tab-pane>
         <el-tab-pane :label="$t('configs.clientProfiles')" name="client"></el-tab-pane>
         <el-tab-pane :label="$t('configs.messagePresets')" name="message"></el-tab-pane>
+        <el-tab-pane :label="$t('configs.globalVariables')" name="variable"></el-tab-pane>
       </el-tabs>
     </div>
     <div class="configs-view-header">
@@ -84,6 +85,32 @@
         </el-table-column>
       </el-table>
 
+      <!-- 全局变量预设列表 -->
+      <template v-else-if="activeTab === 'variable'">
+        <p class="variable-preset-tip">{{ $t('configs.variablesTip') }}</p>
+        <el-table :data="globalVariables" size="mini" :empty-text="$t('configs.empty')" row-key="id">
+          <el-table-column
+            :label="$t('configs.variableName')"
+            prop="name"
+            min-width="200"
+            show-overflow-tooltip
+          ></el-table-column>
+          <el-table-column :label="$t('configs.variableValue')" min-width="260" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ row.value }}</template>
+          </el-table-column>
+          <el-table-column :label="$t('common.oper')" width="110" align="center">
+            <template slot-scope="{ row }">
+              <a href="javascript:;" class="profile-oper" @click="handleEdit(row)">
+                <i class="iconfont icon-edit"></i>
+              </a>
+              <a href="javascript:;" class="profile-oper danger" @click="handleDelete(row)">
+                <i class="iconfont icon-delete"></i>
+              </a>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+
       <!-- 消息预设列表 -->
       <el-table v-else :data="messagePresets" size="mini" :empty-text="$t('configs.empty')" row-key="id">
         <el-table-column
@@ -131,7 +158,11 @@
         :model="profileForm"
         :rules="profileRules"
       >
-        <el-form-item v-if="dialogType !== 'message'" :label="$t('configs.alias')" prop="alias">
+        <el-form-item
+          v-if="dialogType === 'server' || dialogType === 'client'"
+          :label="$t('configs.alias')"
+          prop="alias"
+        >
           <el-input v-model.trim="profileForm.alias" clearable :placeholder="$t('configs.alias')"></el-input>
         </el-form-item>
 
@@ -176,6 +207,16 @@
               :placeholder="`{&quot;temperature&quot;: ${'${timestamp}'}}`"
             ></el-input>
           </el-form-item>
+        </template>
+
+        <template v-else-if="dialogType === 'variable'">
+          <el-form-item :label="$t('configs.variableName')" prop="name">
+            <el-input v-model.trim="profileForm.name" clearable placeholder="deviceId"></el-input>
+          </el-form-item>
+          <el-form-item :label="$t('configs.variableValue')" prop="value">
+            <el-input v-model="profileForm.value" clearable :placeholder="`${'${timestamp}'} / dl / 26.5`"></el-input>
+          </el-form-item>
+          <p class="variable-preset-hint">{{ $t('configs.variableValueTip') }}</p>
         </template>
 
         <template v-else>
@@ -249,9 +290,13 @@ import {
   getMessagePreset,
   saveMessagePreset,
   deleteMessagePreset,
+  getGlobalVariables,
+  saveGlobalVariable,
+  deleteGlobalVariable,
 } from '@/utils/configProfiles'
+import { PAYLOAD_VARIABLE_NAME_PATTERN, isBuiltinPayloadVariable } from '@/utils/payloadVariables'
 
-type DialogType = 'server' | 'client' | 'message'
+type DialogType = 'server' | 'client' | 'message' | 'variable'
 
 interface ServerProfileForm {
   id?: string
@@ -297,6 +342,12 @@ interface MessagePresetForm {
   payload: string
 }
 
+interface VariableForm {
+  id?: string
+  name: string
+  value: string
+}
+
 @Component({
   components: { MyDialog, MessagePreview },
 })
@@ -305,12 +356,15 @@ export default class Configs extends Vue {
   private serverProfiles: ServerProfileModel[] = []
   private clientProfiles: ClientProfileModel[] = []
   private messagePresets: MessagePresetModel[] = []
+  private globalVariables: GlobalVariableModel[] = []
 
   private dialogVisible = false
   private editingId: string | null = null
   private dialogType: DialogType = 'server'
 
-  private profileForm: (ServerProfileForm | ClientProfileForm | MessagePresetForm) & { [key: string]: any } = {
+  private profileForm: (ServerProfileForm | ClientProfileForm | MessagePresetForm | VariableForm) & {
+    [key: string]: any
+  } = {
     alias: '',
     host: '',
     port: 1883,
@@ -326,7 +380,10 @@ export default class Configs extends Vue {
       alias: [{ required: true, message: this.$t('configs.requiredField'), trigger: 'blur' }],
       host: [{ required: true, message: this.$t('configs.requiredField'), trigger: 'blur' }],
       clientId: [{ required: true, message: this.$t('configs.requiredField'), trigger: 'blur' }],
-      name: [{ required: true, message: this.$t('configs.requiredField'), trigger: 'blur' }],
+      name: [
+        { required: true, message: this.$t('configs.requiredField'), trigger: 'blur' },
+        { validator: this.validateVariableName, trigger: 'blur' },
+      ],
       topic: [{ required: true, message: this.$t('configs.requiredField'), trigger: 'blur' }],
       payload: [
         {
@@ -342,7 +399,47 @@ export default class Configs extends Vue {
           trigger: 'blur',
         },
       ],
+      value: [
+        {
+          // An empty value resolves to nothing, which is the same as an undefined variable.
+          validator: (rule: unknown, value: string, callback: (error?: Error) => void) => {
+            if (typeof value !== 'string' || value.trim() === '') {
+              callback(new Error(this.$t('configs.requiredField') as string))
+              return
+            }
+            callback()
+          },
+          trigger: 'blur',
+        },
+      ],
     }
+  }
+
+  /**
+   * A variable name has to be referenceable as `${name}`, must not shadow a built-in variable and
+   * must be unique. Only the variable dialog constrains `name` this way: a preset name is free
+   * text, so this validator passes for the other dialogs.
+   */
+  private validateVariableName(rule: unknown, value: string, callback: (error?: Error) => void) {
+    if (this.dialogType !== 'variable') {
+      callback()
+      return
+    }
+    const name = (value ?? '').trim()
+    if (!PAYLOAD_VARIABLE_NAME_PATTERN.test(name)) {
+      callback(new Error(this.$t('configs.variableNameInvalid') as string))
+      return
+    }
+    if (isBuiltinPayloadVariable(name)) {
+      callback(new Error(this.$t('configs.variableNameReserved') as string))
+      return
+    }
+    const duplicate = this.globalVariables.some((variable) => variable.name === name && variable.id !== this.editingId)
+    if (duplicate) {
+      callback(new Error(this.$t('configs.variableNameDuplicate') as string))
+      return
+    }
+    callback()
   }
 
   @Watch('activeTab')
@@ -354,6 +451,7 @@ export default class Configs extends Vue {
     this.serverProfiles = getServerProfiles()
     this.clientProfiles = getClientProfiles()
     this.messagePresets = getMessagePresets()
+    this.globalVariables = getGlobalVariables()
   }
 
   private created() {
@@ -367,6 +465,8 @@ export default class Configs extends Vue {
       this.profileForm = { alias: '', host: '', port: 1883, protocol: 'mqtt', path: undefined }
     } else if (this.activeTab === 'message') {
       this.profileForm = { name: '', topic: '', payload: '' }
+    } else if (this.activeTab === 'variable') {
+      this.profileForm = { name: '', value: '' }
     } else {
       this.profileForm = defaultClientProfileForm()
     }
@@ -386,10 +486,13 @@ export default class Configs extends Vue {
     })
   }
 
-  private handleEdit(row: ServerProfileModel | ClientProfileModel | MessagePresetModel) {
+  private handleEdit(row: ServerProfileModel | ClientProfileModel | MessagePresetModel | GlobalVariableModel) {
     this.dialogType = this.activeTab
     this.editingId = row.id
-    if (this.activeTab === 'server') {
+    if (this.activeTab === 'variable') {
+      const variable = row as GlobalVariableModel
+      this.profileForm = { id: variable.id, name: variable.name, value: variable.value }
+    } else if (this.activeTab === 'server') {
       const server = row as ServerProfileModel
       this.profileForm = {
         id: server.id,
@@ -429,7 +532,7 @@ export default class Configs extends Vue {
     this.clearProfileValidation()
   }
 
-  private handleDelete(row: ServerProfileModel | ClientProfileModel | MessagePresetModel) {
+  private handleDelete(row: ServerProfileModel | ClientProfileModel | MessagePresetModel | GlobalVariableModel) {
     this.$confirm(this.$t('configs.deleteConfirm') as string, this.$tc('common.warning'), {
       type: 'warning',
     })
@@ -438,6 +541,8 @@ export default class Configs extends Vue {
           deleteServerProfile(row.id)
         } else if (this.activeTab === 'message') {
           deleteMessagePreset(row.id)
+        } else if (this.activeTab === 'variable') {
+          deleteGlobalVariable(row.id)
         } else {
           deleteClientProfile(row.id)
         }
@@ -461,6 +566,12 @@ export default class Configs extends Vue {
           port: Number(this.profileForm.port) || 1883,
           protocol: this.profileForm.protocol,
           path: ['ws', 'wss'].includes(this.profileForm.protocol) ? this.profileForm.path || '/mqtt' : undefined,
+        })
+      } else if (this.dialogType === 'variable') {
+        saveGlobalVariable({
+          id: this.editingId ?? undefined,
+          name: this.profileForm.name,
+          value: this.profileForm.value,
         })
       } else if (this.dialogType === 'message') {
         saveMessagePreset({
@@ -521,6 +632,16 @@ export default class Configs extends Vue {
   .client-profile-unit {
     margin-left: 8px;
     color: var(--color-text-default);
+  }
+  .variable-preset-tip,
+  .variable-preset-hint {
+    margin: 0 0 12px;
+    color: var(--color-text-tips);
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .variable-preset-hint {
+    margin: 4px 0 0;
   }
 }
 </style>

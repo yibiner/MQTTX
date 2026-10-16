@@ -376,7 +376,6 @@ import {
   unregisterTimedMessagePublisher,
 } from '@/utils/timedMessageManager'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
-import applyPayloadVariables from '@/utils/payloadVariables'
 import useServices from '@/database/useServices'
 import { getMessageId, getSubscriptionId } from '@/utils/idGenerator'
 import getContextmenuPosition from '@/utils/getContextmenuPosition'
@@ -385,6 +384,8 @@ import { jsonStringify } from '@/utils/jsonUtils'
 import { LeftValues, BodyTopValues, MsgTopValues, DetailLeftValues } from '@/utils/styles'
 import getErrorReason from '@/utils/mqttErrorReason'
 import { isLargeData } from '@/utils/data'
+import { getGlobalVariableMap } from '@/utils/configProfiles'
+import { collectUnresolvedVariables, createPayloadVariableResolver } from '@/utils/payloadVariables'
 import { serializeAvroToBuffer, deserializeBufferToAvro } from '@/utils/avro'
 import { globalEventBus } from '@/utils/globalEventBus'
 import SyncTopicTreeDialog from '@/widgets/SyncTopicTreeDialog.vue'
@@ -750,6 +751,17 @@ export default class ConnectionsDetail extends Vue {
     if (!interval || interval < 1) {
       return
     }
+    // A timer cannot ask for confirmation on every tick, so a message with unresolved placeholders
+    // is refused here: define the variable (preset manager → 全局变量) and start it again.
+    const unresolved = this.findUnresolvedVariables(getGlobalVariableMap(), message.topic, message.payload, type)
+    if (unresolved.length) {
+      this.$message.error(
+        this.$t('connections.unresolvedVariablesTimed', {
+          variables: unresolved.map((name) => '${' + name + '}').join(', '),
+        }) as string,
+      )
+      return
+    }
     const result = startTimedMessage(this.curConnectionId, interval, message, type, {
       requiresViewPipeline: this.timedPublishNeedsViewPipeline,
     })
@@ -913,7 +925,10 @@ export default class ConnectionsDetail extends Vue {
       this.timedMessages = list
     })
     registerTimedMessagePublisher(id, async (message, type) => {
-      await this.publishMessage(message, type)
+      // `quiet`: a tick cannot ask for confirmation, `startTimedMessage` already refused messages
+      // with unresolved variables, and a global variable deleted in the meantime must not turn
+      // every tick into a dialog.
+      await this.publishMessage(message, type, undefined, { quiet: true })
     })
   }
 
@@ -1807,6 +1822,7 @@ export default class ConnectionsDetail extends Vue {
     message: MessageModel,
     type: PayloadType,
     afterSendCallback?: (isNewPayload: boolean, recordId?: string | null) => void,
+    options: { quiet?: boolean } = {},
   ): Promise<void> {
     const { topic, qos, payload, retain, properties } = message
 
@@ -1820,6 +1836,33 @@ export default class ConnectionsDetail extends Vue {
 
     const props = properties ? this.processProperties(properties) : undefined
 
+    /*
+     * User-defined variables ("全局变量") are resolved in the topic as well as in the payload, and
+     * an unresolved placeholder stops the message instead of publishing the raw template: a topic
+     * like "${sn}/device/post" or a payload with "${memberId}" is never what the user wanted to
+     * send. The check must not advance counters -- the message that really goes on the wire is
+     * resolved a second time, so a counter used by it advances exactly once.
+     */
+    const variables = getGlobalVariableMap()
+    const unresolved = this.findUnresolvedVariables(variables, topic, payload, type)
+    if (unresolved.length) {
+      if (options.quiet) {
+        // A timed tick has nobody to ask: skip it instead of publishing the raw template.
+        this.$log.warn(
+          `Publish skipped: unresolved payload variables ${unresolved.join(', ')} on "${this.record.name}"`,
+        )
+        return
+      }
+      const sendAnyway = await this.confirmUnresolvedVariables(unresolved)
+      if (!sendAnyway) {
+        return
+      }
+    }
+    // One resolver for the topic and the payload: both get the same value for a variable, and a
+    // counter used in both advances once per message.
+    const resolver = createPayloadVariableResolver({ variables })
+    const publishTopic = resolver.resolve(topic)
+
     const { isNewPayload, recordId } = await this.insertHistory(
       { payload, payloadType: type } as HistoryMessagePayloadModel,
       { qos, topic, retain } as HistoryMessageHeaderModel,
@@ -1831,7 +1874,8 @@ export default class ConnectionsDetail extends Vue {
      * message that goes on the wire carries the real data.
      */
     const filledPayload =
-      payload && ['JSON', 'Plaintext'].includes(type) ? applyPayloadVariables(payload as string) : payload
+      payload && ['JSON', 'Plaintext'].includes(type) ? resolver.resolve(payload as string) : payload
+    resolver.commit()
 
     let convertedPayload = ''
     let finalPayload: string | Buffer | undefined = filledPayload
@@ -1855,7 +1899,7 @@ export default class ConnectionsDetail extends Vue {
     }
 
     this.client.publish!(
-      topic,
+      publishTopic,
       finalPayload,
       { qos, retain, properties: props as IClientPublishOptions['properties'] },
       async (error: Error) => {
@@ -1873,6 +1917,45 @@ export default class ConnectionsDetail extends Vue {
     )
 
     afterSendCallback?.(isNewPayload, recordId)
+  }
+
+  /**
+   * Placeholders of a message that neither a built-in variable, a global variable nor an inline
+   * `${name:config}` can resolve. The topic is always checked, the payload only for the payload
+   * types that support variables (as in the publish pipeline itself).
+   */
+  private findUnresolvedVariables(
+    variables: { [name: string]: string },
+    topic: string,
+    payload?: string | Buffer,
+    type?: PayloadType,
+  ): string[] {
+    const texts = ['Plaintext', 'JSON'].includes(type as string) ? [topic, payload as string] : [topic]
+    return collectUnresolvedVariables(variables, texts)
+  }
+
+  /**
+   * Asks before a message whose unresolved placeholders would be published verbatim. Sending the
+   * raw `${name}` is occasionally intended (e.g. a message that documents a template), so it stays
+   * possible -- but never silently.
+   */
+  private async confirmUnresolvedVariables(names: string[]): Promise<boolean> {
+    const variables = names.map((name) => '${' + name + '}').join(', ')
+    try {
+      await this.$confirm(
+        this.$t('connections.unresolvedVariablesTip', { variables }) as string,
+        this.$t('connections.unresolvedVariablesTitle') as string,
+        {
+          type: 'warning',
+          confirmButtonText: this.$t('connections.unresolvedVariablesSend') as string,
+          cancelButtonText: this.$tc('common.cancel'),
+        },
+      )
+      this.$log.warn(`Publishing with unresolved payload variables: ${variables}`)
+      return true
+    } catch (error) {
+      return false
+    }
   }
 
   /**
