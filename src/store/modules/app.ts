@@ -1,7 +1,11 @@
 import Vue from 'vue'
 import useServices from '@/database/useServices'
 import { getGlobal } from '@electron/remote'
-import { DEFAULT_MAX_PAYLOAD_DISPLAY_SIZE, normalizeMaxPayloadDisplaySize } from '@/utils/data'
+import {
+  DEFAULT_MAX_PAYLOAD_DISPLAY_SIZE,
+  normalizeMaxPayloadDisplaySize,
+  normalizeHistoryMaxCount,
+} from '@/utils/data'
 import { ENABLE_HARDWARE_ACCELERATION_SETTING_KEY, getEnableHardwareAccelerationSetting } from '@/utils/settings'
 
 const Store = require('electron-store')
@@ -37,6 +41,8 @@ const TOGGLE_IGNORE_QOS0_MESSAGE = 'TOGGLE_IGNORE_QOS0_MESSAGE'
 const TOGGLE_TOPIC_WHITESPACE_DETECTION = 'TOGGLE_TOPIC_WHITESPACE_DETECTION'
 const SET_MAX_PAYLOAD_DISPLAY_SIZE = 'SET_MAX_PAYLOAD_DISPLAY_SIZE'
 const TOGGLE_ENABLE_HARDWARE_ACCELERATION = 'TOGGLE_ENABLE_HARDWARE_ACCELERATION'
+const TOGGLE_SAVE_HISTORY_MESSAGE = 'TOGGLE_SAVE_HISTORY_MESSAGE'
+const SET_HISTORY_MAX_COUNT = 'SET_HISTORY_MAX_COUNT'
 
 const getShowConnectionList = (): boolean => {
   const _showConnectionList: string | null = localStorage.getItem('showConnectionList')
@@ -84,6 +90,8 @@ const app = {
       electronStore.get('settings.maxPayloadDisplaySize', DEFAULT_MAX_PAYLOAD_DISPLAY_SIZE),
     ),
     enableHardwareAcceleration: getEnableHardwareAcceleration(),
+    saveHistoryMessage: settingData.saveHistoryMessage ?? true,
+    historyMaxCount: normalizeHistoryMaxCount(settingData.historyMaxCount),
   },
   mutations: {
     [TOGGLE_THEME](state: App, currentTheme: Theme) {
@@ -202,6 +210,12 @@ const app = {
     },
     [TOGGLE_ENABLE_HARDWARE_ACCELERATION](state: App, enableHardwareAcceleration: boolean) {
       state.enableHardwareAcceleration = enableHardwareAcceleration
+    },
+    [TOGGLE_SAVE_HISTORY_MESSAGE](state: App, saveHistoryMessage: boolean) {
+      state.saveHistoryMessage = saveHistoryMessage
+    },
+    [SET_HISTORY_MAX_COUNT](state: App, historyMaxCount: number) {
+      state.historyMaxCount = historyMaxCount
     },
   },
   actions: {
@@ -342,6 +356,21 @@ const app = {
       commit(TOGGLE_ENABLE_HARDWARE_ACCELERATION, payload.enableHardwareAcceleration)
       settingData.enableHardwareAcceleration = payload.enableHardwareAcceleration
       electronStore.set(ENABLE_HARDWARE_ACCELERATION_SETTING_KEY, payload.enableHardwareAcceleration)
+    },
+    async TOGGLE_SAVE_HISTORY_MESSAGE({ commit }: any, payload: App) {
+      const { settingService } = useServices()
+      commit(TOGGLE_SAVE_HISTORY_MESSAGE, payload.saveHistoryMessage)
+      settingData.saveHistoryMessage = payload.saveHistoryMessage
+      await settingService.update({ saveHistoryMessage: payload.saveHistoryMessage })
+    },
+    async SET_HISTORY_MAX_COUNT({ commit }: any, payload: App) {
+      const { settingService, historyMessageHeaderService } = useServices()
+      const normalizedValue = normalizeHistoryMaxCount(payload.historyMaxCount)
+      commit(SET_HISTORY_MAX_COUNT, normalizedValue)
+      settingData.historyMaxCount = normalizedValue
+      await settingService.update({ historyMaxCount: normalizedValue })
+      // Apply the new limit right away so the stored history never exceeds the setting.
+      await historyMessageHeaderService.trim(normalizedValue)
     },
   },
 }

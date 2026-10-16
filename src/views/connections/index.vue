@@ -72,10 +72,8 @@ export default class Connections extends Vue {
 
   @Watch('$route.params.id')
   private handleIdChanged(val: string) {
-    const connectionsDetailRef: ConnectionsDetail = this.$refs.connectionsDetail as ConnectionsDetail
-    if (connectionsDetailRef) {
-      connectionsDetailRef.stopTimedSend()
-    }
+    // Timed messages are global now: they keep running across connection/page switches and
+    // are stopped only when their client disconnects/closes (or the connection is deleted).
     if (val === '0' || val === undefined) {
       return
     }

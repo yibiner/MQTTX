@@ -99,7 +99,14 @@ module.exports = {
       // In order to connect to websocket.
       externals: ['mqtt', 'vm2', 'log4js', 'typeorm'],
       builderOptions: {
-        productName: 'MQTTX',
+        // This build is a locally packaged "dev" edition so it can live next to an installed
+        // official MQTTX: different app id, different app name (=> different user data
+        // directory) and different artifact names.
+        appId: 'com.mqttx.dev',
+        productName: 'MQTTX Dev',
+        extraMetadata: {
+          productName: 'MQTTX Dev',
+        },
         publish: [
           {
             provider: 'generic',
@@ -112,10 +119,10 @@ module.exports = {
           allowToChangeInstallationDirectory: true,
           createDesktopShortcut: true,
           createStartMenuShortcut: true,
-          artifactName: 'MQTTX-Setup-${version}-${arch}.${ext}',
+          artifactName: 'MQTTX-Dev-Setup-${version}-${arch}.${ext}',
         },
         win: {
-          artifactName: 'MQTTX-${version}-${arch}-win.${ext}',
+          artifactName: 'MQTTX-Dev-${version}-${arch}-win.${ext}',
           icon: './public/icons/app.ico',
           target: [
             {
@@ -136,6 +143,7 @@ module.exports = {
         },
         mac: {
           icon: './public/icons/mac/Icon.icns',
+          artifactName: 'MQTTX-Dev-${version}-${arch}.${ext}',
           target: [
             {
               target: 'dmg',

@@ -11,6 +11,26 @@ export interface versionDetail {
   detail: string
 }
 
+/**
+ * Name of the running app, usable from both processes.
+ *
+ * The update feed points at the official MQTTX releases, so a locally packaged dev edition must not
+ * offer them: installing one of those updates would replace this build with the official app.
+ */
+const getRunningAppName = (): string => {
+  try {
+    if (process.type === 'renderer') {
+      return require('@electron/remote').app.getName()
+    }
+    return require('electron').app.getName()
+  } catch (error) {
+    // Fall back to the official name so that an unknown environment keeps the original behaviour.
+    return 'MQTTX'
+  }
+}
+
+export const isOfficialBuild = (): boolean => getRunningAppName() === 'MQTTX'
+
 export const getCurrentLang = async (): Promise<string> => {
   let language = 'en'
   const { settingService } = useServices()
@@ -54,6 +74,10 @@ const getUpdateDtail = async (current: string): Promise<versionDetail | null> =>
 }
 
 export const updateChecker = async (isAuto = true): Promise<void | versionDetail | boolean> => {
+  if (!isOfficialBuild()) {
+    // Dev edition: the official update feed must never be offered (it would install official MQTTX).
+    return false
+  }
   const currentVersion = `v${version}`
   const updateDetail: versionDetail | null = await getUpdateDtail(currentVersion)
   const language: string = await getCurrentLang()

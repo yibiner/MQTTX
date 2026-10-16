@@ -109,6 +109,61 @@
       <el-divider></el-divider>
 
       <el-row class="settings-item" type="flex" justify="space-between" align="middle">
+        <el-col :span="20">
+          <label>{{ $t('settings.saveHistoryMessage') }}</label>
+          <el-tooltip
+            placement="top"
+            :effect="currentTheme !== 'light' ? 'light' : 'dark'"
+            :open-delay="500"
+            :content="$t('settings.saveHistoryMessageDesc')"
+          >
+            <a href="javascript:;" class="icon-oper">
+              <i class="el-icon-warning-outline"></i>
+            </a>
+          </el-tooltip>
+        </el-col>
+        <el-col :span="4">
+          <el-switch
+            :value="saveHistoryMessage"
+            active-color="#13ce66"
+            inactive-color="#A2A9B0"
+            @change="handleSaveHistoryMessageSwitchChange"
+          >
+          </el-switch>
+        </el-col>
+      </el-row>
+
+      <el-divider></el-divider>
+
+      <el-row class="settings-item" type="flex" justify="space-between" align="middle">
+        <el-col :span="20">
+          <label>{{ $t('settings.historyMaxCount') }}</label>
+          <el-tooltip
+            placement="top"
+            :effect="currentTheme !== 'light' ? 'light' : 'dark'"
+            :open-delay="500"
+            :content="$t('settings.historyMaxCountDesc')"
+          >
+            <a href="javascript:;" class="icon-oper">
+              <i class="el-icon-warning-outline"></i>
+            </a>
+          </el-tooltip>
+        </el-col>
+        <el-col :span="4">
+          <el-input-number
+            size="mini"
+            :value="historyMaxCount"
+            :min="minHistoryMaxCount"
+            :max="maxHistoryMaxCount"
+            @change="handleHistoryMaxCountChange"
+          >
+          </el-input-number>
+        </el-col>
+      </el-row>
+
+      <el-divider></el-divider>
+
+      <el-row class="settings-item" type="flex" justify="space-between" align="middle">
         <el-col :span="14">
           <label>{{ $t('settings.maxPayloadDisplaySize') }}</label>
           <el-tooltip placement="top" :effect="currentTheme !== 'light' ? 'light' : 'dark'" :open-delay="500">
@@ -276,6 +331,60 @@
         </el-col>
       </el-row>
 
+      <el-divider></el-divider>
+
+      <el-row class="settings-item" type="flex" justify="space-between" align="middle">
+        <el-col :span="20">
+          <label>{{ $t('settings.importOriginalData') }}</label>
+          <el-tooltip
+            placement="top"
+            :effect="currentTheme !== 'light' ? 'light' : 'dark'"
+            :open-delay="500"
+            :content="$t('settings.importOriginalDataDesc')"
+          >
+            <a href="javascript:;" class="icon-oper">
+              <i class="el-icon-warning-outline"></i>
+            </a>
+          </el-tooltip>
+        </el-col>
+        <el-col :span="4">
+          <el-button
+            class="settings-btn"
+            type="primary"
+            size="mini"
+            icon="el-icon-download"
+            @click="handleImportOriginalData"
+          >
+          </el-button>
+        </el-col>
+      </el-row>
+      <el-divider></el-divider>
+
+      <el-row class="settings-item" type="flex" justify="space-between" align="middle">
+        <el-col :span="20">
+          <label>{{ $t('settings.resetPayloadVariables') }}</label>
+          <el-tooltip
+            placement="top"
+            :effect="currentTheme !== 'light' ? 'light' : 'dark'"
+            :open-delay="500"
+            :content="$t('settings.resetPayloadVariablesDesc')"
+          >
+            <a href="javascript:;" class="icon-oper">
+              <i class="el-icon-warning-outline"></i>
+            </a>
+          </el-tooltip>
+        </el-col>
+        <el-col :span="4">
+          <el-button
+            class="settings-btn"
+            type="warning"
+            size="mini"
+            icon="el-icon-refresh-left"
+            @click="handleResetPayloadVariables"
+          >
+          </el-button>
+        </el-col>
+      </el-row>
       <el-divider></el-divider>
 
       <el-row class="settings-item" type="flex" justify="space-between" align="middle">
@@ -513,8 +622,12 @@ import {
   MAX_MAX_PAYLOAD_DISPLAY_SIZE,
   MIN_MAX_PAYLOAD_DISPLAY_SIZE,
   normalizeMaxPayloadDisplaySize,
+  MAX_HISTORY_MAX_COUNT,
+  MIN_HISTORY_MAX_COUNT,
+  normalizeHistoryMaxCount,
 } from '@/utils/data'
 import { formatBytes } from '@/utils/formatter'
+import { resetPayloadCounters } from '@/utils/payloadVariables'
 import MCPSettings from '@/components/ai/MCPSettings.vue'
 import PayloadSizeControl from '@/components/PayloadSizeControl.vue'
 
@@ -550,6 +663,10 @@ export default class Settings extends Vue {
   @Action('TOGGLE_ENABLE_HARDWARE_ACCELERATION') private actionToggleEnableHardwareAcceleration!: (payload: {
     enableHardwareAcceleration: boolean
   }) => void
+  @Action('TOGGLE_SAVE_HISTORY_MESSAGE') private actionToggleSaveHistoryMessage!: (payload: {
+    saveHistoryMessage: boolean
+  }) => void
+  @Action('SET_HISTORY_MAX_COUNT') private actionSetHistoryMaxCount!: (payload: { historyMaxCount: number }) => void
 
   @Getter('currentTheme') private currentTheme!: Theme
   @Getter('currentLang') private currentLang!: Language
@@ -568,6 +685,11 @@ export default class Settings extends Vue {
   @Getter('topicWhitespaceDetection') private topicWhitespaceDetection!: boolean
   @Getter('maxPayloadDisplaySize') private maxPayloadDisplaySize!: number
   @Getter('enableHardwareAcceleration') private enableHardwareAcceleration!: boolean
+  @Getter('saveHistoryMessage') private saveHistoryMessage!: boolean
+  @Getter('historyMaxCount') private historyMaxCount!: number
+
+  private minHistoryMaxCount = MIN_HISTORY_MAX_COUNT
+  private maxHistoryMaxCount = MAX_HISTORY_MAX_COUNT
 
   private showAIModelsSelect = false
 
@@ -743,6 +865,77 @@ export default class Settings extends Vue {
 
   private handleIgnoreQoS0MessageSwitchChange(value: boolean) {
     this.actionToggleIgnoreQoS0Message({ ignoreQoS0Message: value })
+  }
+
+  private handleSaveHistoryMessageSwitchChange(value: boolean) {
+    this.actionToggleSaveHistoryMessage({ saveHistoryMessage: value })
+  }
+
+  /** Clears the stored values of auto-increment payload counters (e.g. ${count:3}). */
+  private handleResetPayloadVariables() {
+    this.$confirm(this.$t('settings.resetPayloadVariablesConfirm') as string, {
+      title: this.$t('settings.resetPayloadVariables') as string,
+      showClose: false,
+      closeOnClickModal: false,
+      confirmButtonText: this.$t('common.confirm') as string,
+      cancelButtonText: this.$t('common.cancel') as string,
+      type: 'warning',
+    })
+      .then(() => {
+        resetPayloadCounters()
+        this.$message.success(this.$t('settings.resetPayloadVariablesSuccess') as string)
+      })
+      .catch(() => undefined)
+  }
+
+  private handleHistoryMaxCountChange(value: number) {
+    const normalizedValue = normalizeHistoryMaxCount(value)
+    if (normalizedValue !== value) {
+      this.$message.warning(
+        this.$t('settings.historyMaxCountRange', {
+          min: MIN_HISTORY_MAX_COUNT,
+          max: MAX_HISTORY_MAX_COUNT,
+        }) as string,
+      )
+    }
+    this.actionSetHistoryMaxCount({ historyMaxCount: normalizedValue })
+  }
+
+  /**
+   * Copies the data of the original MQTTX installation into this app's own data directory.
+   * The copy itself happens during the next startup, before the database is opened.
+   */
+  private async handleImportOriginalData() {
+    const paths = await ipcRenderer.invoke('getImportOriginalDataPaths')
+    if (!paths || !paths.sourceAvailable) {
+      this.$message.error(
+        this.$t('settings.importOriginalDataNotFound', { path: paths ? paths.sourcePath : '' }) as string,
+      )
+      return
+    }
+    this.$confirm(
+      this.$t('settings.importOriginalDataConfirm', {
+        source: paths.sourcePath,
+        target: paths.targetPath,
+      }) as string,
+      {
+        title: this.$t('settings.importOriginalData') as string,
+        showClose: false,
+        closeOnClickModal: false,
+        confirmButtonText: this.$t('settings.restartNow') as string,
+        cancelButtonText: this.$t('common.cancel') as string,
+        type: 'warning',
+      },
+    )
+      .then(async () => {
+        const result = await ipcRenderer.invoke('importOriginalData')
+        if (!result || !result.ok) {
+          this.$message.error(this.$t('settings.importOriginalDataFailed') as string)
+          return
+        }
+        ipcRenderer.send('relaunchApp')
+      })
+      .catch(() => undefined)
   }
 
   private promptAppRestart() {

@@ -2,6 +2,7 @@ import { Service } from 'typedi'
 import { InjectRepository } from 'typeorm-typedi-extensions'
 import { Repository } from 'typeorm'
 import time from '../../utils/time'
+import { DEFAULT_HISTORY_MAX_COUNT } from '../../utils/data'
 import HistoryMessageHeaderEntity from '../models/HistoryMessageHeaderEntity'
 
 @Service()
@@ -11,8 +12,6 @@ export default class HistoryMessageHeaderService {
     @InjectRepository(HistoryMessageHeaderEntity)
     private messageRepository: Repository<HistoryMessageHeaderEntity>,
   ) {}
-
-  public static MAX_REMAIN_COUNT = 10
 
   public async getAll(): Promise<HistoryMessageHeaderModel[] | undefined> {
     const query: HistoryMessageHeaderEntity[] | undefined = await this.messageRepository
@@ -42,15 +41,29 @@ export default class HistoryMessageHeaderService {
   }
 
   public async create(data: HistoryMessageHeaderModel): Promise<HistoryMessageHeaderModel | undefined> {
-    const query: [HistoryMessageHeaderEntity[], number] = await this.messageRepository.findAndCount({
+    return await this.messageRepository.save(data)
+  }
+
+  /**
+   * Keeps only the newest `maxCount` records (the user configures this in Settings).
+   * @returns how many records were removed
+   */
+  public async trim(maxCount: number = DEFAULT_HISTORY_MAX_COUNT): Promise<number> {
+    const total = await this.messageRepository.count()
+    if (total <= maxCount) {
+      return 0
+    }
+    const oldest = await this.messageRepository.find({
       order: {
         createAt: 'ASC',
       },
+      take: total - maxCount,
     })
-    if (query && query[0] && query[1] >= HistoryMessageHeaderService.MAX_REMAIN_COUNT) {
-      await this.delete(query[0][0].id)
+    if (!oldest.length) {
+      return 0
     }
-    return await this.messageRepository.save(data)
+    await this.messageRepository.remove(oldest)
+    return oldest.length
   }
 
   public async clean(): Promise<HistoryMessageHeaderModel[] | undefined> {

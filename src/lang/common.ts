@@ -1,4 +1,12 @@
 export default {
+  oper: {
+    zh: '操作',
+    en: 'Actions',
+    tr: 'İşlemler',
+    ja: '操作',
+    hu: 'Műveletek',
+    ko: '작업',
+  },
   cancel: {
     zh: '取消',
     en: 'Cancel',

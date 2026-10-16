@@ -17,6 +17,25 @@ export function normalizeMaxPayloadDisplaySize(value?: number): number {
   return value
 }
 
+// Local publish history (topic + message pairs) kept on disk.
+export const DEFAULT_HISTORY_MAX_COUNT = 20
+export const MIN_HISTORY_MAX_COUNT = 1
+export const MAX_HISTORY_MAX_COUNT = 200
+
+export function normalizeHistoryMaxCount(value?: number | string | null): number {
+  const parsed = typeof value === 'string' ? Number.parseInt(value, 10) : value
+  if (parsed === undefined || parsed === null || Number.isNaN(parsed)) {
+    return DEFAULT_HISTORY_MAX_COUNT
+  }
+  if (parsed < MIN_HISTORY_MAX_COUNT) {
+    return MIN_HISTORY_MAX_COUNT
+  }
+  if (parsed > MAX_HISTORY_MAX_COUNT) {
+    return MAX_HISTORY_MAX_COUNT
+  }
+  return Math.floor(parsed)
+}
+
 export function isLargeData(message: string, maxPayloadDisplaySize = DEFAULT_MAX_PAYLOAD_DISPLAY_SIZE): boolean {
   return message.length >= maxPayloadDisplaySize
 }

@@ -18,6 +18,7 @@ type i18nLocaleModel = [
   'update',
   'viewer',
   'copilot',
+  'configs',
 ]
 type SupportLangModel = ['zh', 'en', 'ja', 'tr', 'hu', 'ko']
 

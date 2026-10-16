@@ -75,7 +75,7 @@
             <transition name="el-fade-in">
               <template v-if="!showClientInfo && client.connected">
                 <el-tooltip
-                  v-if="sendTimeId"
+                  v-if="timedMessages.length > 0"
                   placement="bottom"
                   :effect="theme !== 'light' ? 'light' : 'dark'"
                   :open-delay="500"
@@ -311,19 +311,18 @@
           ref="msgPublish"
           :editor-height="inputHeight - 75"
           :style="{ height: `${inputHeight}px` }"
-          :disabled="sendTimeId !== null"
           :clientConnected="client.connected"
-          :sendTimeId="sendTimeId"
+          :timedMessages="timedMessages"
           @focus="loadMessages"
           @handleSend="throttleSendMessage"
-          @handleSendTimedMessage="handleCommand('timedMessage')"
+          @handleStartTimedMessage="startTimedMessage"
+          @handleStopTimedMessage="stopTimedMessage"
           @onInsertedCode="handleInsertedCode"
         />
       </div>
     </div>
     <ExportData :visible.sync="showExportData" :connection="record" />
     <ImportData :visible.sync="showImportData" />
-    <TimedMessage ref="timedMessage" :visible.sync="showTimedMessage" @setTimerSuccess="setTimerSuccess" />
     <UseScript ref="useScript" :visible.sync="showUseScript" @setScript="handleSetScript" />
     <SyncTopicTreeDialog
       :visible.sync="showSyncTopicTreeDialog"
@@ -360,14 +359,23 @@ import ResponseInformation from './ResponseInformation.vue'
 import Contextmenu from '@/components/Contextmenu.vue'
 import ExportData from '@/components/ExportData.vue'
 import ImportData from '@/components/ImportData.vue'
-import TimedMessage from '@/components/TimedMessage.vue'
 import UseScript from '@/components/UseScript.vue'
 import MsgTypeTabs from '@/components/MsgTypeTabs.vue'
 import MsgTip from '@/components/MsgTip.vue'
 import Copilot from '@/components/ai/Copilot.vue'
 
 import sandbox from '@/utils/sandbox'
-import { hasMessagePayloadID, hasMessageHeaderID } from '@/utils/historyRecordUtils'
+import {
+  listTimedMessages,
+  onChangeTimedMessages,
+  registerTimedMessagePublisher,
+  startTimedMessage,
+  stopTimedMessage,
+  stopAllTimedMessages,
+  unregisterTimedMessagePublisher,
+} from '@/utils/timedMessageManager'
+import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
+import applyPayloadVariables from '@/utils/payloadVariables'
 import useServices from '@/database/useServices'
 import { getMessageId, getSubscriptionId } from '@/utils/idGenerator'
 import getContextmenuPosition from '@/utils/getContextmenuPosition'
@@ -410,7 +418,6 @@ type CommandType =
     Contextmenu,
     ExportData,
     ImportData,
-    TimedMessage,
     MessageList,
     UseScript,
     MsgTypeTabs,
@@ -440,6 +447,8 @@ export default class ConnectionsDetail extends Vue {
   @Getter('enableCopilot') private enableCopilot!: boolean
   @Getter('showConnectionList') private showConnectionList!: boolean
   @Getter('maxPayloadDisplaySize') private maxPayloadDisplaySize!: number
+  @Getter('saveHistoryMessage') private saveHistoryMessage!: boolean
+  @Getter('historyMaxCount') private historyMaxCount!: number
 
   /**
    * Notice: when we jump order by `other page` -> `creation page` -> `connection page`,
@@ -465,7 +474,6 @@ export default class ConnectionsDetail extends Vue {
   private showClientInfo = true
   private showExportData = false
   private showImportData = false
-  private showTimedMessage = false
   private showUseScript = false
   private showTitleTooltip = false
   private showSyncTopicTreeDialog = false
@@ -475,8 +483,9 @@ export default class ConnectionsDetail extends Vue {
   private searchVisible = false
   private searchLoading = false
 
-  private sendFrequency: number | undefined = undefined
-  private sendTimeId: number | null = null
+  private timedMessages: TimedMessageRuntime[] = []
+  private unsubTimedMessages: (() => void) | null = null
+  private timedPublisherId: string | null = null
   private sendTimedMessageCount = 0
   private receivedMsgType: PayloadType = this.getReceivedMsgType()
   private msgType: MessageType = 'all'
@@ -715,20 +724,37 @@ export default class ConnectionsDetail extends Vue {
       })
   }
 
-  // Clean interval
+  // Stops every running timed message of this connection (panel, topbar, disconnect, error).
   public stopTimedSend() {
-    const timedMessageRef: TimedMessage = this.$refs.timedMessage as TimedMessage
-    timedMessageRef['record'] = {
-      sendFrequency: undefined,
-    }
-    this.sendFrequency = undefined
+    const stopped = stopAllTimedMessages(this.curConnectionId)
     this.sendTimedMessageCount = 0
-    if (this.sendTimeId) {
-      clearInterval(this.sendTimeId)
-      this.sendTimeId = null
+    if (stopped > 0) {
       this.$message.success(this.$tc('connections.stopTimedMessage'))
       this.$log.info(`Timed messages sending stopped for ${this.record.name}@${this.record.host}`)
     }
+  }
+
+  // Stops one timed message by id (from the panel). Tasks live in the global manager, so they
+  // keep running while this view is not mounted.
+  public stopTimedMessage(id: number) {
+    stopTimedMessage(this.curConnectionId, id)
+  }
+
+  /**
+   * Starts a timed message: the given message snapshot (from the publish form) is published
+   * every `interval` seconds. The task lives in the global manager (next to the MQTT clients),
+   * so it survives connection switches; payload variables are refilled on every tick.
+   */
+  public startTimedMessage(interval: number, message: MessageModel, type: PayloadType) {
+    if (!interval || interval < 1) {
+      return
+    }
+    const result = startTimedMessage(this.curConnectionId, interval, message, type)
+    if (result === 'limit') {
+      this.$message.warning(this.$tc('connections.timedMessageLimit'))
+      return
+    }
+    this.notifyTimedMessageSuccess(interval)
   }
 
   // Set messages list height
@@ -839,6 +865,36 @@ export default class ConnectionsDetail extends Vue {
         connected: false,
       }
     }
+    // The detail view is reused across connection switches (v-show, no :key), so the timed
+    // message wiring must follow the id: the previous connection's delegate is unregistered
+    // (its ticks fall back to the store client) and this connection's is registered instead.
+    this.syncTimedMessagesBinding(id)
+  }
+
+  /**
+   * Rebinds the timed message subscription/publisher to the given connection id.
+   * Registering a delegate routes ticks through the full view pipeline; when the view later
+   * shows another connection, unregistering lets the manager publish via the store client.
+   */
+  private syncTimedMessagesBinding(id: string) {
+    if (this.timedPublisherId === id) {
+      return
+    }
+    if (this.unsubTimedMessages) {
+      this.unsubTimedMessages()
+      this.unsubTimedMessages = null
+    }
+    if (this.timedPublisherId) {
+      unregisterTimedMessagePublisher(this.timedPublisherId)
+    }
+    this.timedPublisherId = id
+    this.timedMessages = listTimedMessages(id)
+    this.unsubTimedMessages = onChangeTimedMessages(id, (list) => {
+      this.timedMessages = list
+    })
+    registerTimedMessagePublisher(id, async (message, type) => {
+      await this.publishMessage(message, type)
+    })
   }
 
   // Collapse top client info
@@ -1619,13 +1675,8 @@ export default class ConnectionsDetail extends Vue {
       })
   }
 
-  // Set timed message success
-  private setTimerSuccess(time: number) {
-    this.sendFrequency = time
-  }
-
   /**
-   * Sends a message. If a send frequency is defined, it also sets up a timed message.
+   * Sends a message.
    */
   private async sendMessage(
     message: MessageModel,
@@ -1634,54 +1685,44 @@ export default class ConnectionsDetail extends Vue {
     afterCallback?: () => void,
   ): Promise<void> {
     await this.publishMessage({ ...message }, type, afterpublishMessageCallback)
-    if (this.sendFrequency) {
-      this.notifyTimedMessageSuccess()
-      this.timedSendMessage(this.sendFrequency, message, type)
-    }
     afterCallback?.()
   }
 
   private throttleSendMessage = _.throttle(this.sendMessage, 200, { leading: true, trailing: false })
 
   /**
-   * Notifies the user about the successful setup of a timed message.
+   * Notifies the user about the successful start of a timed message.
    */
-  private notifyTimedMessageSuccess() {
-    this.$message.success(`${this.$t('connections.startTimedMessage')}${this.sendFrequency}`)
+  private notifyTimedMessageSuccess(interval: number) {
+    this.$message.success(`${this.$t('connections.startTimedMessage')}${interval}`)
     this.$log.info(
-      `Timed message for ${this.record.name}@${this.record.host} started successfully with a frequency of ${this.sendFrequency} seconds.`,
+      `Timed message for ${this.record.name}@${this.record.host} started successfully with a frequency of ${interval} seconds.`,
     )
   }
 
   /**
-   * Sets up a message to be sent at regular intervals defined by the 'time' parameter.
-   */
-  private timedSendMessage(time: number, message: MessageModel, type: PayloadType) {
-    this.stopTimedSend()
-    this.sendTimedMessageCount += 1
-    this.sendTimeId = window.setInterval(() => {
-      message.id = getMessageId()
-      this.publishMessage(message, type)
-    }, time * 1000)
-  }
-
-  /**
    * Inserts the message history into local storage.
+   *
+   * A single record now holds both the topic and (unless the user turned it off) the message, so
+   * restoring a history entry can replace the topic and the message at once.
    */
   private async insertHistory(payload: HistoryMessagePayloadModel, header: HistoryMessageHeaderModel) {
-    const { historyMessagePayloadService, historyMessageHeaderService } = useServices()
-    const payloadIdToUpdate = await hasMessagePayloadID(payload)
-    const headerIdToUpdate = await hasMessageHeaderID(header)
+    const { historyMessageHeaderService } = useServices()
+    const saveHistoryMessage = this.saveHistoryMessage
+    const record: HistoryMessageHeaderModel = saveHistoryMessage
+      ? { ...header, payload: payload.payload, payloadType: payload.payloadType }
+      : { ...header, payload: null, payloadType: null }
 
-    payloadIdToUpdate
-      ? await historyMessagePayloadService.updateCreateAt(payloadIdToUpdate)
-      : await historyMessagePayloadService.create(payload)
+    const recordIdToUpdate = await hasMessageHeaderID(record, saveHistoryMessage)
 
-    headerIdToUpdate
-      ? await historyMessageHeaderService.updateCreateAt(headerIdToUpdate)
-      : await historyMessageHeaderService.create(header)
+    recordIdToUpdate
+      ? await historyMessageHeaderService.updateCreateAt(recordIdToUpdate)
+      : await historyMessageHeaderService.create(record)
 
-    return { isNewPayload: !payloadIdToUpdate, isNewHeader: !headerIdToUpdate }
+    // Never keep more records than the configured limit.
+    await historyMessageHeaderService.trim(this.historyMaxCount)
+
+    return { isNewPayload: !recordIdToUpdate, isNewHeader: !recordIdToUpdate }
   }
 
   /**
@@ -1716,6 +1757,14 @@ export default class ConnectionsDetail extends Vue {
   ): Promise<void> {
     const { topic, qos, payload, retain, properties } = message
 
+    // Timed ticks can fire while this view holds a not-connected stub client (e.g. right
+    // after switching to an unconnected connection). Skip instead of crashing on a missing
+    // publish(); the manager's fallback handles publishing through the store client.
+    if (!this.client.connected || typeof this.client.publish !== 'function') {
+      this.$log.warn(`Publish skipped: client of "${this.record.name}" is not connected`)
+      return
+    }
+
     const props = properties ? this.processProperties(properties) : undefined
 
     const { isNewPayload } = await this.insertHistory(
@@ -1723,8 +1772,16 @@ export default class ConnectionsDetail extends Vue {
       { qos, topic, retain } as HistoryMessageHeaderModel,
     )
 
+    /*
+     * Dynamic variables like ${timestamp} are filled right AFTER the history insert, so the
+     * publish history keeps the raw template (every re-send gets a fresh value) while the
+     * message that goes on the wire carries the real data.
+     */
+    const filledPayload =
+      payload && ['JSON', 'Plaintext'].includes(type) ? applyPayloadVariables(payload as string) : payload
+
     let convertedPayload = ''
-    let finalPayload: string | Buffer | undefined = payload
+    let finalPayload: string | Buffer | undefined = filledPayload
 
     /*
      * Payload processing pipeline for publishing:
@@ -1738,8 +1795,8 @@ export default class ConnectionsDetail extends Vue {
      * Note:
      * - Empty payloads are allowed to facilitate the clearing of retained messages.
      */
-    if (payload) {
-      convertedPayload = this.convertPayloadByFunction(payload as string, 'publish', type)
+    if (filledPayload) {
+      convertedPayload = this.convertPayloadByFunction(filledPayload as string, 'publish', type)
       finalPayload = this.handlePayloadBySchemaOrType(convertedPayload, type)
       if (finalPayload === undefined) return
     }
@@ -1936,7 +1993,7 @@ export default class ConnectionsDetail extends Vue {
   private convertPayloadByFunction(payload: string, msgType: MessageType, type?: PayloadType): string {
     let convertedPayload = payload
     if (this.scriptOption?.function && ['all', msgType].includes(this.scriptOption.apply)) {
-      if (this.sendFrequency || this.sendTimeId !== null) {
+      if (this.timedMessages.length > 0) {
         msgType === 'publish' && (this.sendTimedMessageCount += 1)
       } else {
         this.sendTimedMessageCount = 0
@@ -2063,9 +2120,10 @@ export default class ConnectionsDetail extends Vue {
     this.showImportData = true
   }
 
-  // Show timed message dialog
+  // Open the timed-message panel in the publish bar
   private handleTimedMessage() {
-    this.showTimedMessage = true
+    const msgPublishRef = this.$refs.msgPublish as MsgPublish
+    msgPublishRef?.openTimedPanel()
   }
 
   // Auto subscribe system topic and show dialog
@@ -2217,12 +2275,21 @@ export default class ConnectionsDetail extends Vue {
     window.addEventListener('resize', () => {
       this.setMessageListHeight()
     })
+    // Timed message wiring is done in syncTimedMessagesBinding() (called from
+    // getConnectionValue in created()), because the reused view can switch connections
+    // without being destroyed and the binding must follow the connection id.
   }
 
   private beforeDestroy() {
     ipcRenderer.removeAllListeners('searchContent')
     this.removeClinetsMessageListener()
-    this.stopTimedSend()
+    // Timed messages keep running across connection switches; only stop routing their ticks
+    // through this (now destroyed) view. The global manager publishes via the store client.
+    unregisterTimedMessagePublisher(this.timedPublisherId ?? this.curConnectionId)
+    if (this.unsubTimedMessages) {
+      this.unsubTimedMessages()
+      this.unsubTimedMessages = null
+    }
     this.forceStopToReconnect()
     window.removeEventListener('resize', () => {
       this.setMessageListHeight()

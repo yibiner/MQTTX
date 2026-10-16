@@ -94,37 +94,129 @@
             <span style="float: right; color: #8492a6; margin-left: 12px">{{ $t(`connections.qos${qos}`) }}</span>
           </el-option>
         </el-select>
-        <el-checkbox class="retain-checkbox" v-model="msgRecord.retain" label="Retain" border size="mini"></el-checkbox>
         <el-tooltip
           placement="top"
-          :disabled="mqtt5PropsEnable"
           :open-delay="500"
           :effect="currentTheme !== 'light' ? 'light' : 'dark'"
-          :content="$t('connections.metaTips')"
+          :content="$t('configs.selectMessagePreset')"
         >
-          <el-badge :is-dot="hasMqtt5Prop && mqtt5PropsEnable" class="item">
+          <el-popover
+            v-model="msgPresetPanelVisible"
+            placement="bottom-end"
+            :width="300"
+            trigger="click"
+            popper-class="msg-preset--popper"
+            @show="loadMessagePresets"
+          >
+            <div class="msg-preset-panel">
+              <div class="msg-preset-panel-head">
+                <span>{{ $t('configs.messagePresets') }}</span>
+                <span class="msg-preset-panel-count">{{ messagePresets.length }}</span>
+              </div>
+              <div v-if="messagePresets.length === 0" class="msg-preset-panel-empty">
+                {{ $t('configs.empty') }}
+              </div>
+              <div
+                v-for="preset in messagePresets"
+                :key="preset.id"
+                class="msg-preset-panel-item"
+                @click="applyMessagePreset(preset)"
+              >
+                <i class="el-icon-collection msg-preset-panel-icon"></i>
+                <div class="msg-preset-panel-info">
+                  <div class="msg-preset-panel-name">{{ preset.name }}</div>
+                  <div class="msg-preset-panel-topic">{{ preset.topic }}</div>
+                </div>
+              </div>
+              <div class="msg-preset-panel-footer">
+                <a href="javascript:;" @click="gotoManagePresets">{{ $t('configs.managePresets') }}</a>
+              </div>
+            </div>
             <el-button
-              type="outline"
-              plain
-              :disabled="!mqtt5PropsEnable"
-              :class="['dropdown-btn', showMetaCard ? 'dropdown-btn-active' : '']"
-              @click="changeVisable"
-              label="Meta"
+              slot="reference"
               size="mini"
+              class="dropdown-btn msg-preset-btn"
+              icon="el-icon-collection"
+              :class="{ 'dropdown-btn-active': msgPresetPanelVisible }"
             >
-              Meta
             </el-button>
+          </el-popover>
+        </el-tooltip>
+        <el-tooltip
+          placement="top"
+          :open-delay="500"
+          :effect="currentTheme !== 'light' ? 'light' : 'dark'"
+          :content="$t('connections.timedMessage')"
+        >
+          <el-badge :value="timedMessages.length" :hidden="timedMessages.length === 0" class="timed-badge">
+            <el-popover
+              v-model="timedPanelVisible"
+              placement="bottom-end"
+              :width="320"
+              trigger="click"
+              popper-class="timed-panel--popper"
+            >
+              <div class="timed-panel">
+                <div class="timed-panel-head">
+                  <span>{{ $t('connections.timedMessage') }}</span>
+                  <span class="timed-panel-count">{{ timedMessages.length }}</span>
+                </div>
+                <div v-if="timedMessages.length === 0" class="timed-panel-empty">
+                  {{ $t('connections.timedMessageEmpty') }}
+                </div>
+                <div v-for="item in timedMessages" :key="item.id" class="timed-panel-item">
+                  <i class="iconfont icon-timed-message timed-panel-icon"></i>
+                  <div class="timed-panel-item-info">
+                    <div class="timed-panel-item-interval">
+                      {{ $t('connections.timedMessageEvery', { n: item.interval }) }}
+                      <span class="timed-panel-item-next">
+                        {{ $t('connections.timedMessageNext', { time: nextSendTime(item.nextSendAt) }) }}
+                      </span>
+                    </div>
+                    <div class="timed-panel-item-topic" :title="item.topic">{{ item.topic }}</div>
+                  </div>
+                  <i
+                    class="el-icon-close timed-panel-stop"
+                    :title="$t('connections.stopTimedMessage')"
+                    @click.stop="$emit('handleStopTimedMessage', item.id)"
+                  ></i>
+                </div>
+                <div class="timed-panel-footer">
+                  <el-input-number
+                    v-model="newTimedInterval"
+                    class="timed-panel-input"
+                    size="mini"
+                    controls-position="right"
+                    :min="1"
+                  />
+                  <el-button size="mini" type="primary" :disabled="!clientConnected" @click="handleStartTimedMessage">
+                    {{ $t('connections.timedMessageStart') }}
+                  </el-button>
+                </div>
+                <div class="timed-panel-hint">{{ $t('connections.timedMessageHint') }}</div>
+              </div>
+              <el-button
+                slot="reference"
+                size="mini"
+                class="dropdown-btn timed-btn"
+                :class="{ 'dropdown-btn-active': timedPanelVisible || timedMessages.length > 0 }"
+                icon="iconfont icon-timed-message"
+              >
+              </el-button>
+            </el-popover>
           </el-badge>
         </el-tooltip>
-        <el-dropdown class="actions-dropdown" placement="top" trigger="click" @command="handleActionCommand">
-          <el-button class="dropdown-btn actions-btn" type="outline" plain size="mini" icon="el-icon-caret-top">
-          </el-button>
+        <el-dropdown class="actions-dropdown" placement="top-end" trigger="click" @command="handleActionCommand">
+          <el-button class="dropdown-btn actions-btn" type="outline" plain size="mini" icon="el-icon-more"> </el-button>
           <el-dropdown-menu class="connection-oper-item" slot="dropdown">
+            <el-dropdown-item command="toggleRetain">
+              <i :class="msgRecord.retain ? 'el-icon-check retain-on' : 'el-icon-close retain-off'"></i>Retain
+            </el-dropdown-item>
+            <el-dropdown-item command="meta" :disabled="!mqtt5PropsEnable">
+              <i class="el-icon-setting"></i>Meta
+            </el-dropdown-item>
             <el-dropdown-item command="clearRetainedMessage" :disabled="!clientConnected">
               <i class="iconfont icon-delete"></i>{{ $t('connections.clearRetainedMessage') }}
-            </el-dropdown-item>
-            <el-dropdown-item command="timedMessage" :disabled="!clientConnected || sendTimeId !== null">
-              <i class="iconfont icon-timed-message"></i>{{ $t('connections.timedMessage') }}
             </el-dropdown-item>
           </el-dropdown-menu>
         </el-dropdown>
@@ -136,7 +228,7 @@
             :effect="currentTheme !== 'light' ? 'light' : 'dark'"
           >
             <el-button
-              :disabled="historyIndex === 0 || historyIndex === -1"
+              :disabled="historyIndex <= 0"
               size="mini"
               icon="el-icon-arrow-left"
               class="history-btn history-btn-left"
@@ -149,10 +241,54 @@
             :open-delay="500"
             :effect="currentTheme !== 'light' ? 'light' : 'dark'"
           >
-            <el-button size="mini" class="history-btn history-btn-center" @click="back">
-              <span v-if="historyIndex === -1 || payloadsHistory.length === 0">0/0</span>
-              <span v-else>{{ historyIndex + 1 }}/{{ payloadsHistory.length }}</span>
-            </el-button>
+            <el-popover
+              v-model="historyPanelVisible"
+              placement="bottom-end"
+              :width="historyPanelWidth"
+              trigger="click"
+              popper-class="history-panel--popper"
+              @show="handleHistoryPanelShow"
+              @hide="handleHistoryPanelHide"
+            >
+              <div class="history-panel">
+                <div v-if="historyRecords.length === 0" class="history-panel-empty">0/0</div>
+                <div
+                  v-for="(item, index) in historyRecords"
+                  :key="item.id"
+                  :class="['history-panel-item', { active: index === historyIndex }]"
+                  @click="handleHistoryItemClick(item, index)"
+                >
+                  <div class="history-panel-item-main">
+                    <span class="history-panel-topic" :title="item.topic">{{ item.topic }}</span>
+                    <span class="history-panel-meta">QoS:{{ item.qos }}</span>
+                    <span class="history-panel-meta">retain:{{ item.retain ? '1' : '0' }}</span>
+                    <i
+                      class="el-icon-close history-panel-delete"
+                      :title="$t('common.delete')"
+                      @click.stop.prevent="handleDeleteHistoryHeader(item)"
+                    ></i>
+                  </div>
+                  <div class="history-panel-item-sub">
+                    <span class="history-panel-payload" :class="{ empty: !item.payload }">{{
+                      historyPayloadText(item)
+                    }}</span>
+                  </div>
+                </div>
+              </div>
+              <el-button
+                slot="reference"
+                size="mini"
+                class="history-btn history-btn-center"
+                :class="{ 'history-btn-active': historyPanelVisible }"
+              >
+                <span>{{
+                  historyIndex === -1 || historyRecords.length === 0
+                    ? '0/0'
+                    : historyIndex + 1 + '/' + historyRecords.length
+                }}</span>
+                <i class="el-icon-arrow-down history-btn-caret"></i>
+              </el-button>
+            </el-popover>
           </el-tooltip>
           <el-tooltip
             :content="$t('connections.nextPayload')"
@@ -161,7 +297,7 @@
             :effect="currentTheme !== 'light' ? 'light' : 'dark'"
           >
             <el-button
-              :disabled="historyIndex === payloadsHistory.length - 1 || historyIndex === -1"
+              :disabled="historyIndex >= historyRecords.length - 1 || historyIndex === -1"
               size="mini"
               icon="el-icon-arrow-right"
               class="history-btn history-btn-right"
@@ -179,33 +315,6 @@
           @blur="handleInputBlur"
         >
         </el-input>
-        <el-select
-          class="header-select"
-          popper-class="header-select--popper"
-          v-model="headerValue"
-          placeholder=""
-          size="mini"
-          @change="handleHeaderChange"
-        >
-          <el-option
-            class="header-option"
-            v-for="item in headersHistory"
-            :key="item.id"
-            :label="item.label"
-            :value="item"
-          >
-            <div class="header-option-content">
-              <span class="header-option-topic" :title="item.topic">{{ item.topic }}</span>
-              <span class="header-option-meta">QoS:{{ item.qos }}</span>
-              <span class="header-option-meta">retain:{{ item.retain ? '1' : '0' }}</span>
-              <i
-                class="el-icon-close header-option-delete"
-                :title="$t('common.delete')"
-                @click.stop.prevent="handleDeleteHistoryHeader(item)"
-              ></i>
-            </div>
-          </el-option>
-        </el-select>
       </div>
     </div>
     <div class="editor-container">
@@ -247,6 +356,7 @@ import validFormatJson from '@/utils/validFormatJson'
 import useServices from '@/database/useServices'
 import time from '@/utils/time'
 import { emptyToNull } from '@/utils/handleString'
+import { getMessagePresets } from '@/utils/configProfiles'
 
 @Component({
   components: {
@@ -262,7 +372,7 @@ export default class MsgPublish extends Vue {
   @Prop({ default: false }) public disabled!: boolean
   @Prop({ default: false }) public mqtt5PropsEnable!: boolean
   @Prop({ default: false }) public clientConnected!: boolean
-  @Prop({ default: null }) public sendTimeId!: number | null
+  @Prop({ default: () => [] }) public timedMessages!: TimedMessageRuntime[]
 
   @Getter('currentTheme') private currentTheme!: Theme
 
@@ -275,6 +385,14 @@ export default class MsgPublish extends Vue {
   private saveMetaLoading = false
 
   private topicRequired = false
+
+  private timedPanelVisible = false
+
+  private newTimedInterval: number | undefined = 10
+
+  private msgPresetPanelVisible = false
+
+  private messagePresets: MessagePresetModel[] = []
 
   private isValidProp(value: any) {
     return value !== null && value !== undefined && value !== false
@@ -302,9 +420,11 @@ export default class MsgPublish extends Vue {
 
   private hasMqtt5Prop = false
 
-  private headersHistory: HistoryMessageHeaderModel[] | [] = []
-  private payloadsHistory: HistoryMessagePayloadModel[] | [] = []
+  private historyRecords: HistoryMessageHeaderModel[] = []
   private historyIndex = -1
+  // Set right before a history record is applied, so the payloadType watcher does not
+  // "convert" a payload that already is in the stored format.
+  private suppressPayloadTypeConversion = false
   private defaultMsgRecord: MessageModel = {
     createAt: time.getNowDate(),
     out: true,
@@ -314,14 +434,11 @@ export default class MsgPublish extends Vue {
     payload: JSON.stringify({ msg: 'hello' }, null, 2),
   }
   public msgRecord: MessageModel = _.cloneDeep(this.defaultMsgRecord)
-  private headerValue: HistoryMessageHeaderModel = {
-    qos: this.msgRecord.qos,
-    retain: this.msgRecord.retain,
-    topic: this.msgRecord.topic,
-  }
   private payloadLang = 'json'
   private payloadType: PayloadType = 'JSON'
   private payloadOptions: PayloadType[] = ['Plaintext', 'JSON', 'Base64', 'Hex', 'CBOR', 'MsgPack']
+  private historyPanelVisible = false
+  private historyPanelWidth = 360
 
   @Watch('editorHeight')
   private handleHeightChanged() {
@@ -334,6 +451,11 @@ export default class MsgPublish extends Vue {
       this.payloadLang = 'json'
     } else {
       this.payloadLang = 'plaintext'
+    }
+    if (this.suppressPayloadTypeConversion) {
+      // The payload was just restored from a history record and already is in this format.
+      this.suppressPayloadTypeConversion = false
+      return
     }
     if (payload === '') {
       return
@@ -356,10 +478,46 @@ export default class MsgPublish extends Vue {
   }
   @Watch('historyIndex', { immediate: true, deep: true })
   private handleHistoryIndexChange(val: number, lastval: number) {
-    if (lastval !== val && val >= 0 && val < this.payloadsHistory.length) {
-      this.msgRecord = Object.assign(this.msgRecord, this.payloadsHistory[val])
-      this.payloadType = this.payloadsHistory[val].payloadType as PayloadType
+    if (lastval !== val && val >= 0 && val < this.historyRecords.length) {
+      this.applyHistoryRecord(this.historyRecords[val])
     }
+  }
+
+  /**
+   * Applies a history record to the publish form: the topic *and* the message are restored
+   * together, which is the whole point of storing them as one record.
+   */
+  private applyHistoryRecord(record: HistoryMessageHeaderModel) {
+    if (!record) {
+      return
+    }
+    const { retain, topic, qos, payload, payloadType } = record
+
+    // Only overwrite the editor content when the record actually carries a message, so legacy
+    // records (and records saved with "save message" disabled) keep the current payload.
+    if (payload !== undefined && payload !== null) {
+      this.msgRecord.payload = payload
+      const nextType = (payloadType ?? this.payloadType) as PayloadType
+      if (nextType !== this.payloadType) {
+        this.suppressPayloadTypeConversion = true
+        this.payloadType = nextType
+      }
+    }
+
+    Object.assign(this.msgRecord, { retain, topic, qos })
+  }
+
+  /**
+   * The payload is shown in full, never truncated. All consecutive whitespace (including JSON
+   * line breaks and indentation) is collapsed into a single space, so every record stays one
+   * compact paragraph; long lines simply wrap.
+   */
+  private historyPayloadText(record: HistoryMessageHeaderModel): string {
+    const payload = record.payload
+    if (payload === undefined || payload === null || payload === '') {
+      return this.$t('connections.historyNoMessage') as string
+    }
+    return String(payload).replace(/\s+/g, ' ').trim()
   }
 
   /**
@@ -393,11 +551,34 @@ export default class MsgPublish extends Vue {
     }
   }
 
-  private handleHeaderChange(val: HistoryMessageHeaderModel) {
-    if (val) {
-      const { retain, topic, qos } = val
-      Object.assign(this.msgRecord, { retain, topic, qos })
+  /**
+   * The history panel is as wide as the message window and hugs its right edge, so even long
+   * topics and payloads stay readable. Recomputed while open so it stays adaptive.
+   */
+  private handleHistoryPanelShow() {
+    this.updateHistoryPanelWidth()
+    window.addEventListener('resize', this.updateHistoryPanelWidth)
+  }
+
+  private handleHistoryPanelHide() {
+    window.removeEventListener('resize', this.updateHistoryPanelWidth)
+  }
+
+  private updateHistoryPanelWidth() {
+    const root = this.$el as HTMLElement | undefined
+    if (!root) {
+      return
     }
+    const width = Math.round(root.getBoundingClientRect().width)
+    if (width > 0) {
+      this.historyPanelWidth = width
+    }
+  }
+
+  private handleHistoryItemClick(item: HistoryMessageHeaderModel, index: number) {
+    this.applyHistoryRecord(item)
+    this.historyIndex = index
+    this.historyPanelVisible = false
   }
 
   private async handleDeleteHistoryHeader(item: HistoryMessageHeaderModel) {
@@ -406,13 +587,6 @@ export default class MsgPublish extends Vue {
     }
     const { historyMessageHeaderService } = useServices()
     await historyMessageHeaderService.delete(item.id)
-    if (this.headerValue && this.headerValue.id === item.id) {
-      this.headerValue = {
-        qos: this.msgRecord.qos,
-        retain: this.msgRecord.retain,
-        topic: this.msgRecord.topic,
-      }
-    }
     await this.loadHistoryData()
   }
 
@@ -500,32 +674,29 @@ export default class MsgPublish extends Vue {
   }
 
   private async loadHistoryData(isNewPayload?: boolean, isLoadData?: boolean) {
-    const { historyMessageHeaderService, historyMessagePayloadService } = useServices()
-    const headersHistory = (await historyMessageHeaderService.getAll()) ?? []
-    const payloadsHistory = (await historyMessagePayloadService.getAll()) ?? []
-    const historyMsg = payloadsHistory[payloadsHistory.length - 1]
-    if (historyMsg && isLoadData) {
-      this.payloadType = historyMsg.payloadType as PayloadType
+    const { historyMessageHeaderService } = useServices()
+    const historyRecords = (await historyMessageHeaderService.getAll()) ?? []
+    const latestRecord = historyRecords[historyRecords.length - 1]
+    if (latestRecord && isLoadData && latestRecord.payloadType && latestRecord.payloadType !== this.payloadType) {
+      // The payload of the latest record is applied right after this call, so it must not be
+      // re-encoded by the payloadType watcher.
+      this.suppressPayloadTypeConversion = true
+      this.payloadType = latestRecord.payloadType as PayloadType
     }
-    this.headersHistory = headersHistory
-    this.payloadsHistory = payloadsHistory
-    if (isNewPayload) {
-      this.historyIndex = this.payloadsHistory.length - 1
+    this.historyRecords = historyRecords
+    if (isNewPayload || this.historyIndex > this.historyRecords.length - 1) {
+      // Point at the newest record, and keep the index valid after deleting or trimming records.
+      this.historyIndex = this.historyRecords.length - 1
     }
   }
 
   private async loadData() {
     await this.loadHistoryData(false, true)
-    this.historyIndex = this.payloadsHistory.length - 1
-    Object.assign(
-      this.msgRecord,
-      this.defaultMsgRecord,
-      this.headersHistory[this.headersHistory.length - 1],
-      this.payloadsHistory[this.payloadsHistory.length - 1],
-    )
-    const headersHistoryIndex = this.payloadsHistory[this.historyIndex]
-    if (headersHistoryIndex) {
-      this.payloadType = headersHistoryIndex.payloadType as PayloadType
+    this.historyIndex = this.historyRecords.length - 1
+    const latestRecord = this.historyRecords[this.historyRecords.length - 1]
+    Object.assign(this.msgRecord, this.defaultMsgRecord)
+    if (latestRecord) {
+      this.applyHistoryRecord(latestRecord)
     }
     this.loadProperties()
   }
@@ -558,13 +729,9 @@ export default class MsgPublish extends Vue {
     this.historyIndex = this.historyIndex - 1 >= 0 ? this.historyIndex - 1 : 0
   }
 
-  private back() {
-    this.historyIndex = this.payloadsHistory.length - 1
-  }
-
   private increase() {
     this.historyIndex =
-      this.historyIndex + 1 <= this.payloadsHistory.length - 1 ? this.historyIndex + 1 : this.payloadsHistory.length - 1
+      this.historyIndex + 1 <= this.historyRecords.length - 1 ? this.historyIndex + 1 : this.historyRecords.length - 1
   }
 
   private handleClickOutSide() {
@@ -574,9 +741,57 @@ export default class MsgPublish extends Vue {
   private handleActionCommand(command: string) {
     if (command === 'clearRetainedMessage') {
       this.onClearRetainedMsgPublish()
-    } else if (command === 'timedMessage') {
-      this.$emit('handleSendTimedMessage')
+    } else if (command === 'toggleRetain') {
+      this.msgRecord.retain = !this.msgRecord.retain
+    } else if (command === 'meta') {
+      this.changeVisable()
     }
+  }
+
+  /**
+   * Starts a timed message from the panel: the current editor content (topic, payload, QoS,
+   * retain and payload type) is snapshotted and published every `interval` seconds. Payload
+   * variables like ${timestamp} are refilled on every tick.
+   */
+  private handleStartTimedMessage() {
+    const interval = this.newTimedInterval
+    if (!interval || interval < 1) {
+      return
+    }
+    if (!this.msgRecord.topic) {
+      this.topicRequired = true
+      this.$message.warning(this.$tc('connections.topicRequired'))
+      return
+    }
+    this.$emit('handleStartTimedMessage', interval, { ...this.msgRecord }, this.payloadType)
+  }
+
+  /** Opens the timed-message panel (used by the topbar menu command). */
+  public openTimedPanel() {
+    this.timedPanelVisible = true
+  }
+
+  /** Reloads the message preset list (also used as the popover's @show hook). */
+  private loadMessagePresets() {
+    this.messagePresets = getMessagePresets()
+  }
+
+  /** Fills topic + message from a preset. QoS/retain/payloadType stay as chosen by the user. */
+  private applyMessagePreset(preset: MessagePresetModel) {
+    this.msgRecord.topic = preset.topic
+    this.msgRecord.payload = preset.payload
+    this.msgPresetPanelVisible = false
+    this.$message.success(`${this.$t('configs.selectMessagePreset')}: ${preset.name}`)
+  }
+
+  private gotoManagePresets() {
+    this.msgPresetPanelVisible = false
+    this.$router.push('/configs')
+  }
+
+  /** Local "HH:mm:ss" of the next scheduled send of a timed message. */
+  private nextSendTime(nextSendAt: number): string {
+    return time.toFormat(new Date(nextSendAt)).slice(11, 19)
   }
 
   private onClearRetainedMsgPublish() {
@@ -611,6 +826,7 @@ export default class MsgPublish extends Vue {
   }
 
   private beforeDestroy() {
+    window.removeEventListener('resize', this.updateHistoryPanelWidth)
     ipcRenderer.removeAllListeners('sendPayload')
     ipcRenderer.removeAllListeners('insertCodeToEditor')
   }
@@ -674,16 +890,8 @@ export default class MsgPublish extends Vue {
     &.required {
       .el-input.publish-topic-input {
         .el-input__inner {
-          border-right: none !important;
+          border: 1px solid var(--color-minor-red) !important;
         }
-      }
-      .el-select {
-        .el-input__inner {
-          border-left: none !important;
-        }
-      }
-      .el-input__inner {
-        border: 1px solid var(--color-minor-red) !important;
       }
     }
   }
@@ -695,14 +903,6 @@ export default class MsgPublish extends Vue {
     @include topic-input__inner;
     .el-input__inner {
       padding: 0px 16px;
-    }
-  }
-  .header-select.el-select {
-    flex: 0 0 20px;
-    width: 20px;
-    display: block;
-    .el-input {
-      @include topic-input__inner;
     }
   }
   .editor-container {
@@ -756,15 +956,6 @@ export default class MsgPublish extends Vue {
       width: 76px;
       margin-right: 4px;
     }
-    .retain-checkbox {
-      margin-right: 4px;
-      .el-checkbox__input {
-        line-height: 1px;
-      }
-      .el-checkbox__label {
-        padding-left: 8px;
-      }
-    }
     .dropdown-btn {
       margin-right: 4px;
       border-radius: 4px;
@@ -782,61 +973,79 @@ export default class MsgPublish extends Vue {
         border-color: var(--color-main-green);
       }
     }
-    .el-badge.item {
-      .el-badge__content.is-dot {
-        top: -1px;
-        right: 2px;
+    .timed-badge {
+      margin-right: 4px;
+      .el-badge__content {
+        top: -7px;
+        right: 9px;
         transform: none;
+        border: none;
       }
-    }
-    .el-checkbox__inner {
-      border-radius: 100%;
     }
     .actions-dropdown {
       display: inline;
       margin-right: 4px;
+      .retain-on {
+        color: var(--color-main-green);
+      }
+      .retain-off {
+        color: #c0c4cc;
+      }
     }
     .history-button-group {
       margin-left: auto;
       display: flex;
-      gap: 3px;
+      align-items: center;
+      gap: 4px;
 
       .history-btn {
         height: 28px;
-        padding: 0;
-        border: none;
-        border-radius: 8px;
+        padding: 0 10px;
         margin: 0;
+        border-radius: 4px;
+        border: 1px solid var(--color-border-default);
         background-color: transparent;
-        min-width: unset;
-
-        &.history-btn-left {
-          width: 18px;
-          font-size: 13px;
-        }
-
-        &.history-btn-center {
-          min-width: 24px;
-          font-size: 13px;
-          color: var(--color-text-default);
-
-          &:hover {
-            background-color: var(--color-bg-hover);
-          }
-        }
-
-        &.history-btn-right {
-          width: 18px;
-          font-size: 13px;
-        }
+        color: var(--color-text-default);
+        font-size: 14px;
 
         &:hover:not(.is-disabled) {
+          color: var(--color-main-green);
+          border-color: var(--color-main-green);
           background-color: var(--color-bg-hover);
         }
 
         &.is-disabled {
           background-color: transparent;
+          border-color: var(--color-border-default);
           color: var(--color-text-historybtn_disabled);
+        }
+      }
+
+      // Large hit targets with clearly visible arrows (the old 18px ghost buttons were neither).
+      .history-btn-left,
+      .history-btn-right {
+        width: 40px;
+        padding: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .history-btn-center {
+        min-width: 64px;
+
+        .history-btn-caret {
+          margin-left: 4px;
+          font-size: 12px;
+          transition: transform 0.15s ease;
+        }
+
+        &.history-btn-active {
+          color: var(--color-main-green);
+          border-color: var(--color-main-green);
+
+          .history-btn-caret {
+            transform: rotate(180deg);
+          }
         }
       }
     }
@@ -852,16 +1061,43 @@ export default class MsgPublish extends Vue {
     top: 0;
   }
 }
-.el-select-dropdown.el-popper.header-select--popper {
-  max-width: 360px;
-  .el-select-dropdown__empty {
-    width: 80px;
+.el-popover.history-panel--popper {
+  // Width is set from the component (as wide as the message window); padding stays compact.
+  padding: 6px 4px;
+
+  .history-panel {
+    max-height: 340px;
+    overflow: auto;
   }
-  .header-option-content {
+
+  .history-panel-empty {
+    padding: 16px 0;
+    text-align: center;
+    font-size: 12px;
+    color: #8492a6;
+  }
+
+  .history-panel-item {
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+
+    &:hover {
+      background-color: var(--color-bg-hover);
+    }
+
+    &.active {
+      background-color: var(--color-bg-hover);
+      box-shadow: inset 2px 0 0 var(--color-main-green);
+    }
+  }
+
+  .history-panel-item-main {
     display: flex;
     align-items: center;
   }
-  .header-option-topic {
+
+  .history-panel-topic {
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -870,30 +1106,210 @@ export default class MsgPublish extends Vue {
     direction: rtl;
     unicode-bidi: plaintext;
     text-align: left;
+    font-weight: 600;
   }
-  .header-option-meta {
+
+  .history-panel-meta {
     flex-shrink: 0;
     margin-left: 8px;
     color: #8492a6;
     font-size: 12px;
   }
-  .header-option-delete {
+
+  .history-panel-item-sub {
+    margin-top: 3px;
+  }
+
+  .history-panel-payload {
+    display: block;
+    // Full payload, never truncated; whitespace is collapsed upstream, long lines wrap.
+    word-break: break-all;
+    color: #8e9fac;
+    font-size: 12px;
+    line-height: 1.5;
+
+    // Only a scroll guard for extreme payloads (e.g. pasted files), so one huge record
+    // cannot push the whole list away; nothing is cut off, it stays scrollable.
+    max-height: 220px;
+    overflow: auto;
+
+    &.empty {
+      color: #b4bcc6;
+    }
+  }
+
+  .history-panel-delete {
     flex-shrink: 0;
     margin-left: 8px;
-    margin-right: -10px;
     color: #8492a6;
     font-size: 14px;
     cursor: pointer;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s ease;
+
     &:hover {
       color: var(--color-minor-red);
     }
   }
-  .el-select-dropdown__item:hover .header-option-delete {
-    opacity: 1;
-    pointer-events: auto;
+}
+
+.el-popover.msg-preset--popper {
+  padding: 8px 0;
+
+  .msg-preset-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 14px 8px;
+    font-weight: 600;
+    .msg-preset-panel-count {
+      color: var(--color-text-default);
+      font-size: 12px;
+    }
+  }
+  .msg-preset-panel-empty {
+    padding: 8px 14px 12px;
+    color: var(--color-text-default);
+    font-size: 12px;
+  }
+  .msg-preset-panel-item {
+    display: flex;
+    align-items: center;
+    padding: 7px 14px;
+    cursor: pointer;
+    &:hover {
+      background: var(--color-bg-leftbar_item);
+    }
+    .msg-preset-panel-icon {
+      margin-right: 8px;
+      color: var(--color-main-green);
+    }
+    .msg-preset-panel-info {
+      flex: 1;
+      min-width: 0;
+      .msg-preset-panel-name {
+        font-size: 13px;
+      }
+      .msg-preset-panel-topic {
+        color: var(--color-text-default);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    }
+  }
+  .msg-preset-panel-footer {
+    border-top: 1px solid var(--color-border-rightbar);
+    margin-top: 6px;
+    padding: 8px 14px 4px;
+    text-align: right;
+    a {
+      font-size: 12px;
+      color: var(--color-main-green);
+    }
+  }
+}
+
+.el-popover.timed-panel--popper {
+  padding: 8px;
+
+  .timed-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 4px 6px;
+    border-bottom: 1px solid #ebeef5;
+    font-weight: 600;
+  }
+
+  .timed-panel-count {
+    color: #8492a6;
+    font-size: 12px;
+  }
+
+  .timed-panel-empty {
+    padding: 16px 0 8px;
+    text-align: center;
+    font-size: 12px;
+    color: #8492a6;
+  }
+
+  .timed-panel-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 4px;
+    border-radius: 4px;
+
+    &:hover {
+      background-color: var(--color-bg-hover);
+    }
+  }
+
+  .timed-panel-icon {
+    flex-shrink: 0;
+    margin-right: 6px;
+    color: var(--color-main-green);
+    font-size: 14px;
+  }
+
+  .timed-panel-item-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .timed-panel-item-interval {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-default);
+  }
+
+  .timed-panel-item-next {
+    margin-left: 4px;
+    font-size: 11px;
+    font-weight: 400;
+    color: #8492a6;
+  }
+
+  .timed-panel-item-topic {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    unicode-bidi: plaintext;
+    text-align: left;
+    font-size: 12px;
+    color: #8492a6;
+  }
+
+  .timed-panel-stop {
+    flex-shrink: 0;
+    margin-left: 8px;
+    color: #8492a6;
+    font-size: 14px;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--color-minor-red);
+    }
+  }
+
+  .timed-panel-footer {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #ebeef5;
+
+    .timed-panel-input {
+      flex: 1;
+    }
+  }
+
+  .timed-panel-hint {
+    margin-top: 6px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #a8b2bb;
   }
 }
 </style>

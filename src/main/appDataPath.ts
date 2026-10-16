@@ -99,6 +99,21 @@ export const checkMigrationNeeded = (
 }
 
 /**
+ * Whether the destructive "copy everything from the legacy directory" migration is allowed.
+ *
+ * The migration was written for the Windows %APPDATA% redirect issue. Anywhere else it would
+ * pick up the data directory of another installation (e.g. a second MQTTX build living next to
+ * this one) and move it away, so it is opt-in.
+ */
+export const isLegacyMigrationEnabled = (): boolean =>
+  process.platform === 'win32' || process.env.MQTTX_ENABLE_LEGACY_DATA_MIGRATION === '1'
+
+/**
+ * Absolute path of the *original* MQTTX data directory (used as the source of "import data").
+ */
+export const getOriginalAppDataPath = (): string => getLegacyDataPath('MQTTX')
+
+/**
  * Migrate data from legacy path to new path
  *
  * @param dbFileName - The database file name (default: 'MQTTX.db')
@@ -112,6 +127,22 @@ export const migrateDataIfNeeded = async (
   error?: string
 }> => {
   try {
+    // Safety guard: this legacy migration only exists for the Windows %APPDATA% redirect issue.
+    // On every other platform (and for every custom build whose user data path differs from the
+    // hard coded legacy path) it would silently hijack another installation's data directory,
+    // so it must be opted in explicitly.
+    if (!isLegacyMigrationEnabled()) {
+      const migrationCheck = checkMigrationNeeded(dbFileName)
+      if (migrationCheck.needed) {
+        console.log(
+          '[AppDataPath] Legacy data migration is disabled; skipping. ' +
+            'Set MQTTX_ENABLE_LEGACY_DATA_MIGRATION=1 to enable it, ' +
+            'or use the "import from MQTTX" action in Settings.',
+        )
+      }
+      return { success: true, migrated: false }
+    }
+
     const migrationCheck = checkMigrationNeeded(dbFileName)
 
     if (!migrationCheck.needed) {
@@ -155,16 +186,10 @@ export const migrateDataIfNeeded = async (
       }
 
       console.log('[AppDataPath] Data migration completed successfully')
-
-      // Optionally, rename old directory to indicate it's been migrated
-      const backupPath = `${legacyPath}_backup_${Date.now()}`
-      try {
-        await fs.rename(legacyPath, backupPath)
-        console.log(`[AppDataPath] Legacy directory renamed to: ${backupPath}`)
-      } catch (renameError) {
-        console.warn('[AppDataPath] Could not rename legacy directory:', renameError)
-        // Not critical, continue
-      }
+      console.log(
+        `[AppDataPath] Legacy directory kept untouched at: ${legacyPath} ` +
+          '(never renamed: another installed MQTTX may still be using it)',
+      )
 
       return { success: true, migrated: true }
     } catch (copyError) {

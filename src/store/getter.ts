@@ -27,6 +27,8 @@ const getters = {
   topicWhitespaceDetection: (state: State) => state.app.topicWhitespaceDetection,
   maxPayloadDisplaySize: (state: State) => state.app.maxPayloadDisplaySize,
   enableHardwareAcceleration: (state: State) => state.app.enableHardwareAcceleration,
+  saveHistoryMessage: (state: State) => state.app.saveHistoryMessage,
+  historyMaxCount: (state: State) => state.app.historyMaxCount,
 }
 
 export default getters

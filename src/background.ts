@@ -7,6 +7,7 @@ import { defaultWindowSize, restoreWindowState, saveWindowState } from './utils/
 import rebuildDatabase from './database/rebuildDatabase'
 import { createUpdateWindow, autoDownload } from './main/updateDownloader'
 import { migrateDataIfNeeded } from './main/appDataPath'
+import { requestImportFromOriginal, applyPendingImport, getImportPaths } from './main/importOfficialData'
 import { getCurrentLang } from './main/updateChecker'
 import getMenuTemplate from './main/getMenuTemplate'
 import newWindow from './main/newWindow'
@@ -20,6 +21,7 @@ import version from '@/version'
 import { initialize } from '@electron/remote/main'
 import { initMCPHandlers, cleanupMCPConnections } from './main/ai/mcp/MCPManager'
 import { getEnableHardwareAccelerationSetting } from '@/utils/settings'
+import { normalizeHistoryMaxCount } from '@/utils/data'
 
 /**
  * Fix the PATH environment variable in packaged Electron apps
@@ -177,6 +179,12 @@ function handleIpcMessages() {
       installCLI(win)
     }
   })
+  ipcMain.handle('getImportOriginalDataPaths', () => getImportPaths())
+  ipcMain.handle('importOriginalData', () => requestImportFromOriginal())
+  ipcMain.on('relaunchApp', () => {
+    app.relaunch()
+    app.exit()
+  })
   // Initialize MCP handlers
   initMCPHandlers()
 }
@@ -200,6 +208,13 @@ function beforeAppQuit() {
 }
 
 async function createWindow() {
+  // Apply a queued "import data from the original MQTTX" before the database is opened.
+  try {
+    applyPendingImport()
+  } catch (importError) {
+    console.warn('[Import] Applying the pending import failed, continuing with startup:', importError)
+  }
+
   // Check and migrate data if needed (fixes Windows %APPDATA% redirect issue)
   try {
     const migrationResult = await migrateDataIfNeeded('MQTTX.db')
@@ -240,6 +255,8 @@ async function createWindow() {
         ignoreQoS0Message: setting.ignoreQoS0Message,
         topicWhitespaceDetection: electronStore.get('settings.topicWhitespaceDetection', false),
         enableHardwareAcceleration: enableHardwareAccelerationBySetting,
+        saveHistoryMessage: setting.saveHistoryMessage ?? true,
+        historyMaxCount: normalizeHistoryMaxCount(setting.historyMaxCount),
       }
     }
   } catch (error) {
@@ -253,6 +270,8 @@ async function createWindow() {
       syncOsTheme: false,
       topicWhitespaceDetection: electronStore.get('settings.topicWhitespaceDetection', false),
       enableHardwareAcceleration: enableHardwareAccelerationBySetting,
+      saveHistoryMessage: true,
+      historyMaxCount: normalizeHistoryMaxCount(undefined),
     }
   }
   // Create the browser window.
@@ -263,6 +282,9 @@ async function createWindow() {
       webSecurity: false,
       nodeIntegration: true,
       contextIsolation: false,
+      // Timed messages must keep firing at their real interval while the window is
+      // hidden/occluded — Chromium's timer throttling would delay or batch them.
+      backgroundThrottling: false,
     },
     titleBarStyle: isMac ? 'hidden' : 'default',
     backgroundColor: theme === 'dark' ? '#232323' : theme === 'night' ? '#212328' : '#ffffff',

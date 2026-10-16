@@ -52,4 +52,12 @@ export default class SettingEntity {
 
   @Column({ type: 'boolean', default: false })
   ignoreQoS0Message!: boolean
+
+  // Whether the message (payload) is stored together with its topic in the local publish history.
+  @Column({ type: 'boolean', default: true })
+  saveHistoryMessage!: boolean
+
+  // How many local publish history records (topic + message pairs) are kept.
+  @Column({ type: 'integer', default: 20 })
+  historyMaxCount!: number
 }

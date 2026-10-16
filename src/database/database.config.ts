@@ -53,6 +53,8 @@ import { topicNodeTables1729246737362 } from './migration/1729246737362-topicNod
 import { reasonModelSupport1742835643809 } from './migration/1742835643809-reasonModelSupport'
 import { dashboardAndWidgetModels1759069904761 } from './migration/1759069904761-dashboardAndWidgetModels'
 import { koLang1783562195464 } from './migration/1783562195464-koLang'
+import { settingHistoryMessageOptions1792001000000 } from './migration/1792001000000-settingHistoryMessageOptions'
+import { historyMessageWithPayload1792001000001 } from './migration/1792001000001-historyMessageWithPayload'
 
 // Get store path; fall back when running in CLI (no Electron app)
 let STORE_PATH: string
@@ -116,6 +118,8 @@ const ORMConfig = {
     reasonModelSupport1742835643809,
     dashboardAndWidgetModels1759069904761,
     koLang1783562195464,
+    settingHistoryMessageOptions1792001000000,
+    historyMessageWithPayload1792001000001,
   ],
   migrationsTableName: 'temp_migration_table',
   entities: [

@@ -8,14 +8,14 @@
     <section v-if="!isNewWindow" class="leftbar-center">
       <div v-for="item in menuItems" :key="item.path" :class="['leftbar-item', { active: isActive(item) }]">
         <a href="javascript:;" @click="routeToPage(item.path, item.query)">
-          <i :class="['iconfont', item.icon]"></i>
+          <i :class="item.icon"></i>
         </a>
       </div>
     </section>
     <section v-if="!isNewWindow" class="leftbar-bottom">
       <div v-for="item in bottomItems" :key="item.path" :class="['leftbar-item', { active: isActive(item) }]">
         <a href="javascript:;" @click="routeToPage(item.path)">
-          <i :class="['iconfont', item.icon]"></i>
+          <i :class="item.icon"></i>
         </a>
       </div>
     </section>
@@ -39,17 +39,18 @@ export default class Leftbar extends Vue {
   @Getter('currentLang') private getterLang!: Language
 
   private menuItems: MenuItem[] = [
-    { path: '/recent_connections', icon: 'icon-connections', name: 'Connections' },
-    { path: '/recent_connections/0', icon: 'icon-new', query: { oper: 'create' }, name: 'ConnectionDetails' },
-    { path: '/viewer', icon: 'icon-tree-view' },
-    { path: '/script', icon: 'icon-script' },
-    { path: '/log', icon: 'icon-log' },
+    { path: '/recent_connections', icon: 'iconfont icon-connections', name: 'Connections' },
+    { path: '/recent_connections/0', icon: 'iconfont icon-new', query: { oper: 'create' }, name: 'ConnectionDetails' },
+    { path: '/viewer', icon: 'iconfont icon-tree-view' },
+    { path: '/configs', icon: 'el-icon-collection' },
+    { path: '/script', icon: 'iconfont icon-script' },
+    { path: '/log', icon: 'iconfont icon-log' },
   ]
 
   private bottomItems: MenuItem[] = [
-    { path: '/settings', icon: 'icon-settings' },
-    { path: '/help', icon: 'icon-mqtt' },
-    { path: '/about', icon: 'icon-about' },
+    { path: '/settings', icon: 'iconfont icon-settings' },
+    { path: '/help', icon: 'iconfont icon-mqtt' },
+    { path: '/about', icon: 'iconfont icon-about' },
   ]
 
   get siteLink(): string {
@@ -149,14 +150,14 @@ export default class Leftbar extends Vue {
       &::before {
         transform: translateY(-50%) scaleY(1);
       }
-      .iconfont {
+      i {
         color: var(--color-main-green);
       }
     }
     a:hover {
       background: var(--color-bg-leftbar_item);
       transform: scale(1.05);
-      .iconfont {
+      i {
         color: var(--color-main-white);
       }
     }
@@ -181,14 +182,14 @@ export default class Leftbar extends Vue {
       }
     }
   }
-  .iconfont {
+  .leftbar-item i {
     color: var(--color-text-leftbar_icon);
     transition: color 0.2s ease;
   }
-  .leftbar-center .iconfont {
+  .leftbar-center i {
     font-size: 22px;
   }
-  .leftbar-bottom .iconfont {
+  .leftbar-bottom i {
     font-size: 18px;
   }
 }

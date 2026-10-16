@@ -118,6 +118,8 @@ declare global {
     topicWhitespaceDetection: boolean
     maxPayloadDisplaySize: number
     enableHardwareAcceleration: boolean
+    saveHistoryMessage: boolean
+    historyMaxCount: number
   }
 
   interface State {
@@ -206,7 +208,52 @@ declare global {
     retain: boolean
     topic: string
     qos: QoS
+    payload?: string | null
+    payloadType?: string | null
     createAt?: string
+  }
+
+  /** A currently running timed message (owned by the global timed message manager). */
+  interface TimedMessageRuntime {
+    id: number
+    interval: number
+    topic: string
+    /** epoch ms of the next scheduled send, shown in the panel */
+    nextSendAt: number
+  }
+
+  /** Reusable MQTT server (dev/test/...) profile, selectable when creating a connection. */
+  interface ServerProfileModel {
+    id: string
+    alias: string
+    host: string
+    port: number
+    protocol: 'mqtt' | 'mqtts' | 'ws' | 'wss'
+    path?: string
+  }
+
+  /** Reusable MQTT client identity (clientId/username/password), selectable when creating a connection. */
+  interface ClientProfileModel {
+    id: string
+    alias: string
+    clientId: string
+    username?: string
+    password?: string
+    /** MQTT protocol version, undefined = keep whatever the form already has (legacy profiles) */
+    mqttVersion?: '3.1' | '3.1.1' | '5.0'
+    connectTimeout?: number
+    keepalive?: number
+    reconnect?: boolean
+    reconnectPeriod?: number
+    clean?: boolean
+  }
+
+  /** Reusable topic + message preset, selectable directly in the publish window. */
+  interface MessagePresetModel {
+    id: string
+    name: string
+    topic: string
+    payload: string
   }
 
   interface HistoryMessagePayloadModel {
@@ -398,6 +445,8 @@ declare global {
     currentTheme?: Theme
     maxReconnectTimes?: number
     autoResub?: boolean
+    saveHistoryMessage?: boolean
+    historyMaxCount?: number
   }
 
   type SchemaType = 'protobuf' | 'avro'

@@ -44,6 +44,52 @@
           <h3>{{ $t('settings.general') }}</h3>
         </div>
         <el-card shadow="never" class="info-body item-card">
+          <el-row v-if="oper === 'create'" :gutter="10">
+            <el-col :span="11">
+              <el-form-item label-width="93px" :label="$t('configs.profiles')">
+                <el-select
+                  size="mini"
+                  v-model="serverProfileId"
+                  clearable
+                  :placeholder="$t('configs.selectServerProfile')"
+                  @change="applyServerProfile"
+                >
+                  <el-option v-for="p in serverProfiles" :key="p.id" :label="p.alias" :value="p.id">
+                    <span style="float: left">{{ p.alias }}</span>
+                    <span style="float: right; color: #8492a6; font-size: 12px; margin-left: 12px">
+                      {{ p.protocol }}://{{ p.host }}:{{ p.port }}
+                    </span>
+                  </el-option>
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="11">
+              <el-tooltip
+                placement="top"
+                :effect="theme !== 'light' ? 'light' : 'dark'"
+                :open-delay="500"
+                :offset="80"
+                :content="$t('configs.applyTips')"
+              >
+                <el-form-item label-width="0">
+                  <el-select
+                    size="mini"
+                    v-model="clientProfileId"
+                    clearable
+                    :placeholder="$t('configs.selectClientProfile')"
+                    @change="applyClientProfile"
+                  >
+                    <el-option v-for="p in clientProfiles" :key="p.id" :label="p.alias" :value="p.id">
+                      <span style="float: left">{{ p.alias }}</span>
+                      <span style="float: right; color: #8492a6; font-size: 12px; margin-left: 12px">
+                        {{ p.clientId }}
+                      </span>
+                    </el-option>
+                  </el-select>
+                </el-form-item>
+              </el-tooltip>
+            </el-col>
+          </el-row>
           <el-row :gutter="10">
             <el-col :span="15">
               <el-form-item label-width="93px" :label="$t('connections.name')" prop="name">
@@ -641,6 +687,7 @@ import useServices from '@/database/useServices'
 import { emptyToNull } from '@/utils/handleString'
 import { getClientId } from '@/utils/idGenerator'
 import { getMQTTProtocol, getDefaultRecord } from '@/utils/mqttUtils'
+import { getClientProfiles, getServerProfiles } from '@/utils/configProfiles'
 import Editor from '@/components/Editor.vue'
 import KeyValueEditor from '@/components/KeyValueEditor.vue'
 import { LeftValues } from '@/utils/styles'
@@ -676,6 +723,14 @@ export default class ConnectionForm extends Vue {
   private defaultRecord: ConnectionModel = getDefaultRecord()
 
   private record: ConnectionModel = _.cloneDeep(this.defaultRecord)
+
+  private serverProfiles: ServerProfileModel[] = []
+
+  private clientProfiles: ClientProfileModel[] = []
+
+  private serverProfileId: string | null = null
+
+  private clientProfileId: string | null = null
 
   @Watch('oper')
   private handleCreateNewConnection(val: string) {
@@ -983,6 +1038,65 @@ export default class ConnectionForm extends Vue {
     await this.loadSuggestConnections()
     this.advancedVisible = this.getterAdvancedVisible
     this.willMessageVisible = this.getterWillMessageVisible
+    // Reusable profiles (dev / test servers, client identities) for quick form filling.
+    if (this.oper === 'create') {
+      this.serverProfiles = getServerProfiles()
+      this.clientProfiles = getClientProfiles()
+    }
+  }
+
+  /**
+   * Fills the form from a server profile. Everything stays editable afterwards — the profile
+   * is just a starting point for the usual dev / test switching.
+   */
+  private applyServerProfile(id: string | null) {
+    if (!id) {
+      return
+    }
+    const profile = getServerProfiles().find((item) => item.id === id)
+    if (!profile) {
+      return
+    }
+    this.record.protocol = profile.protocol
+    this.record.host = profile.host
+    this.record.port = profile.port
+    this.record.ssl = ['mqtts', 'wss'].includes(profile.protocol)
+    if (['ws', 'wss'].includes(profile.protocol)) {
+      this.record.path = profile.path || '/mqtt'
+    }
+  }
+
+  /** Fills clientId / username / password and client behaviour from a client profile, still editable afterwards. */
+  private applyClientProfile(id: string | null) {
+    if (!id) {
+      return
+    }
+    const profile = getClientProfiles().find((item) => item.id === id)
+    if (!profile) {
+      return
+    }
+    this.record.clientId = profile.clientId
+    this.record.username = profile.username || ''
+    this.record.password = profile.password || ''
+    // Legacy profiles saved before these fields existed stay undefined — keep the form's values then.
+    if (profile.mqttVersion) {
+      this.record.mqttVersion = profile.mqttVersion
+    }
+    if (profile.connectTimeout !== undefined) {
+      this.record.connectTimeout = profile.connectTimeout
+    }
+    if (profile.keepalive !== undefined) {
+      this.record.keepalive = profile.keepalive
+    }
+    if (profile.reconnect !== undefined) {
+      this.record.reconnect = profile.reconnect
+    }
+    if (profile.reconnectPeriod !== undefined) {
+      this.record.reconnectPeriod = profile.reconnectPeriod
+    }
+    if (profile.clean !== undefined) {
+      this.record.clean = profile.clean
+    }
   }
 }
 </script>
