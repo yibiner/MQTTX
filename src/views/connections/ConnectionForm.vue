@@ -1057,12 +1057,17 @@ export default class ConnectionForm extends Vue {
     if (!profile) {
       return
     }
-    this.record.protocol = profile.protocol
     this.record.host = profile.host
     this.record.port = profile.port
-    this.record.ssl = ['mqtts', 'wss'].includes(profile.protocol)
+    // Go through handleProtocol/handleSSL instead of assigning protocol/ssl directly: they also
+    // maintain `certType`, which the manual protocol switch sets (leaving it untouched opened the
+    // SSL certificate-type radio with nothing selected).
+    this.handleProtocol(profile.protocol)
     if (['ws', 'wss'].includes(profile.protocol)) {
       this.record.path = profile.path || '/mqtt'
+    } else {
+      // `path` keeps its value in the record even though the field is hidden for mqtt protocols.
+      this.record.path = ''
     }
   }
 

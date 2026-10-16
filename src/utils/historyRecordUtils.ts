@@ -13,21 +13,9 @@ export const hasMessageHeaderID = async (
   matchMessage = true,
 ): Promise<string | null> => {
   const { historyMessageHeaderService } = useServices()
-  const headers = await historyMessageHeaderService.getAll()
-  if (headers) {
-    const res = headers.find((el: HistoryMessageHeaderModel) => {
-      const sameHeader = data.qos === el.qos && data.topic === el.topic && data.retain === el.retain
-      if (!sameHeader) {
-        return false
-      }
-      if (!matchMessage) {
-        return true
-      }
-      return (data.payload ?? null) === (el.payload ?? null) && (data.payloadType ?? null) === (el.payloadType ?? null)
-    })
-    return res?.id ?? null
-  }
-  return null
+  // The lookup runs in SQL: loading the whole history (payloads included) on every publish was
+  // the hot path for timed messages.
+  return await historyMessageHeaderService.findMatchingId(data, matchMessage)
 }
 
 export default {}

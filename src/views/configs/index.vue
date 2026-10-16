@@ -357,6 +357,19 @@ export default class Configs extends Vue {
       this.profileForm = defaultClientProfileForm()
     }
     this.dialogVisible = true
+    this.clearProfileValidation()
+  }
+
+  /**
+   * `MyDialog` keeps its body mounted (no destroy-on-close), and `el-form-item` keeps its
+   * validation state, so a "field is required" error from a previous open would still be
+   * displayed under a now valid field. Clear it whenever the dialog opens.
+   */
+  private clearProfileValidation() {
+    this.$nextTick(() => {
+      const form = this.$refs.profileForm as { clearValidate?: () => void } | undefined
+      form?.clearValidate?.()
+    })
   }
 
   private handleEdit(row: ServerProfileModel | ClientProfileModel | MessagePresetModel) {
@@ -399,6 +412,7 @@ export default class Configs extends Vue {
       }
     }
     this.dialogVisible = true
+    this.clearProfileValidation()
   }
 
   private handleDelete(row: ServerProfileModel | ClientProfileModel | MessagePresetModel) {

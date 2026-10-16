@@ -220,6 +220,12 @@ declare global {
     topic: string
     /** epoch ms of the next scheduled send, shown in the panel */
     nextSendAt: number
+    /**
+     * True while the task is paused because the connection page it needs is not open. Only tasks
+     * that require the view pipeline (user script, data schema, MQTT 5 properties, or a payload
+     * type the fallback cannot encode) are ever paused.
+     */
+    degraded?: boolean
   }
 
   /** Reusable MQTT server (dev/test/...) profile, selectable when creating a connection. */

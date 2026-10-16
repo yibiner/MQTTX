@@ -372,6 +372,7 @@ import {
   startTimedMessage,
   stopTimedMessage,
   stopAllTimedMessages,
+  timedMessagesNeedViewPipeline,
   unregisterTimedMessagePublisher,
 } from '@/utils/timedMessageManager'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
@@ -749,12 +750,27 @@ export default class ConnectionsDetail extends Vue {
     if (!interval || interval < 1) {
       return
     }
-    const result = startTimedMessage(this.curConnectionId, interval, message, type)
+    const result = startTimedMessage(this.curConnectionId, interval, message, type, {
+      requiresViewPipeline: this.timedPublishNeedsViewPipeline,
+    })
     if (result === 'limit') {
       this.$message.warning(this.$tc('connections.timedMessageLimit'))
       return
     }
     this.notifyTimedMessageSuccess(interval)
+  }
+
+  /**
+   * Whether publishing for this connection only produces the payload the user sees when the
+   * connection view runs it: a publish script or a data schema is applied by the view, so the
+   * manager must pause such tasks instead of publishing the raw template while the view is gone.
+   */
+  private get timedPublishNeedsViewPipeline(): boolean {
+    const option = this.scriptOption
+    if (!option || !['all', 'publish'].includes(option.apply as string)) {
+      return false
+    }
+    return Boolean(option.function || option.schema)
   }
 
   // Set messages list height
@@ -877,6 +893,12 @@ export default class ConnectionsDetail extends Vue {
    * shows another connection, unregistering lets the manager publish via the store client.
    */
   private syncTimedMessagesBinding(id: string) {
+    // The detail view is created before the router resolved a connection id (and it stays mounted
+    // on the bare connection list route), so a missing id must not become a registry key:
+    // `publishers.set(undefined, ...)` could never be released again.
+    if (!id) {
+      return
+    }
     if (this.timedPublisherId === id) {
       return
     }
@@ -884,9 +906,7 @@ export default class ConnectionsDetail extends Vue {
       this.unsubTimedMessages()
       this.unsubTimedMessages = null
     }
-    if (this.timedPublisherId) {
-      unregisterTimedMessagePublisher(this.timedPublisherId)
-    }
+    this.unbindTimedMessagePublisher()
     this.timedPublisherId = id
     this.timedMessages = listTimedMessages(id)
     this.unsubTimedMessages = onChangeTimedMessages(id, (list) => {
@@ -895,6 +915,33 @@ export default class ConnectionsDetail extends Vue {
     registerTimedMessagePublisher(id, async (message, type) => {
       await this.publishMessage(message, type)
     })
+  }
+
+  /**
+   * Releases the publisher registration of the connection this view was publishing for.
+   *
+   * The id is compared against `null` instead of being tested for truthiness: this view is also
+   * created for the connection *list* route, where `curConnectionId` is undefined, and a falsy
+   * check left that registration (and the destroyed view behind it) in the manager's registry.
+   */
+  private unbindTimedMessagePublisher() {
+    const publishedId = this.timedPublisherId
+    this.timedPublisherId = null
+    if (publishedId === null || publishedId === undefined) {
+      return
+    }
+    this.notifyTimedMessagesPaused(publishedId)
+    unregisterTimedMessagePublisher(publishedId)
+  }
+
+  /**
+   * Tells the user when a running task cannot continue without this page (publish script or data
+   * schema): the manager pauses it rather than publishing an untransformed payload.
+   */
+  private notifyTimedMessagesPaused(id: string) {
+    if (timedMessagesNeedViewPipeline(id)) {
+      this.$message.warning(this.$t('connections.timedMessagePaused') as string)
+    }
   }
 
   // Collapse top client info
@@ -1681,7 +1728,7 @@ export default class ConnectionsDetail extends Vue {
   private async sendMessage(
     message: MessageModel,
     type: PayloadType,
-    afterpublishMessageCallback?: (isNewPayload: boolean) => void,
+    afterpublishMessageCallback?: (isNewPayload: boolean, recordId?: string | null) => void,
     afterCallback?: () => void,
   ): Promise<void> {
     await this.publishMessage({ ...message }, type, afterpublishMessageCallback)
@@ -1715,14 +1762,20 @@ export default class ConnectionsDetail extends Vue {
 
     const recordIdToUpdate = await hasMessageHeaderID(record, saveHistoryMessage)
 
-    recordIdToUpdate
-      ? await historyMessageHeaderService.updateCreateAt(recordIdToUpdate)
-      : await historyMessageHeaderService.create(record)
+    let recordId = recordIdToUpdate
+    if (recordIdToUpdate) {
+      await historyMessageHeaderService.updateCreateAt(recordIdToUpdate)
+    } else {
+      const created = await historyMessageHeaderService.create(record)
+      recordId = created?.id ?? null
+    }
 
     // Never keep more records than the configured limit.
     await historyMessageHeaderService.trim(this.historyMaxCount)
 
-    return { isNewPayload: !recordIdToUpdate, isNewHeader: !recordIdToUpdate }
+    // `recordId` lets the publish panel point at the record it just wrote instead of assuming
+    // that the newest record is the last row of the (reason-ordered) history list.
+    return { isNewPayload: !recordIdToUpdate, isNewHeader: !recordIdToUpdate, recordId }
   }
 
   /**
@@ -1753,7 +1806,7 @@ export default class ConnectionsDetail extends Vue {
   private async publishMessage(
     message: MessageModel,
     type: PayloadType,
-    afterSendCallback?: (isNewPayload: boolean) => void,
+    afterSendCallback?: (isNewPayload: boolean, recordId?: string | null) => void,
   ): Promise<void> {
     const { topic, qos, payload, retain, properties } = message
 
@@ -1767,7 +1820,7 @@ export default class ConnectionsDetail extends Vue {
 
     const props = properties ? this.processProperties(properties) : undefined
 
-    const { isNewPayload } = await this.insertHistory(
+    const { isNewPayload, recordId } = await this.insertHistory(
       { payload, payloadType: type } as HistoryMessagePayloadModel,
       { qos, topic, retain } as HistoryMessageHeaderModel,
     )
@@ -1819,7 +1872,7 @@ export default class ConnectionsDetail extends Vue {
       },
     )
 
-    afterSendCallback?.(isNewPayload)
+    afterSendCallback?.(isNewPayload, recordId)
   }
 
   /**
@@ -2284,8 +2337,9 @@ export default class ConnectionsDetail extends Vue {
     ipcRenderer.removeAllListeners('searchContent')
     this.removeClinetsMessageListener()
     // Timed messages keep running across connection switches; only stop routing their ticks
-    // through this (now destroyed) view. The global manager publishes via the store client.
-    unregisterTimedMessagePublisher(this.timedPublisherId ?? this.curConnectionId)
+    // through this (now destroyed) view. Tasks that need this view (publish script / data
+    // schema) are paused by the manager and the user is told about it.
+    this.unbindTimedMessagePublisher()
     if (this.unsubTimedMessages) {
       this.unsubTimedMessages()
       this.unsubTimedMessages = null

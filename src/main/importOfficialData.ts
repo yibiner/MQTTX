@@ -16,6 +16,15 @@ const IMPORTABLE_FILES = ['MQTTX.db', 'config.json']
 
 const getImportMarkerPath = (): string => path.join(getUnifiedAppDataPath('MQTTX'), IMPORT_MARKER_FILE)
 
+/** True when both paths point at the very same file (the target may not exist yet). */
+const isSameFile = (source: string, target: string): boolean => {
+  try {
+    return fs.realpathSync(source) === fs.realpathSync(target)
+  } catch (error) {
+    return path.resolve(source) === path.resolve(target)
+  }
+}
+
 export interface ImportRequestResult {
   ok: boolean
   /** reason code for the renderer, so it can translate the message itself */
@@ -82,6 +91,12 @@ export const applyPendingImport = (): void => {
         continue
       }
       const target = path.join(targetPath, fileName)
+      if (isSameFile(source, target)) {
+        // Dev builds share the data directory with the "original" installation: there is nothing
+        // to import (and copying a file onto itself only produced a useless backup).
+        console.log(`[Import] Skipped ${fileName}: source and target are the same file`)
+        continue
+      }
       if (fs.pathExistsSync(target)) {
         fs.copyFileSync(target, `${target}.bak-${timestamp}`)
       }
@@ -90,8 +105,9 @@ export const applyPendingImport = (): void => {
     }
 
     // A database copied from a running MQTTX may leave sidecar files behind; they belong to the
-    // previous database and must not be replayed on top of the imported one.
-    for (const suffix of ['-wal', '-shm']) {
+    // previous database and must not be replayed on top of the imported one. A stale `-journal`
+    // can even be rolled back into the freshly imported file.
+    for (const suffix of ['-wal', '-shm', '-journal']) {
       const sidecar = path.join(targetPath, `MQTTX.db${suffix}`)
       if (fs.pathExistsSync(sidecar)) {
         fs.removeSync(sidecar)

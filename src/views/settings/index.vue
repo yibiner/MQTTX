@@ -151,10 +151,11 @@
         </el-col>
         <el-col :span="4">
           <el-input-number
+            v-model="historyMaxCountValue"
             size="mini"
-            :value="historyMaxCount"
             :min="minHistoryMaxCount"
             :max="maxHistoryMaxCount"
+            :precision="0"
             @change="handleHistoryMaxCountChange"
           >
           </el-input-number>
@@ -606,7 +607,7 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator'
+import { Component, Vue, Watch } from 'vue-property-decorator'
 import { Getter, Action } from 'vuex-class'
 import { ipcRenderer } from 'electron'
 import { app as remoteApp, nativeTheme } from '@electron/remote'
@@ -624,6 +625,7 @@ import {
   normalizeMaxPayloadDisplaySize,
   MAX_HISTORY_MAX_COUNT,
   MIN_HISTORY_MAX_COUNT,
+  DEFAULT_HISTORY_MAX_COUNT,
   normalizeHistoryMaxCount,
 } from '@/utils/data'
 import { formatBytes } from '@/utils/formatter'
@@ -690,6 +692,16 @@ export default class Settings extends Vue {
 
   private minHistoryMaxCount = MIN_HISTORY_MAX_COUNT
   private maxHistoryMaxCount = MAX_HISTORY_MAX_COUNT
+
+  /**
+   * Local mirror of the stored history limit.
+   *
+   * `el-input-number` keeps its own internal value: when the field is cleared it emits
+   * `change(undefined)` and drops its internal value, and because the bound property does not
+   * change, its value watcher never runs again -- the field would stay blank while the setting
+   * still holds the previous number. Writing the resolved value back fixes that.
+   */
+  private historyMaxCountValue = DEFAULT_HISTORY_MAX_COUNT
 
   private showAIModelsSelect = false
 
@@ -888,17 +900,62 @@ export default class Settings extends Vue {
       .catch(() => undefined)
   }
 
-  private handleHistoryMaxCountChange(value: number) {
-    const normalizedValue = normalizeHistoryMaxCount(value)
-    if (normalizedValue !== value) {
-      this.$message.warning(
-        this.$t('settings.historyMaxCountRange', {
-          min: MIN_HISTORY_MAX_COUNT,
-          max: MAX_HISTORY_MAX_COUNT,
-        }) as string,
-      )
+  @Watch('historyMaxCount', { immediate: true })
+  private syncHistoryMaxCountValue(value: number) {
+    this.historyMaxCountValue = normalizeHistoryMaxCount(value)
+  }
+
+  private applyHistoryMaxCount(value: number) {
+    this.historyMaxCountValue = value
+    this.actionSetHistoryMaxCount({ historyMaxCount: value })
+  }
+
+  private handleHistoryMaxCountChange(value: number | undefined) {
+    const rangeMessage = this.$t('settings.historyMaxCountRange', {
+      min: MIN_HISTORY_MAX_COUNT,
+      max: MAX_HISTORY_MAX_COUNT,
+    }) as string
+
+    // The input was cleared: keep the stored value instead of silently falling back to the
+    // default (which used to delete a large part of the history without any confirmation).
+    if (value === undefined || value === null || Number.isNaN(Number(value))) {
+      this.$message.warning(rangeMessage)
+      this.historyMaxCountValue = normalizeHistoryMaxCount(this.historyMaxCount)
+      return
     }
-    this.actionSetHistoryMaxCount({ historyMaxCount: normalizedValue })
+
+    const numericValue = Number(value)
+    if (numericValue < MIN_HISTORY_MAX_COUNT || numericValue > MAX_HISTORY_MAX_COUNT) {
+      this.$message.warning(rangeMessage)
+    }
+
+    const normalizedValue = normalizeHistoryMaxCount(numericValue)
+    this.historyMaxCountValue = normalizedValue
+    if (normalizedValue === this.historyMaxCount) {
+      return
+    }
+
+    if (normalizedValue < this.historyMaxCount) {
+      // Lowering the limit immediately deletes the oldest records, so ask first.
+      this.$confirm(
+        this.$t('settings.historyMaxCountDecreaseConfirm', {
+          current: this.historyMaxCount,
+          count: normalizedValue,
+        }) as string,
+        {
+          confirmButtonText: this.$t('common.confirm') as string,
+          cancelButtonText: this.$t('common.cancel') as string,
+          type: 'warning',
+        },
+      )
+        .then(() => this.applyHistoryMaxCount(normalizedValue))
+        .catch(() => {
+          this.historyMaxCountValue = normalizeHistoryMaxCount(this.historyMaxCount)
+        })
+      return
+    }
+
+    this.applyHistoryMaxCount(normalizedValue)
   }
 
   /**

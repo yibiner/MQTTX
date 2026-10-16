@@ -18,8 +18,10 @@ import { DEFAULT_HISTORY_MAX_COUNT } from '@/utils/data'
  * - The mounted connection view registers itself as the publisher, so every tick runs through
  *   the full publish pipeline (history, user script, schema conversion, live message list).
  * - When the view is not mounted, ticks fall back to publishing through the global client:
- *   payload variables are still refilled and history/messages are still saved, but the user
- *   script and schema conversion are skipped (they live in the view).
+ *   payload variables are still refilled and history/messages are still saved. That fallback can
+ *   reproduce plain payload types, but not a user script, a data schema, MQTT 5 properties or
+ *   CBOR/MsgPack encoding -- tasks that need those are paused (skipped) until their connection
+ *   page is open again, instead of publishing a payload that differs from what the panel shows.
  *
  * A timed message is only stopped when the user stops it (panel / topbar), when the connection
  * is explicitly disconnected, or when the app closes.
@@ -28,11 +30,24 @@ export type TimedMessagePublishDelegate = (message: MessageModel, type: PayloadT
 
 export type StartTimedMessageResult = 'ok' | 'limit'
 
+export interface StartTimedMessageOptions {
+  /**
+   * Set by the caller when the connection has a publish script or a data schema. Such a task can
+   * only be published through the connection view: rather than sending the raw template through
+   * the fallback (which silently changed what reached the broker), the task is paused while the
+   * view is closed and resumes when the user comes back.
+   */
+  requiresViewPipeline?: boolean
+}
+
 interface TimedMessageEntry extends TimedMessageRuntime {
   timeId: ReturnType<typeof setInterval>
   connectionId: string
   message: MessageModel
   type: PayloadType
+  requiresViewPipeline: boolean
+  /** Whether the user has already been told that this task is paused. */
+  degradedNotified: boolean
 }
 
 const MAX_TIMED_MESSAGES_PER_CONNECTION = 10
@@ -44,8 +59,34 @@ const listeners = new Map<string, Set<(list: TimedMessageRuntime[]) => void>>()
 // Lazy: log4js is configured by the log plugin at app startup.
 const getLog = () => log4js.getLogger()
 
-const getActiveClient = (connectionId: string): any | undefined =>
-  (store.state as any).app?.activeConnection?.[connectionId]?.client
+/**
+ * Payload types the fallback below cannot encode. Sending them as text would put a different
+ * payload on the wire, so ticks wait for the view instead.
+ */
+const VIEW_ONLY_PAYLOAD_TYPES: PayloadType[] = ['CBOR', 'MsgPack']
+
+/** True when this task cannot be reproduced without the connection view. */
+function needsViewPipeline(entry: TimedMessageEntry): boolean {
+  if (entry.requiresViewPipeline) {
+    return true
+  }
+  if (entry.message.properties && Object.keys(entry.message.properties).length > 0) {
+    return true
+  }
+  return VIEW_ONLY_PAYLOAD_TYPES.includes(entry.type)
+}
+
+function isDegraded(entry: TimedMessageEntry): boolean {
+  return !publishers.has(entry.connectionId) && needsViewPipeline(entry)
+}
+
+/**
+ * Whether unregistering the view publisher of this connection would pause one of its tasks.
+ * Used by the view to warn the user at the moment it leaves.
+ */
+export function timedMessagesNeedViewPipeline(connectionId: string): boolean {
+  return entries.some((entry) => entry.connectionId === connectionId && needsViewPipeline(entry))
+}
 
 function notify(connectionId: string): void {
   const set = listeners.get(connectionId)
@@ -64,6 +105,7 @@ export function listTimedMessages(connectionId: string): TimedMessageRuntime[] {
       interval: entry.interval,
       topic: entry.topic,
       nextSendAt: entry.nextSendAt,
+      degraded: isDegraded(entry),
     }))
 }
 
@@ -81,10 +123,13 @@ export function onChangeTimedMessages(connectionId: string, cb: (list: TimedMess
 
 export function registerTimedMessagePublisher(connectionId: string, delegate: TimedMessagePublishDelegate): void {
   publishers.set(connectionId, delegate)
+  // Tasks that were paused while this page was closed can run in full again.
+  notify(connectionId)
 }
 
 export function unregisterTimedMessagePublisher(connectionId: string): void {
   publishers.delete(connectionId)
+  notify(connectionId)
 }
 
 export function startTimedMessage(
@@ -92,6 +137,7 @@ export function startTimedMessage(
   interval: number,
   message: MessageModel,
   type: PayloadType,
+  options: StartTimedMessageOptions = {},
 ): StartTimedMessageResult {
   if (!interval || interval < 1) {
     return 'ok'
@@ -109,11 +155,14 @@ export function startTimedMessage(
     connectionId,
     message: { ...message },
     type,
+    requiresViewPipeline: Boolean(options.requiresViewPipeline),
+    degradedNotified: false,
     timeId: undefined as any,
   }
   entry.timeId = setInterval(() => fireTimedMessage(entry), interval * 1000)
   entries.push(entry)
   notify(connectionId)
+  syncBackgroundThrottling()
   getLog().info(`Timed message for connection ${connectionId} started with a frequency of ${interval} seconds.`)
   return 'ok'
 }
@@ -126,6 +175,7 @@ export function stopTimedMessage(connectionId: string, id: number): void {
   clearInterval(entries[index].timeId)
   entries.splice(index, 1)
   notify(connectionId)
+  syncBackgroundThrottling()
 }
 
 /** Stops every timed message of one connection; returns how many were running. */
@@ -139,8 +189,27 @@ export function stopAllTimedMessages(connectionId: string): number {
   }
   if (stopped.length) {
     notify(connectionId)
+    syncBackgroundThrottling()
   }
   return stopped.length
+}
+
+/**
+ * Background throttling is only disabled while at least one timed message runs: Chromium
+ * otherwise throttles hidden windows and the interval drifts. Keeping it off permanently made
+ * the renderer (Monaco, message list) burn CPU in the background for no reason.
+ */
+function syncBackgroundThrottling(): void {
+  if (typeof process === 'undefined' || process.type !== 'renderer') {
+    return
+  }
+  try {
+    // Required lazily so that this module stays importable outside a renderer (unit tests).
+    const { ipcRenderer } = require('electron')
+    ipcRenderer?.send?.('setBackgroundThrottling', entries.length > 0)
+  } catch (error) {
+    getLog().warn(`Could not update background throttling: ${(error as Error).toString()}`)
+  }
 }
 
 function fireTimedMessage(entry: TimedMessageEntry): void {
@@ -152,6 +221,18 @@ function fireTimedMessage(entry: TimedMessageEntry): void {
     publisher(message, entry.type).catch((error) =>
       getLog().error(`Timed message publish failed: ${(error as Error).toString()}`),
     )
+    return
+  }
+  if (needsViewPipeline(entry)) {
+    // Never publish a degraded payload: the user script / schema / properties / payload encoding
+    // would be missing, so what reaches the broker would differ from what the panel shows.
+    if (!entry.degradedNotified) {
+      entry.degradedNotified = true
+      getLog().warn(
+        `Timed message for connection ${entry.connectionId} is paused: it needs the connection page ` +
+          `(user script, data schema, MQTT 5 properties or ${entry.type} encoding).`,
+      )
+    }
     return
   }
   publishWithoutView(entry.connectionId, message, entry.type)
@@ -259,9 +340,15 @@ function convertPayloadForFallback(
       return Buffer.from(text.replace(/\s+/g, ''), 'hex')
     case 'CBOR':
     case 'MsgPack':
+      // Not reachable through fireTimedMessage() any more (such tasks are paused), kept as a
+      // safety net in case the fallback is ever called directly.
       getLog().warn(`Timed message: ${type} encoding is skipped while the connection view is closed`)
       return text
     default:
       return text
   }
 }
+
+// No task is running yet at module load, so the renderer may be throttled in the background
+// until the user starts one (see syncBackgroundThrottling).
+syncBackgroundThrottling()

@@ -17,11 +17,42 @@ export default class HistoryMessageHeaderService {
     const query: HistoryMessageHeaderEntity[] | undefined = await this.messageRepository
       .createQueryBuilder('pld')
       .addOrderBy('createAt', 'ASC')
+      // Records written within the same millisecond would otherwise come back in an arbitrary
+      // order, which both the publish panel and the eviction below rely on being stable.
+      .addOrderBy('id', 'ASC')
       .getMany()
     if (!query) {
       return
     }
     return query
+  }
+
+  /**
+   * Id of the stored record matching the given one, or null when it is not stored yet.
+   *
+   * The comparison runs in SQL because publishing must not load the whole history (payloads
+   * included) into the renderer, which is what the previous implementation did on every send.
+   * The `CAST(...)` calls keep the comparison independent of how SQLite stored the value
+   * (qos lives in a text column such as '0', retain holds 0/1).
+   */
+  public async findMatchingId(data: HistoryMessageHeaderModel, matchMessage = true): Promise<string | null> {
+    const query = this.messageRepository
+      .createQueryBuilder('h')
+      .select('h.id', 'id')
+      .where('h.topic = :topic', { topic: data.topic })
+      .andWhere('CAST(h.qos AS TEXT) = :qos', { qos: String(data.qos) })
+      .andWhere('CAST(h.retain AS INTEGER) = :retain', { retain: data.retain ? 1 : 0 })
+
+    if (matchMessage) {
+      // `IS` instead of `=`: a missing payload on both sides must still match (legacy records).
+      query
+        .andWhere('h.payload IS :payload', { payload: data.payload ?? null })
+        .andWhere('h.payloadType IS :payloadType', { payloadType: data.payloadType ?? null })
+    }
+
+    const row = await query.orderBy('h.createAt', 'ASC').addOrderBy('h.id', 'ASC').limit(1).getRawOne<{ id: string }>()
+
+    return row?.id ?? null
   }
 
   public async delete(id: string): Promise<HistoryMessageHeaderModel | undefined> {
@@ -41,7 +72,12 @@ export default class HistoryMessageHeaderService {
   }
 
   public async create(data: HistoryMessageHeaderModel): Promise<HistoryMessageHeaderModel | undefined> {
-    return await this.messageRepository.save(data)
+    // Always write createAt through the same path as updateCreateAt() (TypeORM turns the local
+    // string into UTC with millisecond precision). Leaving it to the column default stored
+    // SQLite's CURRENT_TIMESTAMP instead: UTC with *second* precision, so a record created later
+    // in a second ("...08:30:47") sorted before an older record that was re-sent in that second
+    // ("...08:30:47.500") -- and that older record is the one trim() then kept.
+    return await this.messageRepository.save({ ...data, createAt: data.createAt ?? time.getNowDate() })
   }
 
   /**
@@ -53,16 +89,22 @@ export default class HistoryMessageHeaderService {
     if (total <= maxCount) {
       return 0
     }
+    const removeCount = total - maxCount
+    // Only the ids are loaded (never the payloads) and the removal is a single statement:
+    // repository.remove() emits one DELETE per entity, which is what made trimming expensive.
     const oldest = await this.messageRepository.find({
+      select: ['id'],
       order: {
         createAt: 'ASC',
+        // Deterministic tiebreaker, so records with the same timestamp are not evicted at random.
+        id: 'ASC',
       },
-      take: total - maxCount,
+      take: removeCount,
     })
     if (!oldest.length) {
       return 0
     }
-    await this.messageRepository.remove(oldest)
+    await this.messageRepository.delete(oldest.map((record) => record.id))
     return oldest.length
   }
 

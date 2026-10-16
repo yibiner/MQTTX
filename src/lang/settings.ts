@@ -79,6 +79,14 @@ export default {
     hu: 'Adj meg egy értéket {min} és {max} között',
     ko: '{min} ~ {max} 사이의 값을 입력하세요',
   },
+  historyMaxCountDecreaseConfirm: {
+    zh: '当前保留 {current} 条记录，减少到 {count} 条会立即删除最旧的记录，是否继续？',
+    en: 'History keeps {current} records; reducing it to {count} deletes the oldest records immediately. Continue?',
+    tr: 'Geçmiş {current} kayıt saklıyor; {count} değerine düşürmek en eski kayıtları hemen siler. Devam edilsin mi?',
+    ja: '現在 {current} 件の履歴を保持しています。{count} 件に減らすと古い履歴がすぐに削除されます。続行しますか？',
+    hu: 'Az előzmények {current} rekordot őriznek; {count} értékre csökkentve a legrégebbi rekordok azonnal törlődnek. Folytatja?',
+    ko: '현재 {current}개의 기록을 보관합니다. {count}개로 줄이면 오래된 기록이 즉시 삭제됩니다. 계속하시겠습니까?',
+  },
   importOriginalData: {
     zh: '从 MQTTX 导入数据',
     en: 'Import data from MQTTX',

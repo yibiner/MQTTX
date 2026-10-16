@@ -16,6 +16,7 @@ module.exports = {
     },
     app: {
       getPath: () => '/mock/path',
+      getName: () => 'MQTTX',
     },
   },
   dialog: {
@@ -24,5 +25,6 @@ module.exports = {
   },
   app: {
     getPath: () => '/mock/path',
+    getName: () => 'MQTTX',
   },
 }

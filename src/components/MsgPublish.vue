@@ -150,11 +150,13 @@
         >
           <el-badge :value="timedMessages.length" :hidden="timedMessages.length === 0" class="timed-badge">
             <el-popover
-              v-model="timedPanelVisible"
+              ref="timedPanel"
               placement="bottom-end"
               :width="320"
               trigger="click"
               popper-class="timed-panel--popper"
+              @show="timedPanelVisible = true"
+              @hide="timedPanelVisible = false"
             >
               <div class="timed-panel">
                 <div class="timed-panel-head">
@@ -174,6 +176,10 @@
                       </span>
                     </div>
                     <div class="timed-panel-item-topic" :title="item.topic">{{ item.topic }}</div>
+                    <!-- Paused: this task needs the connection page (script / schema / properties). -->
+                    <div v-if="item.degraded" class="timed-panel-item-paused">
+                      {{ $t('connections.timedMessagePaused') }}
+                    </div>
                   </div>
                   <i
                     class="el-icon-close timed-panel-stop"
@@ -242,7 +248,6 @@
             :effect="currentTheme !== 'light' ? 'light' : 'dark'"
           >
             <el-popover
-              v-model="historyPanelVisible"
               placement="bottom-end"
               :width="historyPanelWidth"
               trigger="click"
@@ -252,28 +257,34 @@
             >
               <div class="history-panel">
                 <div v-if="historyRecords.length === 0" class="history-panel-empty">0/0</div>
-                <div
-                  v-for="(item, index) in historyRecords"
-                  :key="item.id"
-                  :class="['history-panel-item', { active: index === historyIndex }]"
-                  @click="handleHistoryItemClick(item, index)"
-                >
-                  <div class="history-panel-item-main">
-                    <span class="history-panel-topic" :title="item.topic">{{ item.topic }}</span>
-                    <span class="history-panel-meta">QoS:{{ item.qos }}</span>
-                    <span class="history-panel-meta">retain:{{ item.retain ? '1' : '0' }}</span>
-                    <i
-                      class="el-icon-close history-panel-delete"
-                      :title="$t('common.delete')"
-                      @click.stop.prevent="handleDeleteHistoryHeader(item)"
-                    ></i>
+                <!--
+                  Only built while the panel is open: every record's payload would otherwise live
+                  in the DOM (and in memory) even though the popover is merely hidden with v-show.
+                -->
+                <template v-if="historyPanelVisible">
+                  <div
+                    v-for="(item, index) in historyRecords"
+                    :key="item.id"
+                    :class="['history-panel-item', { active: index === historyIndex }]"
+                    @click="handleHistoryItemClick(item, index)"
+                  >
+                    <div class="history-panel-item-main">
+                      <span class="history-panel-topic" :title="item.topic">{{ item.topic }}</span>
+                      <span class="history-panel-meta">QoS:{{ item.qos }}</span>
+                      <span class="history-panel-meta">retain:{{ item.retain ? '1' : '0' }}</span>
+                      <i
+                        class="el-icon-close history-panel-delete"
+                        :title="$t('common.delete')"
+                        @click.stop.prevent="handleDeleteHistoryHeader(item)"
+                      ></i>
+                    </div>
+                    <div class="history-panel-item-sub">
+                      <span class="history-panel-payload" :class="{ empty: !item.payload }">{{
+                        historyPayloadTexts[index]
+                      }}</span>
+                    </div>
                   </div>
-                  <div class="history-panel-item-sub">
-                    <span class="history-panel-payload" :class="{ empty: !item.payload }">{{
-                      historyPayloadText(item)
-                    }}</span>
-                  </div>
-                </div>
+                </template>
               </div>
               <el-button
                 slot="reference"
@@ -511,13 +522,18 @@ export default class MsgPublish extends Vue {
    * The payload is shown in full, never truncated. All consecutive whitespace (including JSON
    * line breaks and indentation) is collapsed into a single space, so every record stays one
    * compact paragraph; long lines simply wrap.
+   *
+   * Computed once per record list instead of once per render: collapsing megabytes of payload on
+   * every keystroke (each re-render re-evaluated the whole list) froze the publish panel.
+   * Indexed by position, mirroring the order of `historyRecords`.
    */
-  private historyPayloadText(record: HistoryMessageHeaderModel): string {
-    const payload = record.payload
-    if (payload === undefined || payload === null || payload === '') {
-      return this.$t('connections.historyNoMessage') as string
-    }
-    return String(payload).replace(/\s+/g, ' ').trim()
+  private get historyPayloadTexts(): string[] {
+    return this.historyRecords.map((record) => {
+      const payload = record.payload
+      return payload === undefined || payload === null || payload === ''
+        ? (this.$t('connections.historyNoMessage') as string)
+        : String(payload).replace(/\s+/g, ' ').trim()
+    })
   }
 
   /**
@@ -556,11 +572,13 @@ export default class MsgPublish extends Vue {
    * topics and payloads stay readable. Recomputed while open so it stays adaptive.
    */
   private handleHistoryPanelShow() {
+    this.historyPanelVisible = true
     this.updateHistoryPanelWidth()
     window.addEventListener('resize', this.updateHistoryPanelWidth)
   }
 
   private handleHistoryPanelHide() {
+    this.historyPanelVisible = false
     window.removeEventListener('resize', this.updateHistoryPanelWidth)
   }
 
@@ -578,7 +596,7 @@ export default class MsgPublish extends Vue {
   private handleHistoryItemClick(item: HistoryMessageHeaderModel, index: number) {
     this.applyHistoryRecord(item)
     this.historyIndex = index
-    this.historyPanelVisible = false
+    // The panel deliberately stays open: picking another record right away is the common case.
   }
 
   private async handleDeleteHistoryHeader(item: HistoryMessageHeaderModel) {
@@ -648,7 +666,7 @@ export default class MsgPublish extends Vue {
       })
       return
     }
-    this.$emit('handleSend', this.msgRecord, this.payloadType, this.loadHistoryData)
+    this.$emit('handleSend', this.msgRecord, this.payloadType, this.handleAfterPublish)
   }
 
   private handleInputFocus() {
@@ -673,7 +691,17 @@ export default class MsgPublish extends Vue {
     editorRef.editorLayout()
   }
 
-  private async loadHistoryData(isNewPayload?: boolean, isLoadData?: boolean) {
+  /**
+   * Refreshes the stored records.
+   *
+   * @param isNewPayload unused by the refresh itself, kept for the after-send callback contract
+   * @param isLoadData true while (re)mounting, so the latest record's payload type is adopted
+   * @param focusRecordId the record that was just written; when given, the history cursor moves
+   *                      to exactly that record instead of blindly to the last row. The last row
+   *                      is not necessarily the newest record, and applying the wrong one used to
+   *                      replace the topic and message the user had just published.
+   */
+  private async loadHistoryData(isNewPayload?: boolean, isLoadData?: boolean, focusRecordId?: string | null) {
     const { historyMessageHeaderService } = useServices()
     const historyRecords = (await historyMessageHeaderService.getAll()) ?? []
     const latestRecord = historyRecords[historyRecords.length - 1]
@@ -684,10 +712,22 @@ export default class MsgPublish extends Vue {
       this.payloadType = latestRecord.payloadType as PayloadType
     }
     this.historyRecords = historyRecords
-    if (isNewPayload || this.historyIndex > this.historyRecords.length - 1) {
-      // Point at the newest record, and keep the index valid after deleting or trimming records.
+
+    const focusedIndex = focusRecordId ? historyRecords.findIndex((record) => record.id === focusRecordId) : -1
+    if (focusedIndex !== -1) {
+      this.historyIndex = focusedIndex
+    } else if (this.historyIndex > this.historyRecords.length - 1) {
+      // Keep the index valid after records were deleted or trimmed.
       this.historyIndex = this.historyRecords.length - 1
     }
+  }
+
+  /**
+   * Called by the connection view once a publish finished: refresh the list and keep the cursor
+   * on the record that was written (which is the one currently in the editor).
+   */
+  private handleAfterPublish(isNewPayload: boolean, recordId?: string | null) {
+    this.loadHistoryData(isNewPayload, false, recordId)
   }
 
   private async loadData() {
@@ -768,6 +808,12 @@ export default class MsgPublish extends Vue {
 
   /** Opens the timed-message panel (used by the topbar menu command). */
   public openTimedPanel() {
+    // el-popover owns its open state: setting the flag alone left the panel closed.
+    const panel = this.$refs.timedPanel as { doShow?: () => void } | undefined
+    if (panel?.doShow) {
+      panel.doShow()
+      return
+    }
     this.timedPanelVisible = true
   }
 
@@ -1278,6 +1324,15 @@ export default class MsgPublish extends Vue {
     text-align: left;
     font-size: 12px;
     color: #8492a6;
+  }
+
+  /* Shown when a task waits for its connection page (script / schema / MQTT 5 properties). */
+  .timed-panel-item-paused {
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #e6a23c;
+    white-space: normal;
   }
 
   .timed-panel-stop {

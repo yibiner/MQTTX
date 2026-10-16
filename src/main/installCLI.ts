@@ -17,13 +17,25 @@ const MQTTX_VERSION = `v${version}`
  * Name of the CLI binary that gets installed into /usr/local/bin.
  * The official MQTTX installs `mqttx`, a dev build installs `mqttx-dev`, so both can coexist and
  * a dev build never overwrites an existing MQTTX CLI.
+ *
+ * Resolved lazily: `app` is not fully available in every environment that imports this module
+ * (unit tests mock `electron`, the module is loaded by the native menu template), so evaluating
+ * `app.getName()` at import time would throw before any test or handler runs.
  */
-const CLI_BINARY_NAME =
-  app
-    .getName()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'mqttx'
+const getCliBinaryName = (): string => {
+  try {
+    const appName = typeof app.getName === 'function' ? app.getName() : ''
+    return (
+      appName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'mqttx'
+    )
+  } catch (error) {
+    // Never let a naming lookup break the CLI check: fall back to the official binary name.
+    return 'mqttx'
+  }
+}
 
 /**
  * Checks if the MQTTX CLI is installed and up to date.
@@ -38,7 +50,7 @@ async function checkInstalledMqttxCLI(win: BrowserWindow, isWindows: boolean): P
   }
 
   return new Promise((resolve) => {
-    exec(`${CLI_BINARY_NAME} --version`, (error, stdout, stderr) => {
+    exec(`${getCliBinaryName()} --version`, (error, stdout, stderr) => {
       if (error) {
         resolve(false)
       } else if (stderr) {
@@ -147,7 +159,7 @@ async function downloadMqttxCLI(
  * @returns A Promise that resolves when the installation is completed.
  */
 async function sudoInstall(installPath: string, win: BrowserWindow): Promise<void> {
-  const installCommand = `install "${installPath}" /usr/local/bin/${CLI_BINARY_NAME}`
+  const installCommand = `install "${installPath}" /usr/local/bin/${getCliBinaryName()}`
   const options = { name: 'MQTTX' }
 
   sudo.exec(installCommand, options, (error, stdout, stderr) => {
@@ -161,7 +173,7 @@ async function sudoInstall(installPath: string, win: BrowserWindow): Promise<voi
       dialog.showMessageBox({
         type: 'info',
         title: 'Installation Completed',
-        message: `MQTTX CLI has been successfully installed.\n\nYou can run "${CLI_BINARY_NAME}" commands in the terminal now.`,
+        message: `MQTTX CLI has been successfully installed.\n\nYou can run "${getCliBinaryName()}" commands in the terminal now.`,
       })
       fs.unlink(installPath, () => console.log('Downloaded file deleted.'))
     }

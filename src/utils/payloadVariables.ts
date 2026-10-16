@@ -55,6 +55,9 @@ const NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*/
 // ---------------------------------------------------------------------------
 let persistentStore: any | null | undefined
 const memoryCounters = new Map<string, number>()
+/** counters changed in memory but not written to disk yet */
+const dirtyCounters = new Set<string>()
+let flushTimer: ReturnType<typeof setTimeout> | null = null
 
 const getPersistentStore = (): any | null => {
   if (persistentStore === undefined) {
@@ -74,34 +77,95 @@ const getPersistentStore = (): any | null => {
   return persistentStore
 }
 
-export const readPayloadCounter = (name: string): number | undefined => {
-  const store = getPersistentStore()
-  if (store) {
-    const value = store.get(`${COUNTER_STORE_KEY}.${name}`)
-    return typeof value === 'number' ? value : undefined
-  }
-  return memoryCounters.get(name)
-}
+/**
+ * A burst of publishes (timed messages, multiple variables per message) used to hit the disk
+ * with a synchronous read+write of config.json for every single counter: conf re-reads the whole
+ * file on each `get`/`set`. Writes are therefore coalesced; reads stay disk-backed so that
+ * several windows still share one counter sequence -- only a local write that has not reached
+ * the disk yet takes precedence.
+ */
+const COUNTER_FLUSH_DELAY = 500
 
-export const writePayloadCounter = (name: string, value: number): void => {
+const flushPayloadCounters = (): void => {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
   const store = getPersistentStore()
+  if (dirtyCounters.size === 0) {
+    return
+  }
+  if (!store) {
+    dirtyCounters.clear()
+    return
+  }
+  const pending = Array.from(dirtyCounters)
+  dirtyCounters.clear()
   try {
-    if (store) {
-      store.set(`${COUNTER_STORE_KEY}.${name}`, value)
-    } else {
-      memoryCounters.set(name, value)
-    }
+    pending.forEach((name) => {
+      store.set(`${COUNTER_STORE_KEY}.${name}`, memoryCounters.get(name))
+    })
   } catch (error) {
     // A failing counter write must never break the publish itself.
   }
 }
 
-export const resetPayloadCounters = (): void => {
+const scheduleFlush = (): void => {
+  if (flushTimer) {
+    return
+  }
+  flushTimer = setTimeout(flushPayloadCounters, COUNTER_FLUSH_DELAY)
+  // Never keep the process alive just to persist a counter.
+  ;(flushTimer as any)?.unref?.()
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  // Flush whatever is pending when the window closes instead of losing the last increments.
+  window.addEventListener('beforeunload', flushPayloadCounters)
+  window.addEventListener('pagehide', flushPayloadCounters)
+}
+
+export const readPayloadCounter = (name: string): number | undefined => {
+  if (dirtyCounters.has(name)) {
+    return memoryCounters.get(name)
+  }
   const store = getPersistentStore()
   if (store) {
-    store.delete(COUNTER_STORE_KEY)
+    try {
+      const value = store.get(`${COUNTER_STORE_KEY}.${name}`)
+      return typeof value === 'number' ? value : undefined
+    } catch (error) {
+      return undefined
+    }
   }
+  return memoryCounters.get(name)
+}
+
+export const writePayloadCounter = (name: string, value: number): void => {
+  memoryCounters.set(name, value)
+  const store = getPersistentStore()
+  if (!store) {
+    return
+  }
+  dirtyCounters.add(name)
+  scheduleFlush()
+}
+
+export const resetPayloadCounters = (): void => {
   memoryCounters.clear()
+  dirtyCounters.clear()
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  const store = getPersistentStore()
+  if (store) {
+    try {
+      store.delete(COUNTER_STORE_KEY)
+    } catch (error) {
+      // ignore
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

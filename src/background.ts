@@ -185,6 +185,15 @@ function handleIpcMessages() {
     app.relaunch()
     app.exit()
   })
+  // The renderer asks for throttling to be disabled only while timed messages are running,
+  // because a throttled hidden window makes their intervals drift. Note the inverted flag:
+  // `setBackgroundThrottling(true)` *allows* Chromium to throttle.
+  ipcMain.on('setBackgroundThrottling', (event: Electron.IpcMainEvent, timedMessagesRunning: boolean) => {
+    const contents = event.sender
+    if (contents && !contents.isDestroyed()) {
+      contents.setBackgroundThrottling(!timedMessagesRunning)
+    }
+  })
   // Initialize MCP handlers
   initMCPHandlers()
 }
@@ -284,6 +293,8 @@ async function createWindow() {
       contextIsolation: false,
       // Timed messages must keep firing at their real interval while the window is
       // hidden/occluded — Chromium's timer throttling would delay or batch them.
+      // Default only: the renderer enables throttling again whenever no timed message is
+      // running (see the setBackgroundThrottling IPC handler), so an idle window can sleep.
       backgroundThrottling: false,
     },
     titleBarStyle: isMac ? 'hidden' : 'default',
