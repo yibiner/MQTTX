@@ -14,7 +14,7 @@ const IMPORT_MARKER_FILE = '.mqttx-import-pending'
 
 const IMPORTABLE_FILES = ['MQTTX.db', 'config.json']
 
-const getImportMarkerPath = (): string => path.join(getUnifiedAppDataPath('MQTTX'), IMPORT_MARKER_FILE)
+const getImportMarkerPath = (): string => path.join(getUnifiedAppDataPath(), IMPORT_MARKER_FILE)
 
 /** True when both paths point at the very same file (the target may not exist yet). */
 const isSameFile = (source: string, target: string): boolean => {
@@ -38,7 +38,7 @@ export interface ImportRequestResult {
  */
 export const requestImportFromOriginal = (): ImportRequestResult => {
   const sourcePath = getOriginalAppDataPath()
-  const targetPath = getUnifiedAppDataPath('MQTTX')
+  const targetPath = getUnifiedAppDataPath()
   const sourceDb = path.join(sourcePath, 'MQTTX.db')
 
   if (!fs.pathExistsSync(sourceDb)) {
@@ -79,7 +79,7 @@ export const applyPendingImport = (): void => {
     console.warn('[Import] Could not read the pending import marker, using the default source:', error)
   }
 
-  const targetPath = getUnifiedAppDataPath('MQTTX')
+  const targetPath = getUnifiedAppDataPath()
   const timestamp = Date.now()
 
   try {
@@ -142,7 +142,7 @@ export const getImportPaths = (): { sourcePath: string; targetPath: string; sour
   const sourcePath = getOriginalAppDataPath()
   return {
     sourcePath,
-    targetPath: getUnifiedAppDataPath('MQTTX'),
+    targetPath: getUnifiedAppDataPath(),
     sourceAvailable: fs.pathExistsSync(path.join(sourcePath, 'MQTTX.db')),
   }
 }

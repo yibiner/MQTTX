@@ -2,6 +2,7 @@ import { app } from 'electron'
 import path from 'path'
 import fs from 'fs-extra'
 import { getAppDataPath as getLegacyAppDataPath } from 'appdata-path'
+import { APP_DATA_DIRECTORY_NAME, applyAppIdentity } from '@/appIdentity'
 
 /**
  * Get the unified application data path
@@ -15,20 +16,21 @@ export const getUnifiedAppDataPath = (subDir?: string): string => {
   const isRenderer = process.type === 'renderer'
   const electronApp = isRenderer ? require('@electron/remote').app : app
 
+  // Safety net: never resolve a path before this app's own identity is applied, otherwise
+  // electron-store and the SQLite file would be looked up in another application's directory.
+  applyAppIdentity()
+
   // Use Electron's native API which handles Windows %APPDATA% redirection correctly
   let userDataPath: string
-  if (electronApp) {
+  if (electronApp && typeof electronApp.getPath === 'function') {
     userDataPath = electronApp.getPath('userData')
   } else {
-    // CLI / pure Node.js environment (e.g. running TypeORM migrations)
-    userDataPath = getLegacyAppDataPath('MQTTX')
+    // CLI / pure Node.js environment (e.g. running TypeORM migrations): mirror what Electron
+    // derives from the application name, so both resolve to the same directory.
+    userDataPath = getLegacyAppDataPath(APP_DATA_DIRECTORY_NAME)
   }
 
   if (subDir) {
-    // For backward compatibility, if subDir is 'MQTTX' and it's already in the path, don't duplicate it
-    if (subDir === 'MQTTX' && userDataPath.includes('MQTTX')) {
-      return userDataPath
-    }
     return path.join(userDataPath, subDir)
   }
 
@@ -67,7 +69,7 @@ export const checkMigrationNeeded = (
   legacyDbPath?: string
   newDbPath?: string
 } => {
-  const newPath = getUnifiedAppDataPath('MQTTX')
+  const newPath = getUnifiedAppDataPath()
   const legacyPath = getLegacyDataPath('MQTTX')
 
   // If paths are the same, no migration needed

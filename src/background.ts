@@ -1,3 +1,7 @@
+// This import must stay first: it applies this build's product name and its own user data
+// directory before any other module reads `app.getPath('userData')` (the logger, electron-store,
+// the SQLite file), which is what keeps the data isolated from the official MQTTX.
+import './appIdentity'
 import 'reflect-metadata' // Required by TypoORM.
 ;('use strict')
 import { app, protocol, BrowserWindow, ipcMain, shell, Menu } from 'electron'
@@ -8,7 +12,8 @@ import rebuildDatabase from './database/rebuildDatabase'
 import { createUpdateWindow, autoDownload } from './main/updateDownloader'
 import { migrateDataIfNeeded } from './main/appDataPath'
 import { requestImportFromOriginal, applyPendingImport, getImportPaths } from './main/importOfficialData'
-import { getCurrentLang } from './main/updateChecker'
+import { getLocalResourcePaths, openLocalResource } from './main/localResources'
+import { getCurrentLang, isOfficialBuild } from './main/updateChecker'
 import getMenuTemplate from './main/getMenuTemplate'
 import newWindow from './main/newWindow'
 import installCLI from './main/installCLI'
@@ -181,6 +186,9 @@ function handleIpcMessages() {
   })
   ipcMain.handle('getImportOriginalDataPaths', () => getImportPaths())
   ipcMain.handle('importOriginalData', () => requestImportFromOriginal())
+  // The About view lists where this app keeps its data on this machine and can open those folders.
+  ipcMain.handle('getLocalResourcePaths', () => getLocalResourcePaths())
+  ipcMain.handle('openLocalResource', (_event: Electron.IpcMainInvokeEvent, key: string) => openLocalResource(key))
   ipcMain.on('relaunchApp', () => {
     app.relaunch()
     app.exit()
@@ -357,7 +365,10 @@ async function createWindow() {
   })
   handleIpcMessages()
   if (electronStore.get('isVersion') !== version) {
-    createUpdateWindow()
+    // The changelog window shows the upstream release notes; only the official build opens it.
+    if (isOfficialBuild()) {
+      createUpdateWindow()
+    }
     electronStore.set('isVersion', version)
   }
 }

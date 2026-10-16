@@ -280,12 +280,12 @@ export default {
     ko: 'Retain 메시지란',
   },
   mqttRetainDesc: {
-    zh: 'MQTT 保留消息是什么？我该如何使用，请提供一些真实场景案例，并且告知如何使用 MQTTX 来清除保留消息呢？',
-    en: "What's the MQTT Retain Message? How do I use it? Please provide some real-world scenario cases and tell me how to use MQTTX to clear retained messages?",
-    tr: "MQTT Retain Mesajı Nedir? Nasıl kullanılır? Lütfen bazı gerçek dünya senaryo durumları sağlayın ve MQTTX'i kullanarak kalıcı mesajları nasıl temizleyeceğimi söyleyin?",
-    ja: 'MQTT レテインメッセージとは何ですか？どうやって使うのですか？実際のシナリオケースをいくつか提供し、MQTTXを使用して保持されたメッセージをクリアする方法を教えてください。',
-    hu: 'Mi az MQTT Retain Üzenet? Hogyan használjam? Kérjük, adjon meg néhány valós világ szcenárió esetet, és mondja el, hogyan használhatom az MQTTX-et a megőrzött üzenetek törléséhez?',
-    ko: 'MQTT Retain 메시지란 무엇인가요? 어떻게 사용하나요? 실제 사례를 몇 가지 제시하고, MQTTX로 Retain 메시지를 삭제하는 방법도 알려주세요?',
+    zh: 'MQTT 保留消息是什么？我该如何使用，请提供一些真实场景案例，并且告知如何使用 MQTTX Plus 来清除保留消息呢？',
+    en: "What's the MQTT Retain Message? How do I use it? Please provide some real-world scenario cases and tell me how to use MQTTX Plus to clear retained messages?",
+    tr: "MQTT Retain Mesajı Nedir? Nasıl kullanılır? Lütfen bazı gerçek dünya senaryo durumları sağlayın ve MQTTX Plus'ı kullanarak kalıcı mesajları nasıl temizleyeceğimi söyleyin?",
+    ja: 'MQTT レテインメッセージとは何ですか？どうやって使うのですか？実際のシナリオケースをいくつか提供し、MQTTX Plusを使用して保持されたメッセージをクリアする方法を教えてください。',
+    hu: 'Mi az MQTT Retain Üzenet? Hogyan használjam? Kérjük, adjon meg néhány valós világ szcenárió esetet, és mondja el, hogyan használhatom az MQTTX Plus-et a megőrzött üzenetek törléséhez?',
+    ko: 'MQTT Retain 메시지란 무엇인가요? 어떻게 사용하나요? 실제 사례를 몇 가지 제시하고, MQTTX Plus로 Retain 메시지를 삭제하는 방법도 알려주세요?',
   },
   installEMQX: {
     zh: '如何安装 EMQX',

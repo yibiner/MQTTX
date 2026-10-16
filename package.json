@@ -1,7 +1,7 @@
 {
-  "name": "MQTTX",
+  "name": "mqttx-plus",
   "version": "1.13.1",
-  "description": "MQTT desktop client",
+  "description": "An enhanced MQTT client for developers and teams.",
   "author": "EMQX Team <yusf@emqx.io>",
   "scripts": {
     "version": "yarn run gen:version && git add -A .",
@@ -161,7 +161,7 @@
     ]
   },
   "license": "Apache-2.0",
-  "repository": "https://github.com/emqx/MQTTX",
+  "repository": "https://github.com/yibiner/MQTTX",
   "resolutions": {
     "electron-builder": "23.6.0",
     "webpack": "4.47.0"

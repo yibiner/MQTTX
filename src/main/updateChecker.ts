@@ -1,3 +1,8 @@
+// First import: the product name has to be applied before anything in this module reads the user
+// data directory (electron-store is constructed below, and via useServices the database services
+// construct their own store). The update feed points at the official MQTTX releases, so this build
+// must never offer them -- installing such an update would replace this build with the official app.
+import '@/appIdentity'
 import axios from 'axios'
 import version from '@/version'
 import useServices from '@/database/useServices'
@@ -11,11 +16,11 @@ export interface versionDetail {
   detail: string
 }
 
+/** Product name of the upstream MQTTX release. */
+export const OFFICIAL_APP_NAME = 'MQTTX'
+
 /**
  * Name of the running app, usable from both processes.
- *
- * The update feed points at the official MQTTX releases, so a locally packaged dev edition must not
- * offer them: installing one of those updates would replace this build with the official app.
  */
 const getRunningAppName = (): string => {
   try {
@@ -25,11 +30,11 @@ const getRunningAppName = (): string => {
     return require('electron').app.getName()
   } catch (error) {
     // Fall back to the official name so that an unknown environment keeps the original behaviour.
-    return 'MQTTX'
+    return OFFICIAL_APP_NAME
   }
 }
 
-export const isOfficialBuild = (): boolean => getRunningAppName() === 'MQTTX'
+export const isOfficialBuild = (): boolean => getRunningAppName() === OFFICIAL_APP_NAME
 
 export const getCurrentLang = async (): Promise<string> => {
   let language = 'en'

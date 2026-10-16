@@ -1,5 +1,10 @@
 const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin')
 const path = require('path')
+// Shared with the running app (src/appIdentity.ts) so the installed bundle name, the app id and the
+// user data directory can never drift apart.
+const identity = require('./app.identity.json')
+// "MQTTX Plus" -> "MQTTX-Plus", used for the artifact file names.
+const artifactPrefix = identity.name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 
 module.exports = {
   productionSourceMap: false,
@@ -99,14 +104,17 @@ module.exports = {
       // In order to connect to websocket.
       externals: ['mqtt', 'vm2', 'log4js', 'typeorm'],
       builderOptions: {
-        // This build is a locally packaged "dev" edition so it can live next to an installed
-        // official MQTTX: different app id, different app name (=> different user data
-        // directory) and different artifact names.
-        appId: 'com.mqttx.dev',
-        productName: 'MQTTX Dev',
+        // This build is "MQTTX Plus", a fork of MQTTX: its own app id, its own app name (=> its own
+        // macOS bundle and its own user data directory) and its own artifact names, so it can be
+        // installed next to the official MQTTX without sharing anything with it.
+        appId: identity.bundleId,
+        productName: identity.name,
         extraMetadata: {
-          productName: 'MQTTX Dev',
+          productName: identity.name,
         },
+        // Kept for completeness only: update checks are disabled unless the app is named exactly
+        // "MQTTX" (see isOfficialBuild in src/main/updateChecker.ts), so this build never pulls an
+        // official release over itself.
         publish: [
           {
             provider: 'generic',
@@ -119,10 +127,10 @@ module.exports = {
           allowToChangeInstallationDirectory: true,
           createDesktopShortcut: true,
           createStartMenuShortcut: true,
-          artifactName: 'MQTTX-Dev-Setup-${version}-${arch}.${ext}',
+          artifactName: `${artifactPrefix}-Setup-\${version}-\${arch}.\${ext}`,
         },
         win: {
-          artifactName: 'MQTTX-Dev-${version}-${arch}-win.${ext}',
+          artifactName: `${artifactPrefix}-\${version}-\${arch}-win.\${ext}`,
           icon: './public/icons/app.ico',
           target: [
             {
@@ -143,7 +151,7 @@ module.exports = {
         },
         mac: {
           icon: './public/icons/mac/Icon.icns',
-          artifactName: 'MQTTX-Dev-${version}-${arch}.${ext}',
+          artifactName: `${artifactPrefix}-\${version}-\${arch}.\${ext}`,
           target: [
             {
               target: 'dmg',

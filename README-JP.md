@@ -1,4 +1,14 @@
-<img src="./assets/mqttx-logo.png" width="480" alt="MQTTX Logo" />
+<img src="./assets/mqttx-plus-icon.png" width="160" alt="MQTTX Plus" />
+
+# MQTTX Plus
+
+開発者とチームのための拡張 MQTT クライアント。
+
+MQTTX Plus は [MQTTX](https://github.com/emqx/MQTTX)（デスクトップ版 v1.13.1 ベース）のフォークで、プリセット管理、グローバルな定期送信メッセージ、トピックとペイロードをまとめて保存する送信履歴、ペイロード変数を追加しています。独自の Bundle ID（`dev.yibin.mqttxplus`）、独自のデータディレクトリ、独自のアイコンを持ち、公式 MQTTX とは完全に分離されているため、両方を同時にインストールできます。
+
+> 以下のドキュメントは上流の MQTTX のもので、本フォークにもそのまま当てはまります。
+
+---
 
 [![GitHub Release](https://img.shields.io/github/release/emqx/mqttx?color=brightgreen)](https://github.com/emqx/mqttx/releases)
 ![Support Platforms](https://camo.githubusercontent.com/a50c47295f350646d08f2e1ccd797ceca3840e52/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f706c6174666f726d2d6d61634f5325323025374325323057696e646f77732532302537432532304c696e75782d6c69676874677265792e737667)

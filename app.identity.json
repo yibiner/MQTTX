@@ -1,0 +1,6 @@
+{
+  "name": "MQTTX Plus",
+  "description": "An enhanced MQTT client for developers and teams.",
+  "bundleId": "dev.yibin.mqttxplus",
+  "repository": "https://github.com/yibiner/MQTTX"
+}

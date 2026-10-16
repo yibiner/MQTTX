@@ -9,14 +9,15 @@ import version from '@/version'
 import { exec } from 'child_process'
 import { compareVersions } from 'compare-versions'
 import { getCurrentLang } from './updateChecker'
+import { APP_NAME } from '@/appIdentity'
 
-const STORE_PATH = getUnifiedAppDataPath('MQTTX')
+const STORE_PATH = getUnifiedAppDataPath()
 const MQTTX_VERSION = `v${version}`
 
 /**
- * Name of the CLI binary that gets installed into /usr/local/bin.
- * The official MQTTX installs `mqttx`, a dev build installs `mqttx-dev`, so both can coexist and
- * a dev build never overwrites an existing MQTTX CLI.
+ * Name of the CLI binary that gets installed into /usr/local/bin, derived from the application
+ * name ("MQTTX Plus" -> `mqttx-plus`). The official MQTTX installs `mqttx`, so both can coexist and
+ * this build never overwrites an existing MQTTX CLI.
  *
  * Resolved lazily: `app` is not fully available in every environment that imports this module
  * (unit tests mock `electron`, the module is loaded by the native menu template), so evaluating
@@ -160,7 +161,7 @@ async function downloadMqttxCLI(
  */
 async function sudoInstall(installPath: string, win: BrowserWindow): Promise<void> {
   const installCommand = `install "${installPath}" /usr/local/bin/${getCliBinaryName()}`
-  const options = { name: 'MQTTX' }
+  const options = { name: APP_NAME }
 
   sudo.exec(installCommand, options, (error, stdout, stderr) => {
     if (error || stderr) {

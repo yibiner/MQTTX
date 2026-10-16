@@ -1,4 +1,14 @@
-<img src="./assets/mqttx-logo.png" width="480" alt="MQTTX Logo" />
+<img src="./assets/mqttx-plus-icon.png" width="160" alt="MQTTX Plus" />
+
+# MQTTX Plus
+
+一款为开发者和团队打造的增强版 MQTT 客户端。
+
+MQTTX Plus 是 [MQTTX](https://github.com/emqx/MQTTX) 的分支（基于桌面版 v1.13.1），增加了预设管理、全局定时消息、主题与报文一并保存的发布历史以及报文变量。它拥有独立的 Bundle ID（`dev.yibin.mqttxplus`）、独立的数据目录和独立图标，与官方 MQTTX 完全隔离，可以同时安装、互不影响。
+
+> 下方文档来自上游 MQTTX，同样适用于本分支。
+
+---
 
 [![GitHub Release](https://img.shields.io/github/release/emqx/mqttx?color=brightgreen)](https://github.com/emqx/mqttx/releases)
 ![Support Platforms](https://camo.githubusercontent.com/a50c47295f350646d08f2e1ccd797ceca3840e52/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f706c6174666f726d2d6d61634f5325323025374325323057696e646f77732532302537432532304c696e75782d6c69676874677265792e737667)

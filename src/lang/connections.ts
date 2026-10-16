@@ -432,12 +432,12 @@ export default {
     ko: '자동 재구독이 비활성화되었습니다',
   },
   enabledAutoResubDesc: {
-    zh: '开启后，MQTTX 连接后会自动重新订阅本地保存的主题，无论主题是否在 MQTT Broker 持久化。',
-    en: 'When enabled, MQTTX will automatically resubscribe to locally saved topics upon connection, regardless of their persistence in the MQTT Broker.',
-    tr: "Etkinleştirildiğinde, MQTTX bağlantı kurduğunda yerel olarak kaydedilen konulara otomatik olarak yeniden abone olur, konuların MQTT Broker'da kalıcı olup olmadığını dikkate almaz.",
-    ja: '有効にすると、MQTTX は接続時にローカルに保存されたトピックを自動的に再購読します。トピックが MQTT Broker に永続化されているかどうかは関係ありません。',
-    hu: 'Bekapcsoláskor az MQTTX automatikusan újra feliratkozik a helyben mentett témákra a csatlakozás után, függetlenül attól, hogy ezek a témák tartósak-e az MQTT Broker-ben.',
-    ko: '활성화하면 MQTTX는 연결 시 MQTT 브로커에서의 지속성 여부와 관계없이 로컬에 저장된 토픽에 자동으로 재구독합니다.',
+    zh: '开启后，MQTTX Plus 连接后会自动重新订阅本地保存的主题，无论主题是否在 MQTT Broker 持久化。',
+    en: 'When enabled, MQTTX Plus will automatically resubscribe to locally saved topics upon connection, regardless of their persistence in the MQTT Broker.',
+    tr: "Etkinleştirildiğinde, MQTTX Plus bağlantı kurduğunda yerel olarak kaydedilen konulara otomatik olarak yeniden abone olur, konuların MQTT Broker'da kalıcı olup olmadığını dikkate almaz.",
+    ja: '有効にすると、MQTTX Plus は接続時にローカルに保存されたトピックを自動的に再購読します。トピックが MQTT Broker に永続化されているかどうかは関係ありません。',
+    hu: 'Bekapcsoláskor az MQTTX Plus automatikusan újra feliratkozik a helyben mentett témákra a csatlakozás után, függetlenül attól, hogy ezek a témák tartósak-e az MQTT Broker-ben.',
+    ko: '활성화하면 MQTTX Plus는 연결 시 MQTT 브로커에서의 지속성 여부와 관계없이 로컬에 저장된 토픽에 자동으로 재구독합니다.',
   },
   disabledAutoResubDesc: {
     zh: '关闭后，本地保存的主题是否可用取决于 MQTT Broker 是否保存了 Session。如果 Clean Session 为 true，重新连接后需手动重新订阅。',

@@ -1,4 +1,18 @@
-<img src="./assets/mqttx-logo.png" width="480" alt="MQTTX Logo" />
+<img src="./assets/mqttx-plus-icon.png" width="160" alt="MQTTX Plus" />
+
+# MQTTX Plus
+
+An enhanced MQTT client for developers and teams.
+
+MQTTX Plus is a fork of [MQTTX](https://github.com/emqx/MQTTX) (based on desktop v1.13.1) that adds
+preset management, global timed messages, a publish history that stores topic and payload together
+and payload variables. It is installed and runs completely isolated from the official MQTTX: its own
+bundle id (`dev.yibin.mqttxplus`), its own data directory and its own icon, so both apps can be
+installed side by side.
+
+> The documentation below is the upstream MQTTX documentation which applies to this fork as well.
+
+---
 
 [![GitHub Release](https://img.shields.io/github/release/emqx/mqttx?color=brightgreen)](https://github.com/emqx/mqttx/releases)
 ![platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)

@@ -59,7 +59,7 @@ import { historyMessageWithPayload1792001000001 } from './migration/179200100000
 // Get store path; fall back when running in CLI (no Electron app)
 let STORE_PATH: string
 try {
-  STORE_PATH = getUnifiedAppDataPath('MQTTX')
+  STORE_PATH = getUnifiedAppDataPath()
 } catch (e) {
   const home = process.env.HOME || require('os').homedir()
   STORE_PATH = process.env.MQTTX_DATA_PATH || join(home, '.mqttx')
