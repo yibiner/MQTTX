@@ -252,6 +252,8 @@ declare global {
     reconnect?: boolean
     reconnectPeriod?: number
     clean?: boolean
+    /** Variables of the client itself, copied into its "客户端变量" when the preset is applied. */
+    variables?: { [name: string]: string } | null
   }
 
   /** Reusable topic + message preset, selectable directly in the publish window. */

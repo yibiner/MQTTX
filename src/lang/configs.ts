@@ -183,6 +183,14 @@ export default {
     hu: 'A jobb alsó sarok húzásával átméretezhető',
     ko: '오른쪽 아래 모서리를 끌어 크기를 조절할 수 있습니다',
   },
+  clientVariablesProfileTip: {
+    zh: '新建连接时选择这个预设，这些变量会自动填进连接的「客户端变量」。',
+    en: 'Pick this preset while creating a connection and these variables are copied into its client variables.',
+    tr: 'Bağlantı oluştururken bu ön ayarı seçin; bu değişkenler bağlantının istemci değişkenlerine aktarılır.',
+    ja: '接続の作成時にこのプリセットを選ぶと、これらの変数が接続の「クライアント変数」に反映されます。',
+    hu: 'Ha kapcsolat létrehozásakor ezt a profilt választod, ezek a változók bekerülnek a kapcsolat kliens változói közé.',
+    ko: '연결을 만들 때 이 프리셋을 선택하면 이 변수들이 연결의 클라이언트 변수에 채워집니다.',
+  },
   variablesHelp: {
     zh: '变量说明',
     en: 'Variable guide',

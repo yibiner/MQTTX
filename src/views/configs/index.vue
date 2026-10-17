@@ -76,6 +76,9 @@
         <el-table-column :label="$t('connections.password')" width="110" align="center">
           <template slot-scope="{ row }">{{ row.password ? '••••••' : '-' }}</template>
         </el-table-column>
+        <el-table-column :label="$t('connections.clientVariables')" min-width="170" show-overflow-tooltip>
+          <template slot-scope="{ row }">{{ describeVariables(row.variables) }}</template>
+        </el-table-column>
         <el-table-column :label="$t('common.oper')" width="110" align="center">
           <template slot-scope="{ row }">
             <a href="javascript:;" class="profile-oper" @click="handleEdit(row)">
@@ -291,6 +294,10 @@
           <el-form-item :label="profileForm.mqttVersion === '5.0' ? 'Clean Start' : 'Clean Session'">
             <el-switch v-model="profileForm.clean" active-color="#13ce66" inactive-color="#A2A9B0"> </el-switch>
           </el-form-item>
+          <el-form-item :label="$t('connections.clientVariables')">
+            <VariableEditor v-model="profileForm.variables" />
+          </el-form-item>
+          <p class="variable-preset-hint">{{ $t('configs.clientVariablesProfileTip') }}</p>
         </template>
       </el-form>
     </my-dialog>
@@ -318,6 +325,7 @@ import {
 } from '@/utils/configProfiles'
 import VariablesHelp from '@/components/VariablesHelp.vue'
 import Editor from '@/components/Editor.vue'
+import VariableEditor from '@/components/VariableEditor.vue'
 import { PAYLOAD_VARIABLE_NAME_PATTERN, isBuiltinPayloadVariable } from '@/utils/payloadVariables'
 import isJsonPayload from '@/utils/payloadLanguage'
 import validFormatJson from '@/utils/validFormatJson'
@@ -345,6 +353,7 @@ interface ClientProfileForm {
   reconnect: boolean
   reconnectPeriod: number
   clean: boolean
+  variables: { [name: string]: string }
 }
 
 /** Mirrors getDefaultRecord() so a fresh client profile matches a fresh connection form. */
@@ -359,6 +368,7 @@ const defaultClientProfileForm = (): ClientProfileForm => ({
   reconnect: true,
   reconnectPeriod: 4000,
   clean: true,
+  variables: {},
 })
 
 interface MessagePresetForm {
@@ -375,7 +385,7 @@ interface VariableForm {
 }
 
 @Component({
-  components: { MyDialog, MessagePreview, VariablesHelp, Editor },
+  components: { MyDialog, MessagePreview, VariablesHelp, Editor, VariableEditor },
 })
 export default class Configs extends Vue {
   private activeTab: DialogType = 'server'
@@ -491,9 +501,20 @@ export default class Configs extends Vue {
     return (this.activeTab === 'variable' ? this.$t('configs.addVariable') : this.$t('configs.addProfile')) as string
   }
 
-  /** The message preset edits a payload, so its dialog is wider than the ones of the other tabs. */
+  /** A message preset edits a payload and a client preset edits variables, so both need room. */
   private get dialogWidth(): string {
-    return this.dialogType === 'message' ? '760px' : '460px'
+    if (this.dialogType === 'message') {
+      return '760px'
+    }
+    return this.dialogType === 'client' ? '620px' : '460px'
+  }
+
+  /** One line summary of the variables of a client preset, for the table. */
+  private describeVariables(variables: { [name: string]: string } | null | undefined): string {
+    const pairs = Object.keys(variables ?? {})
+      .filter((name) => name.trim())
+      .map((name) => `${name}=${variables?.[name] ?? ''}`)
+    return pairs.length ? pairs.join(', ') : '-'
   }
 
   /**
@@ -588,6 +609,7 @@ export default class Configs extends Vue {
         reconnect: client.reconnect ?? true,
         reconnectPeriod: client.reconnectPeriod ?? 4000,
         clean: client.clean ?? true,
+        variables: { ...(client.variables ?? {}) },
       }
     }
     this.dialogVisible = true
@@ -655,6 +677,7 @@ export default class Configs extends Vue {
           reconnect: Boolean(this.profileForm.reconnect),
           reconnectPeriod: Number(this.profileForm.reconnectPeriod) || 4000,
           clean: Boolean(this.profileForm.clean),
+          variables: { ...(this.profileForm.variables ?? {}) },
         })
       }
       this.loadData()

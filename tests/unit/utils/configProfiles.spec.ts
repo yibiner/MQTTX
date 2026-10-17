@@ -1,5 +1,9 @@
 import { expect } from 'chai'
 import {
+  deleteClientProfile,
+  getClientProfile,
+  getClientProfiles,
+  saveClientProfile,
   deleteGlobalVariable,
   getGlobalVariable,
   getGlobalVariableMap,
@@ -7,6 +11,26 @@ import {
   saveGlobalVariable,
 } from '@/utils/configProfiles'
 import { resolvePayloadVariables } from '@/utils/payloadVariables'
+
+describe('configProfiles client presets', () => {
+  let createdIds: string[] = []
+
+  afterEach(() => {
+    createdIds.forEach((id) => deleteClientProfile(id))
+    createdIds = []
+  })
+
+  it('keeps the variables of a client preset', () => {
+    const saved = saveClientProfile({ alias: 'sn0106', clientId: 'sn0106-1', variables: { productType: 'A1' } })
+    createdIds.push(saved.id)
+
+    expect(getClientProfile(saved.id)?.variables).to.deep.equal({ productType: 'A1' })
+
+    saveClientProfile({ ...saved, variables: { productType: 'A2', site: 'north' } })
+    expect(getClientProfiles().filter((profile) => profile.id === saved.id)).to.have.lengthOf(1)
+    expect(getClientProfile(saved.id)?.variables).to.deep.equal({ productType: 'A2', site: 'north' })
+  })
+})
 
 // Outside Electron the variables live in memory (see getStore), which is what these tests use.
 describe('configProfiles global variables', () => {

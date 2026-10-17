@@ -1118,6 +1118,9 @@ export default class ConnectionForm extends Vue {
     if (profile.clean !== undefined) {
       this.record.clean = profile.clean
     }
+    // The variables describe the client the preset belongs to, so they come along into the
+    // "客户端变量" of the connection that is being created from it.
+    this.record.variables = { ...(profile.variables ?? {}) }
   }
 }
 </script>

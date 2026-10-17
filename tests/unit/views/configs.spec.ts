@@ -9,6 +9,8 @@ import {
   deleteMessagePreset,
   saveGlobalVariable,
   deleteGlobalVariable,
+  saveClientProfile,
+  deleteClientProfile,
 } from '@/utils/configProfiles'
 
 const localVue = createLocalVue()
@@ -16,6 +18,7 @@ localVue.use(ElementUI)
 
 let createdIds: string[] = []
 let createdVariableIds: string[] = []
+let createdClientIds: string[] = []
 
 /**
  * Element UI's `el-select` cannot mount in jsdom, so the whole view is shallow mounted: this still
@@ -34,6 +37,8 @@ describe('configs view', () => {
     createdIds = []
     createdVariableIds.forEach((id) => deleteGlobalVariable(id))
     createdVariableIds = []
+    createdClientIds.forEach((id) => deleteClientProfile(id))
+    createdClientIds = []
   })
 
   /** Runs one of the form rules of the view the way element-ui does. */
@@ -55,6 +60,32 @@ describe('configs view', () => {
 
     const presets = (wrapper.vm as any).messagePresets as { name: string }[]
     expect(presets.map((preset) => preset.name)).to.contain('preview')
+  })
+
+  it('summarises the variables of a client preset for the table', () => {
+    const wrapper = createWrapper()
+    const vm = wrapper.vm as any
+
+    expect(vm.describeVariables({ productType: 'A1', site: 'north' })).to.equal('productType=A1, site=north')
+    expect(vm.describeVariables(null)).to.equal('-')
+    expect(vm.describeVariables({})).to.equal('-')
+  })
+
+  it('opens a client preset with the variables it was saved with', async () => {
+    const wrapper = createWrapper()
+    const saved = saveClientProfile({
+      alias: 'sn0106',
+      clientId: 'sn0106-1',
+      variables: { productType: 'A1' },
+    })
+    createdClientIds.push(saved.id)
+    const vm = wrapper.vm as any
+    vm.activeTab = 'client'
+    await wrapper.vm.$nextTick()
+
+    vm.handleEdit((vm.clientProfiles as ClientProfileModel[]).find((profile) => profile.id === saved.id))
+
+    expect(vm.profileForm.variables).to.deep.equal({ productType: 'A1' })
   })
 
   it('rebuilds the table of a tab instead of patching the one of the previous tab', async () => {
