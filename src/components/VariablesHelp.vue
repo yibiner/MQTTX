@@ -1,9 +1,5 @@
 <template>
   <span class="variables-help">
-    <el-tooltip v-if="tooltip" placement="top" :open-delay="200" popper-class="variables-help-popper">
-      <div slot="content" class="variables-help-tooltip">{{ tooltip }}</div>
-      <a href="javascript:;" class="variables-help-icon"><i class="el-icon-question"></i></a>
-    </el-tooltip>
     <a href="javascript:;" class="variables-help-trigger" @click="showDialog = true">
       {{ $t('configs.variablesHelp') }}
     </a>
@@ -34,20 +30,14 @@
 </template>
 
 <script lang="ts">
-import { Component, Prop, Vue } from 'vue-property-decorator'
+import { Component, Vue } from 'vue-property-decorator'
 
 /**
  * Reference for the payload variables, opened from the place where they are managed: the built-in
  * variables, which variables apply where (the scopes), and how a placeholder is resolved.
- *
- * A page that would need a paragraph to explain its variables passes `tooltip` instead: the text
- * then stays behind a small question mark and is shown on hover, which keeps the page itself quiet.
  */
 @Component
 export default class VariablesHelp extends Vue {
-  // Text shown on hover of the question mark. Without it only the "view tips" link is rendered
-  @Prop({ default: '' }) public tooltip!: string
-
   private showDialog = false
 }
 </script>
@@ -58,30 +48,11 @@ export default class VariablesHelp extends Vue {
   white-space: nowrap;
 }
 
-.variables-help-icon {
-  margin-right: 8px;
-  color: var(--color-text-tips);
-  font-size: 14px;
-  vertical-align: middle;
-  &:hover {
-    color: var(--color-main-green);
-  }
-}
-
 .variables-help-trigger {
   font-size: 12px;
   color: var(--color-main-green);
   &:hover {
     text-decoration: underline;
-  }
-}
-
-.variables-help-popper {
-  max-width: 380px;
-  line-height: 1.8;
-
-  .variables-help-tooltip {
-    white-space: pre-line;
   }
 }
 

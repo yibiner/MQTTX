@@ -10,6 +10,7 @@
       </el-tabs>
     </div>
     <div class="configs-view-header">
+      <VariablesHelp v-if="activeTab === 'variable'" class="configs-view-help" />
       <el-button class="profile-add-btn" type="primary" size="mini" icon="el-icon-plus" @click="handleAdd">
         {{ addBtnText }}
       </el-button>
@@ -89,9 +90,6 @@
 
       <!-- 全局变量预设列表 -->
       <template v-else-if="activeTab === 'variable'">
-        <div class="variable-preset-bar">
-          <VariablesHelp :tooltip="$t('configs.variablesTip')" />
-        </div>
         <el-table
           key="variable"
           :data="globalVariables"
@@ -218,7 +216,7 @@
             ></el-input>
           </el-form-item>
           <p class="preset-variables-help">
-            <VariablesHelp :tooltip="$t('configs.variablesTip')" />
+            <VariablesHelp />
           </p>
         </template>
 
@@ -630,8 +628,13 @@ export default class Configs extends Vue {
   }
   .configs-view-header {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     margin-bottom: 8px;
+  }
+  .configs-view-help {
+    margin-right: 12px;
+    font-size: 12px;
   }
   .profile-oper {
     margin: 0 6px;
@@ -656,11 +659,6 @@ export default class Configs extends Vue {
     margin: -12px 0 18px;
     text-align: right;
     font-size: 12px;
-  }
-  .variable-preset-bar {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 8px;
   }
   .variable-preset-hint {
     margin: 0 0 12px;

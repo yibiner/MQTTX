@@ -315,7 +315,7 @@
 
         <div class="info-header">
           <h3>{{ $t('connections.clientVariables') }}</h3>
-          <VariablesHelp :tooltip="$t('connections.clientVariablesTip')" />
+          <VariablesHelp />
         </div>
         <el-card shadow="never" class="info-body item-card">
           <el-row :gutter="10">

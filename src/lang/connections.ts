@@ -911,14 +911,6 @@ export default {
     hu: 'Kliens változók',
     ko: '클라이언트 변수',
   },
-  clientVariablesTip: {
-    zh: '这些变量只属于当前客户端，可在消息主题与内容里用 ${变量名} 引用，例如主题填 app/${productType}/device/post。与全局变量同名时，客户端变量优先；不填时连接本身还会直接提供 ${clientId}、${username}、${name}、${host}、${port}。',
-    en: 'These variables belong to this client only and are referenced as ${name} in a topic or a payload, e.g. app/${productType}/device/post. They win over a global variable of the same name, and the connection also exposes ${clientId}, ${username}, ${name}, ${host} and ${port} without any variable.',
-    tr: 'Bu değişkenler yalnızca bu istemciye aittir ve konu ya da mesaj içinde ${ad} olarak kullanılır, örn. app/${productType}/device/post. Aynı addaki genel değişkene göre önceliklidir; ayrıca bağlantı kendisi ${clientId}, ${username}, ${name}, ${host} ve ${port} değerlerini doğrudan sunar.',
-    ja: 'この変数はこのクライアント専用で、トピックやメッセージ内で ${変数名} として参照できます（例：app/${productType}/device/post）。同名のグローバル変数より優先され、さらに接続自体が ${clientId}、${username}、${name}、${host}、${port} を直接提供します。',
-    hu: 'Ezek a változók csak ehhez a klienshez tartoznak, a témában vagy az üzenetben ${név} formában hivatkozhatsz rájuk, pl. app/${productType}/device/post. Azonos nevű globális változóval szemben elsőbbséget élveznek, emellett a kapcsolat maga is biztosítja a ${clientId}, ${username}, ${name}, ${host} és ${port} értékeket.',
-    ko: '이 변수는 이 클라이언트에만 속하며, 토픽이나 메시지에서 ${이름} 형식으로 참조합니다(예: app/${productType}/device/post). 같은 이름의 전역 변수보다 우선하며, 연결 자체가 ${clientId}, ${username}, ${name}, ${host}, ${port} 값을 바로 제공합니다.',
-  },
   unresolvedVariablesTitle: {
     zh: '存在未定义的变量',
     en: 'Undefined variables',

@@ -159,14 +159,6 @@ export default {
     hu: 'Változó értéke',
     ko: '변수 값',
   },
-  variablesTip: {
-    zh: '在消息主题与消息内容里用 ${变量名} 引用。内置变量（${timestamp}、${uuid} 等）优先且名称保留；其余按「客户端变量 → 这里的全局变量 → 连接字段（${clientId}、${username}、${name}、${host}、${port}）→ 内联写法（${count:1}、${rssi:-30..-60}）」的顺序取值，未定义的变量会在发送前提示。',
-    en: 'Reference a variable as ${name} in a topic or a message. Built-in variables (${timestamp}, ${uuid}, ...) come first and their names are reserved; otherwise the order is client variables → these global variables → connection fields (${clientId}, ${username}, ${name}, ${host}, ${port}) → inline forms (${count:1}, ${rssi:-30..-60}), and undefined variables are reported before sending.',
-    tr: 'Bir değişkeni konu veya mesaj içinde ${ad} olarak kullanın. Yerleşik değişkenler (${timestamp}, ${uuid}, ...) önce gelir ve adları ayrılmıştır; bunun dışında sıra istemci değişkenleri → buradaki genel değişkenler → bağlantı alanları (${clientId}, ${username}, ${name}, ${host}, ${port}) → satır içi yazımlar (${count:1}, ${rssi:-30..-60}) şeklindedir ve tanımsız değişkenler göndermeden önce bildirilir.',
-    ja: 'トピックやメッセージ内で ${変数名} として参照します。組み込み変数（${timestamp}、${uuid} など）が最優先で名前は予約されています。それ以外は「クライアント変数 → このグローバル変数 → 接続のフィールド（${clientId}、${username}、${name}、${host}、${port}）→ インライン記法（${count:1}、${rssi:-30..-60}）」の順で解決され、未定義の変数は送信前に通知されます。',
-    hu: 'A változóra a témában vagy az üzenetben ${név} formában hivatkozz. A beépített változók (${timestamp}, ${uuid}, ...) élveznek elsőbbséget és a nevük foglalt; egyébként a sorrend: kliens változók → az itteni globális változók → a kapcsolat mezői (${clientId}, ${username}, ${name}, ${host}, ${port}) → beágyazott írásmódok (${count:1}, ${rssi:-30..-60}), a nem definiált változókról pedig küldés előtt értesítést kapsz.',
-    ko: '토픽이나 메시지에서 ${이름} 형식으로 참조합니다. 내장 변수(${timestamp}, ${uuid} 등)가 우선이며 이름이 예약되어 있습니다. 그 외에는 클라이언트 변수 → 이곳의 전역 변수 → 연결 필드(${clientId}, ${username}, ${name}, ${host}, ${port}) → 인라인 표기(${count:1}, ${rssi:-30..-60}) 순서로 해석되고, 정의되지 않은 변수는 전송 전에 알려드립니다.',
-  },
   variablesEmpty: {
     zh: '还没有变量。点右上角「添加变量」新增一条，例如 productType = SN0106',
     en: 'No variables yet. Use "Add variable" in the top right, e.g. productType = SN0106',
@@ -176,12 +168,12 @@ export default {
     ko: '아직 변수가 없습니다. 오른쪽 위 "변수 추가"로 추가하세요. 예: productType = SN0106',
   },
   variablesHelp: {
-    zh: '查看提示',
-    en: 'View tips',
-    tr: 'İpuçlarını gör',
-    ja: 'ヒントを見る',
-    hu: 'Tippek megtekintése',
-    ko: '도움말 보기',
+    zh: '变量说明',
+    en: 'Variable guide',
+    tr: 'Değişken kılavuzu',
+    ja: '変数の説明',
+    hu: 'Változó-útmutató',
+    ko: '변수 설명',
   },
   variablesHelpTitle: {
     zh: '变量使用说明',
