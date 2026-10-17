@@ -160,6 +160,30 @@ describe('Desktop connection backup (native SQLite)', () => {
     ])
   })
 
+  it('reads only the client variables of a connection', async () => {
+    await seed(source, { ...connection('withVariables'), variables: { productType: 'SN0106' } })
+    configureServices(source)
+
+    expect(await services.connectionService.getVariables('withVariables')).to.deep.equal({ productType: 'SN0106' })
+    expect(await services.connectionService.getVariables('missing')).to.equal(null)
+  })
+
+  it('round trips the client variables of a connection', async () => {
+    const model: ConnectionModel = {
+      ...connection('withVariables'),
+      variables: { productType: 'SN0106', sn: 'AF020120F9CA37EX' },
+    }
+    await seed(source, model)
+
+    const backup = JSON.parse(await exportBackup())
+    expect(backup[0].variables).to.deep.equal({ productType: 'SN0106', sn: 'AF020120F9CA37EX' })
+    expect(await targetService.import(backup)).to.equal('ok')
+
+    configureServices(target)
+    const restored = await services.connectionService.get('withVariables')
+    expect(restored.variables).to.deep.equal({ productType: 'SN0106', sn: 'AF020120F9CA37EX' })
+  })
+
   it('exports a database containing only an empty group', async () => {
     await source.getRepository(CollectionEntity).save({ id: 'empty', name: 'Empty', orderId: 7 })
     const backup = JSON.parse(await exportBackup())
@@ -357,6 +381,7 @@ describe('Desktop connection backup (native SQLite)', () => {
       [{ ...connection('connection'), messages: [{ ...message('message'), connection: { id: 'foreign' } }] }],
     ],
     ['invalid MQTT properties', [{ ...connection('connection'), properties: [] }]],
+    ['invalid client variables', [{ ...connection('connection'), variables: ['productType'] }]],
   ]
   for (const [name, records] of invalidCases) {
     it(`rejects ${name} without writing any entities`, async () => {

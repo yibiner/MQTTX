@@ -4,7 +4,7 @@ import useServices from '@/database/useServices'
 import time from '@/utils/time'
 import { getMessageId } from '@/utils/idGenerator'
 import { ignoreQoS0Message } from '@/utils/mqttUtils'
-import { collectUnresolvedVariables, createPayloadVariableResolver } from '@/utils/payloadVariables'
+import { collectUnresolvedVariables, createPayloadVariableResolver, mergeVariables } from '@/utils/payloadVariables'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import { DEFAULT_HISTORY_MAX_COUNT } from '@/utils/data'
 import { getGlobalVariableMap } from '@/utils/configProfiles'
@@ -258,7 +258,11 @@ async function publishWithoutView(connectionId: string, message: MessageModel, t
     // Without the connection page there is nobody to ask for confirmation, so a tick with an
     // unresolved placeholder is skipped instead of publishing the raw template; the probe below
     // does not touch the counters, the message that really goes out is resolved once more.
-    const variables = getGlobalVariableMap()
+    // Without the connection page the variables of the client are read from the database, so a
+    // tick sees an edit the user made after the timed message was started.
+    const { connectionService } = useServices()
+    const clientVariables = await connectionService.getVariables(connectionId)
+    const variables = mergeVariables(clientVariables, getGlobalVariableMap())
     const texts = ['Plaintext', 'JSON'].includes(type) ? [message.topic, message.payload as string] : [message.topic]
     const unresolved = collectUnresolvedVariables(variables, texts)
     if (unresolved.length) {

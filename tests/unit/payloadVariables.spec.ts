@@ -2,6 +2,7 @@ import { expect } from 'chai'
 import applyPayloadVariables, {
   collectUnresolvedVariables,
   createPayloadVariableResolver,
+  mergeVariables,
   readPayloadCounter,
   resetPayloadCounters,
   resolvePayloadVariables,
@@ -227,5 +228,40 @@ describe('payloadVariables resolver of one message', () => {
     resolver.resolve('${count:1}')
     resolver.commit()
     expect(readPayloadCounter('count')).to.equal(undefined)
+  })
+})
+
+describe('payloadVariables scopes of a message', () => {
+  beforeEach(() => {
+    resetPayloadCounters()
+  })
+
+  after(() => {
+    resetPayloadCounters()
+  })
+
+  it('lets the client variables win over the global ones', () => {
+    const variables = mergeVariables({ productType: 'SN0106' }, { productType: 'GLOBAL', sn: 'AF0201' })
+    expect(variables).to.deep.equal({ productType: 'SN0106', sn: 'AF0201' })
+
+    const resolver = createPayloadVariableResolver({ variables })
+    expect(resolver.resolve('app/${productType}/${sn}/device/post')).to.equal('app/SN0106/AF0201/device/post')
+    expect(resolver.unresolved).to.deep.equal([])
+  })
+
+  it('falls back to the global variable when the client value is blank', () => {
+    expect(mergeVariables({ sn: '   ' }, { sn: 'GLOBAL' })).to.deep.equal({ sn: 'GLOBAL' })
+    expect(mergeVariables({ sn: '' }, { sn: 'GLOBAL' })).to.deep.equal({ sn: 'GLOBAL' })
+  })
+
+  it('falls back to the inline config when nothing defines the variable', () => {
+    const variables = mergeVariables({ rssi: '' }, {})
+    expect(createPayloadVariableResolver({ variables, rand: () => 0.5 }).resolve('${rssi:-30..-60}')).to.equal('-45')
+  })
+
+  it('ignores scopes and entries that cannot be used', () => {
+    const variables = mergeVariables(null, undefined, {}, { '': 'nameless', line: '  ', note: 'kept' })
+    expect(variables).to.deep.equal({ note: 'kept' })
+    expect(mergeVariables({ note: 'kept' }, { note: 'ignored' })).to.deep.equal({ note: 'kept' })
   })
 })

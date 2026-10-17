@@ -55,6 +55,7 @@ import { dashboardAndWidgetModels1759069904761 } from './migration/1759069904761
 import { koLang1783562195464 } from './migration/1783562195464-koLang'
 import { settingHistoryMessageOptions1792001000000 } from './migration/1792001000000-settingHistoryMessageOptions'
 import { historyMessageWithPayload1792001000001 } from './migration/1792001000001-historyMessageWithPayload'
+import { connectionVariables1792001000002 } from './migration/1792001000002-connectionVariables'
 
 // Get store path; fall back when running in CLI (no Electron app)
 let STORE_PATH: string
@@ -120,6 +121,7 @@ const ORMConfig = {
     koLang1783562195464,
     settingHistoryMessageOptions1792001000000,
     historyMessageWithPayload1792001000001,
+    connectionVariables1792001000002,
   ],
   migrationsTableName: 'temp_migration_table',
   entities: [

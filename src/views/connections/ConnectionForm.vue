@@ -314,6 +314,18 @@
         </transition-group>
 
         <div class="info-header">
+          <h3>{{ $t('connections.clientVariables') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-row :gutter="10">
+            <el-col :span="24">
+              <VariableEditor v-model="record.variables" />
+              <p class="client-variables-tip">{{ $t('connections.clientVariablesTip') }}</p>
+            </el-col>
+          </el-row>
+        </el-card>
+
+        <div class="info-header">
           <h3>
             {{ $t('settings.advanced') }}
             <a
@@ -688,6 +700,7 @@ import { emptyToNull } from '@/utils/handleString'
 import { getClientId } from '@/utils/idGenerator'
 import { getMQTTProtocol, getDefaultRecord } from '@/utils/mqttUtils'
 import { getClientProfiles, getServerProfiles } from '@/utils/configProfiles'
+import VariableEditor from '@/components/VariableEditor.vue'
 import Editor from '@/components/Editor.vue'
 import KeyValueEditor from '@/components/KeyValueEditor.vue'
 import { LeftValues } from '@/utils/styles'
@@ -697,6 +710,7 @@ import { sortConnectionTree } from '@/utils/connections'
   components: {
     Editor,
     KeyValueEditor,
+    VariableEditor,
   },
 })
 export default class ConnectionForm extends Vue {
@@ -1175,6 +1189,12 @@ export default class ConnectionForm extends Vue {
       color: var(--color-text-default);
       line-height: 43px;
       font-size: 12px;
+    }
+    .client-variables-tip {
+      margin: 10px 0 0;
+      color: var(--color-text-tips);
+      font-size: 12px;
+      line-height: 1.6;
     }
     // icon style without fake class such as `:hover` style
     .icon-oper-pure {

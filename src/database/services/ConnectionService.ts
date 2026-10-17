@@ -372,6 +372,17 @@ export default class ConnectionService {
     return ConnectionService.entityToModel(query)
   }
 
+  /**
+   * The payload variables of one connection only.
+   *
+   * The timed publish path needs them on every tick, and loading the connection on its own keeps
+   * it from fetching the messages and subscriptions of the connection as well.
+   */
+  public async getVariables(id: string): Promise<{ [name: string]: string } | null> {
+    const connection = await this.connectionRepository.findOne({ where: { id }, select: ['id', 'variables'] })
+    return connection?.variables ?? null
+  }
+
   // cascade get
   public async getHistoryByClientID(clientID: string): Promise<Partial<ConnectionModel> | undefined> {
     const query: HistoryConnectionEntity | undefined = await this.historyConnectionRepository

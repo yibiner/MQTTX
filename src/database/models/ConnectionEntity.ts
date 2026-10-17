@@ -97,6 +97,10 @@ export default class ConnectionEntity {
   @Column({ type: 'boolean', default: false })
   isCollection!: false
 
+  // Payload variables of this client, see ConnectionModel['variables']
+  @Column({ type: 'simple-json', nullable: true, default: null })
+  variables?: { [name: string]: string } | null
+
   @OneToOne(() => WillEntity, (will) => will.connection, { onDelete: 'CASCADE' })
   @JoinColumn()
   will?: WillEntity

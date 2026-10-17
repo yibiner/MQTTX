@@ -49,6 +49,7 @@ export function readConnectionBackup(data: unknown): {
     if ((record.ssl && !record.certType) || (record.certType === 'self' && !record.ca)) {
       throw new Error('Invalid connection certificate settings')
     }
+    if (record.variables != null && !isObject(record.variables)) throw new Error('Invalid client variables')
     for (const key of ['messages', 'subscriptions'] as const) {
       if (record[key] !== undefined && !Array.isArray(record[key])) throw new Error(`Invalid ${key}`)
       for (const child of record[key] ?? []) {

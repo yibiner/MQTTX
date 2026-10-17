@@ -385,7 +385,7 @@ import { LeftValues, BodyTopValues, MsgTopValues, DetailLeftValues } from '@/uti
 import getErrorReason from '@/utils/mqttErrorReason'
 import { isLargeData } from '@/utils/data'
 import { getGlobalVariableMap } from '@/utils/configProfiles'
-import { collectUnresolvedVariables, createPayloadVariableResolver } from '@/utils/payloadVariables'
+import { collectUnresolvedVariables, createPayloadVariableResolver, mergeVariables } from '@/utils/payloadVariables'
 import { serializeAvroToBuffer, deserializeBufferToAvro } from '@/utils/avro'
 import { globalEventBus } from '@/utils/globalEventBus'
 import SyncTopicTreeDialog from '@/widgets/SyncTopicTreeDialog.vue'
@@ -753,7 +753,8 @@ export default class ConnectionsDetail extends Vue {
     }
     // A timer cannot ask for confirmation on every tick, so a message with unresolved placeholders
     // is refused here: define the variable (preset manager → 全局变量) and start it again.
-    const unresolved = this.findUnresolvedVariables(getGlobalVariableMap(), message.topic, message.payload, type)
+    const variables = mergeVariables(this.record.variables, getGlobalVariableMap())
+    const unresolved = this.findUnresolvedVariables(variables, message.topic, message.payload, type)
     if (unresolved.length) {
       this.$message.error(
         this.$t('connections.unresolvedVariablesTimed', {
@@ -1843,7 +1844,8 @@ export default class ConnectionsDetail extends Vue {
      * send. The check must not advance counters -- the message that really goes on the wire is
      * resolved a second time, so a counter used by it advances exactly once.
      */
-    const variables = getGlobalVariableMap()
+    // The variables of this client win over the global ones ("客户端变量" in the connection form).
+    const variables = mergeVariables(this.record.variables, getGlobalVariableMap())
     const unresolved = this.findUnresolvedVariables(variables, topic, payload, type)
     if (unresolved.length) {
       if (options.quiet) {

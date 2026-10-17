@@ -449,6 +449,33 @@ export const applyPayloadVariables = (
 ): string => resolvePayloadVariables(payload, { now, rand }).text
 
 /**
+ * Merges variable scopes into the map a resolver consumes, the closest scope first: the client
+ * variables of a connection win over the global variables of the preset manager.
+ *
+ * A name that the closer scope defines with an empty value counts as "not defined" there, so the
+ * outer scope (or the inline `${name:config}` of the message) takes over -- that is how a single
+ * connection can fall back to the global value.
+ */
+export const mergeVariables = (
+  ...scopes: Array<{ [name: string]: string } | null | undefined>
+): { [name: string]: string } => {
+  const merged: { [name: string]: string } = {}
+  scopes.forEach((scope) => {
+    if (!scope || typeof scope !== 'object' || Array.isArray(scope)) {
+      return
+    }
+    Object.keys(scope).forEach((name) => {
+      const value = scope[name]
+      if (!name || typeof value !== 'string' || value.trim() === '' || name in merged) {
+        return
+      }
+      merged[name] = value
+    })
+  })
+  return merged
+}
+
+/**
  * Names of the placeholders that the given texts cannot resolve, in order of first appearance.
  *
  * The publish paths use it as a gate before they resolve for real: a probe must not advance

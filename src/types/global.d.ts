@@ -338,6 +338,12 @@ declare global {
     isCollection: false
     orderId?: number
     properties?: ClientPropertiesModel
+    /**
+     * Variables of this client ("客户端变量"), e.g. the product type it talks to. They are
+     * referenced as `${name}` in a topic and in a payload and win over the global variables of
+     * the preset manager.
+     */
+    variables?: { [name: string]: string } | null
   }
 
   // MQTT 5 feature
