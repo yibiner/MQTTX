@@ -374,6 +374,7 @@
               <i class="el-icon-warning-outline"></i>
             </a>
           </el-tooltip>
+          <VariablesHelp />
         </el-col>
         <el-col :span="4">
           <el-button
@@ -632,9 +633,10 @@ import { formatBytes } from '@/utils/formatter'
 import { resetPayloadCounters } from '@/utils/payloadVariables'
 import MCPSettings from '@/components/ai/MCPSettings.vue'
 import PayloadSizeControl from '@/components/PayloadSizeControl.vue'
+import VariablesHelp from '@/components/VariablesHelp.vue'
 
 @Component({
-  components: { ImportData, ExportData, ClearUpHistoryData, MCPSettings, PayloadSizeControl },
+  components: { ImportData, ExportData, ClearUpHistoryData, MCPSettings, PayloadSizeControl, VariablesHelp },
   directives: {
     ClickOutside,
   },

@@ -22,13 +22,20 @@ import time from './time'
  * - `${rssi:-30..-60}` — a random integer between both bounds (inclusive), drawn fresh on every
  *                        send. Bounds may be given in any order and may be negative.
  *
- * User-defined variables ("全局变量" in the preset manager) are referenced with the same `${name}`
- * syntax and can be used in a topic as well as in a payload. They are looked up before the inline
- * config above, so defining `rssi` as a global variable turns `${rssi:-30..-60}` into that value
- * while every payload that does not define `rssi` stays unchanged. A value may reference further
- * placeholders (e.g. `requestNo = ${count:1000}`); a placeholder that cannot be resolved is left
- * in the text and reported by `resolvePayloadVariables`, so the publish path can refuse to send it
- * instead of publishing the raw template.
+ * User-defined variables are referenced with the same `${name}` syntax and can be used in a topic
+ * as well as in a payload. They are looked up before the inline config above, so defining `rssi`
+ * turns `${rssi:-30..-60}` into that value while every payload that does not define `rssi` stays
+ * unchanged. The scopes are merged by `mergeVariables`, the closest one first:
+ *
+ *   1. the "客户端变量" of the connection (edited in the connection form)
+ *   2. the global variables of the preset manager
+ *   3. the fields of the connection itself (`connectionFieldVariables`), so `${clientId}`,
+ *      `${username}`, `${name}`, `${host}` and `${port}` need no configuration
+ *
+ * An empty value counts as "not defined" and falls through to the next scope. A value may reference
+ * further placeholders (e.g. `requestNo = ${count:1000}`); a placeholder that cannot be resolved is
+ * left in the text and reported by `resolvePayloadVariables`, so the publish path can refuse to
+ * send it instead of publishing the raw template.
  *
  * The payload stored in the publish history keeps the raw template, so every re-send gets a
  * fresh value, while the actually published message carries the real data.

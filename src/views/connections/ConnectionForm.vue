@@ -320,7 +320,10 @@
           <el-row :gutter="10">
             <el-col :span="24">
               <VariableEditor v-model="record.variables" />
-              <p class="client-variables-tip">{{ $t('connections.clientVariablesTip') }}</p>
+              <p class="client-variables-tip">
+                {{ $t('connections.clientVariablesTip') }}
+                <VariablesHelp />
+              </p>
             </el-col>
           </el-row>
         </el-card>
@@ -701,6 +704,7 @@ import { getClientId } from '@/utils/idGenerator'
 import { getMQTTProtocol, getDefaultRecord } from '@/utils/mqttUtils'
 import { getClientProfiles, getServerProfiles } from '@/utils/configProfiles'
 import VariableEditor from '@/components/VariableEditor.vue'
+import VariablesHelp from '@/components/VariablesHelp.vue'
 import Editor from '@/components/Editor.vue'
 import KeyValueEditor from '@/components/KeyValueEditor.vue'
 import { LeftValues } from '@/utils/styles'
@@ -711,6 +715,7 @@ import { sortConnectionTree } from '@/utils/connections'
     Editor,
     KeyValueEditor,
     VariableEditor,
+    VariablesHelp,
   },
 })
 export default class ConnectionForm extends Vue {

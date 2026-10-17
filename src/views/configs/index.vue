@@ -87,7 +87,10 @@
 
       <!-- 全局变量预设列表 -->
       <template v-else-if="activeTab === 'variable'">
-        <p class="variable-preset-tip">{{ $t('configs.variablesTip') }}</p>
+        <p class="variable-preset-tip">
+          {{ $t('configs.variablesTip') }}
+          <VariablesHelp />
+        </p>
         <el-table :data="globalVariables" size="mini" :empty-text="$t('configs.empty')" row-key="id">
           <el-table-column
             :label="$t('configs.variableName')"
@@ -207,6 +210,9 @@
               :placeholder="`{&quot;temperature&quot;: ${'${timestamp}'}}`"
             ></el-input>
           </el-form-item>
+          <p class="preset-variables-help">
+            <VariablesHelp />
+          </p>
         </template>
 
         <template v-else-if="dialogType === 'variable'">
@@ -294,6 +300,7 @@ import {
   saveGlobalVariable,
   deleteGlobalVariable,
 } from '@/utils/configProfiles'
+import VariablesHelp from '@/components/VariablesHelp.vue'
 import { PAYLOAD_VARIABLE_NAME_PATTERN, isBuiltinPayloadVariable } from '@/utils/payloadVariables'
 
 type DialogType = 'server' | 'client' | 'message' | 'variable'
@@ -349,7 +356,7 @@ interface VariableForm {
 }
 
 @Component({
-  components: { MyDialog, MessagePreview },
+  components: { MyDialog, MessagePreview, VariablesHelp },
 })
 export default class Configs extends Vue {
   private activeTab: DialogType = 'server'
@@ -632,6 +639,11 @@ export default class Configs extends Vue {
   .client-profile-unit {
     margin-left: 8px;
     color: var(--color-text-default);
+  }
+  .preset-variables-help {
+    margin: -12px 0 18px;
+    text-align: right;
+    font-size: 12px;
   }
   .variable-preset-tip,
   .variable-preset-hint {

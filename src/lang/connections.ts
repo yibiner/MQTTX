@@ -880,12 +880,12 @@ export default {
     ko: '시작',
   },
   timedMessageHint: {
-    zh: '按“启动”时捕获的报文定时发送，时间变量每次发送时重新填充',
-    en: 'Sends the message captured when the timer was started; time variables are refilled on every send',
-    tr: 'Zamanlayıcı başlatıldığında alınan mesajı gönderir; zaman değişkenleri her gönderimde yenilenir',
-    ja: '開始時に取得したメッセージを定期送信します。時間変数は送信ごとに再設定されます',
-    hu: 'Az időzítő indításakor rögzített üzenetet küldi; az idő változók minden küldéskor újra töltődnek',
-    ko: '타이머 시작 시 캡처된 메시지를 주기적으로 전송하며, 시간 변수는 전송할 때마다 다시 채워집니다',
+    zh: '按“启动”时捕获的报文定时发送，变量（时间、计数器、客户端变量等）每次发送时重新取值',
+    en: 'Sends the message captured when the timer was started; every variable (time, counters, client variables, ...) is filled again on each send',
+    tr: 'Zamanlayıcı başlatıldığında alınan mesajı gönderir; her değişken (zaman, sayaçlar, istemci değişkenleri, ...) her gönderimde yeniden doldurulur',
+    ja: '開始時に取得したメッセージを定期送信します。変数（時刻・カウンター・クライアント変数など）は送信ごとに再取得されます',
+    hu: 'Az időzítő indításakor rögzített üzenetet küldi; minden változó (idő, számlálók, kliens változók, ...) minden küldéskor újra feltöltődik',
+    ko: '타이머 시작 시 캡처된 메시지를 주기적으로 전송하며, 모든 변수(시간, 카운터, 클라이언트 변수 등)를 전송할 때마다 다시 채웁니다',
   },
   timedMessagePaused: {
     zh: '已暂停：该任务需要保持连接页面打开（发布脚本/数据模式/MQTT 5 属性），返回该连接后自动继续',
