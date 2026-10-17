@@ -373,14 +373,31 @@ export default class ConnectionService {
   }
 
   /**
-   * The payload variables of one connection only.
+   * What the timed publish path needs to resolve the variables of a message: the variables the
+   * user defined for the connection and the fields the connection exposes to its messages
+   * (`${clientId}`, `${username}`, ...).
    *
-   * The timed publish path needs them on every tick, and loading the connection on its own keeps
-   * it from fetching the messages and subscriptions of the connection as well.
+   * Only these columns are loaded, so a tick does not fetch the messages, subscriptions and
+   * certificates of the connection as well.
    */
-  public async getVariables(id: string): Promise<{ [name: string]: string } | null> {
-    const connection = await this.connectionRepository.findOne({ where: { id }, select: ['id', 'variables'] })
-    return connection?.variables ?? null
+  public async getVariableSource(
+    id: string,
+  ): Promise<Pick<ConnectionModel, 'variables' | 'clientId' | 'username' | 'name' | 'host' | 'port'> | undefined> {
+    const connection = await this.connectionRepository.findOne({
+      where: { id },
+      select: ['id', 'variables', 'clientId', 'username', 'name', 'host', 'port'],
+    })
+    if (!connection) {
+      return undefined
+    }
+    return {
+      variables: connection.variables,
+      clientId: connection.clientId,
+      username: connection.username,
+      name: connection.name,
+      host: connection.host,
+      port: connection.port,
+    }
   }
 
   // cascade get

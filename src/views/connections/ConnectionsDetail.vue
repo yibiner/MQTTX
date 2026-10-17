@@ -385,7 +385,12 @@ import { LeftValues, BodyTopValues, MsgTopValues, DetailLeftValues } from '@/uti
 import getErrorReason from '@/utils/mqttErrorReason'
 import { isLargeData } from '@/utils/data'
 import { getGlobalVariableMap } from '@/utils/configProfiles'
-import { collectUnresolvedVariables, createPayloadVariableResolver, mergeVariables } from '@/utils/payloadVariables'
+import {
+  collectUnresolvedVariables,
+  connectionFieldVariables,
+  createPayloadVariableResolver,
+  mergeVariables,
+} from '@/utils/payloadVariables'
 import { serializeAvroToBuffer, deserializeBufferToAvro } from '@/utils/avro'
 import { globalEventBus } from '@/utils/globalEventBus'
 import SyncTopicTreeDialog from '@/widgets/SyncTopicTreeDialog.vue'
@@ -752,8 +757,9 @@ export default class ConnectionsDetail extends Vue {
       return
     }
     // A timer cannot ask for confirmation on every tick, so a message with unresolved placeholders
-    // is refused here: define the variable (preset manager → 全局变量) and start it again.
-    const variables = mergeVariables(this.record.variables, getGlobalVariableMap())
+    // is refused here: define the variable ("客户端变量" of the connection or 全局变量 in the preset
+    // manager) and start it again.
+    const variables = this.findMessageVariables()
     const unresolved = this.findUnresolvedVariables(variables, message.topic, message.payload, type)
     if (unresolved.length) {
       this.$message.error(
@@ -1844,8 +1850,7 @@ export default class ConnectionsDetail extends Vue {
      * send. The check must not advance counters -- the message that really goes on the wire is
      * resolved a second time, so a counter used by it advances exactly once.
      */
-    // The variables of this client win over the global ones ("客户端变量" in the connection form).
-    const variables = mergeVariables(this.record.variables, getGlobalVariableMap())
+    const variables = this.findMessageVariables()
     const unresolved = this.findUnresolvedVariables(variables, topic, payload, type)
     if (unresolved.length) {
       if (options.quiet) {
@@ -1922,9 +1927,19 @@ export default class ConnectionsDetail extends Vue {
   }
 
   /**
-   * Placeholders of a message that neither a built-in variable, a global variable nor an inline
-   * `${name:config}` can resolve. The topic is always checked, the payload only for the payload
-   * types that support variables (as in the publish pipeline itself).
+   * Every variable a message of this connection can use, closest scope first: the "客户端变量" of
+   * the connection, then the global ones, then the fields of the connection itself (so
+   * `${clientId}` works out of the box), then the inline `${name:config}` of the message.
+   */
+  private findMessageVariables(): { [name: string]: string } {
+    return mergeVariables(this.record.variables, getGlobalVariableMap(), connectionFieldVariables(this.record))
+  }
+
+  /**
+   * Placeholders of a message that neither a built-in variable nor one of its variables (client
+   * variables, global variables, connection fields) nor an inline `${name:config}` can resolve.
+   * The topic is always checked, the payload only for the payload types that support variables (as
+   * in the publish pipeline itself).
    */
   private findUnresolvedVariables(
     variables: { [name: string]: string },

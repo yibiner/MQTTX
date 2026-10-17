@@ -1,6 +1,7 @@
 import { expect } from 'chai'
 import applyPayloadVariables, {
   collectUnresolvedVariables,
+  connectionFieldVariables,
   createPayloadVariableResolver,
   mergeVariables,
   readPayloadCounter,
@@ -263,5 +264,55 @@ describe('payloadVariables scopes of a message', () => {
     const variables = mergeVariables(null, undefined, {}, { '': 'nameless', line: '  ', note: 'kept' })
     expect(variables).to.deep.equal({ note: 'kept' })
     expect(mergeVariables({ note: 'kept' }, { note: 'ignored' })).to.deep.equal({ note: 'kept' })
+  })
+})
+
+describe('payloadVariables connection fields', () => {
+  const connection = {
+    clientId: 'sn0106',
+    username: 'yibin',
+    name: 'sn0106 设备',
+    host: 'broker.emqx.io',
+    port: 1883,
+  }
+
+  it('exposes the fields of the connection as variables', () => {
+    expect(connectionFieldVariables(connection)).to.deep.equal({
+      clientId: 'sn0106',
+      username: 'yibin',
+      name: 'sn0106 设备',
+      host: 'broker.emqx.io',
+      port: '1883',
+    })
+  })
+
+  it('builds a topic and a payload from the connection', () => {
+    const variables = mergeVariables(undefined, {}, connectionFieldVariables(connection))
+    const resolver = createPayloadVariableResolver({ variables })
+
+    expect(resolver.resolve('app/${clientId}/device/system/post')).to.equal('app/sn0106/device/system/post')
+    expect(resolver.resolve('{"clientId":"${clientId}","user":"${username}"}')).to.equal(
+      '{"clientId":"sn0106","user":"yibin"}',
+    )
+    expect(resolver.unresolved).to.deep.equal([])
+  })
+
+  it('never exposes the password', () => {
+    const fields = connectionFieldVariables({ ...connection, password: 'secret' } as never)
+    expect(fields).to.not.have.property('password')
+    expect(Object.keys(fields)).to.deep.equal(['clientId', 'username', 'name', 'host', 'port'])
+  })
+
+  it('leaves a field that the connection does not fill undefined', () => {
+    expect(connectionFieldVariables({ clientId: 'sn0106', username: '' })).to.deep.equal({ clientId: 'sn0106' })
+    expect(connectionFieldVariables(undefined)).to.deep.equal({})
+    expect(connectionFieldVariables({})).to.deep.equal({})
+  })
+
+  it('lets an explicit variable win over a connection field', () => {
+    expect(mergeVariables({ clientId: 'custom' }, {}, connectionFieldVariables(connection)).clientId).to.equal('custom')
+    expect(mergeVariables(undefined, { clientId: 'global' }, connectionFieldVariables(connection)).clientId).to.equal(
+      'global',
+    )
   })
 })

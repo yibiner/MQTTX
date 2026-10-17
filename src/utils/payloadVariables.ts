@@ -449,6 +449,44 @@ export const applyPayloadVariables = (
 ): string => resolvePayloadVariables(payload, { now, rand }).text
 
 /**
+ * The values a connection exposes to its own messages: `${clientId}`, `${username}`, `${name}`,
+ * `${host}` and `${port}`.
+ *
+ * A device usually shows up in its topic, so a template like `app/${clientId}/device/post` serves
+ * every connection without editing the message. These values are derived from the connection
+ * itself, so a variable the user defined (client or global) still wins over them.
+ *
+ * The password is deliberately not exposed: the value of a variable ends up in a published
+ * message, and therefore on the broker and in the receiver's logs.
+ */
+export const connectionFieldVariables = (
+  connection: Partial<Pick<ConnectionModel, 'clientId' | 'username' | 'name' | 'host' | 'port'>> | null | undefined,
+): { [name: string]: string } => {
+  const fields: { [name: string]: string } = {}
+  if (!connection) {
+    return fields
+  }
+  const add = (name: string, value: string | number | null | undefined) => {
+    if (value === undefined || value === null) {
+      return
+    }
+    const text = String(value)
+    // An empty field (a connection without a username) stays undefined instead of resolving to ""
+    if (text.trim() === '') {
+      return
+    }
+    fields[name] = text
+  }
+  add('clientId', connection.clientId)
+  add('username', connection.username)
+  add('name', connection.name)
+  add('host', connection.host)
+  add('port', connection.port)
+  return fields
+}
+
+/**
+ * Merges variable scopes into the map a resolver consumes, the closest scope first/**
  * Merges variable scopes into the map a resolver consumes, the closest scope first: the client
  * variables of a connection win over the global variables of the preset manager.
  *

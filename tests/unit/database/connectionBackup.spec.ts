@@ -160,12 +160,19 @@ describe('Desktop connection backup (native SQLite)', () => {
     ])
   })
 
-  it('reads only the client variables of a connection', async () => {
-    await seed(source, { ...connection('withVariables'), variables: { productType: 'SN0106' } })
+  it('reads only the variables and fields a message of a connection can use', async () => {
+    await seed(source, { ...connection('withVariables'), variables: { productType: 'SN0106' }, username: 'yibin' })
     configureServices(source)
 
-    expect(await services.connectionService.getVariables('withVariables')).to.deep.equal({ productType: 'SN0106' })
-    expect(await services.connectionService.getVariables('missing')).to.equal(null)
+    expect(await services.connectionService.getVariableSource('withVariables')).to.deep.equal({
+      variables: { productType: 'SN0106' },
+      clientId: 'withVariables',
+      username: 'yibin',
+      name: 'withVariables',
+      host: 'localhost',
+      port: 1883,
+    })
+    expect(await services.connectionService.getVariableSource('missing')).to.equal(undefined)
   })
 
   it('round trips the client variables of a connection', async () => {

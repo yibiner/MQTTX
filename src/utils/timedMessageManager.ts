@@ -4,7 +4,12 @@ import useServices from '@/database/useServices'
 import time from '@/utils/time'
 import { getMessageId } from '@/utils/idGenerator'
 import { ignoreQoS0Message } from '@/utils/mqttUtils'
-import { collectUnresolvedVariables, createPayloadVariableResolver, mergeVariables } from '@/utils/payloadVariables'
+import {
+  collectUnresolvedVariables,
+  connectionFieldVariables,
+  createPayloadVariableResolver,
+  mergeVariables,
+} from '@/utils/payloadVariables'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import { DEFAULT_HISTORY_MAX_COUNT } from '@/utils/data'
 import { getGlobalVariableMap } from '@/utils/configProfiles'
@@ -254,15 +259,15 @@ async function publishWithoutView(connectionId: string, message: MessageModel, t
       getLog().warn(`Timed message skipped: connection ${connectionId} is not connected`)
       return
     }
-    // User-defined variables ("全局变量") refill on every tick, exactly like the built-in ones.
-    // Without the connection page there is nobody to ask for confirmation, so a tick with an
-    // unresolved placeholder is skipped instead of publishing the raw template; the probe below
-    // does not touch the counters, the message that really goes out is resolved once more.
-    // Without the connection page the variables of the client are read from the database, so a
-    // tick sees an edit the user made after the timed message was started.
+    // Variables ("客户端变量", 全局变量 and the fields of the connection) refill on every tick,
+    // exactly like the built-in ones. They are read from the database here, so a tick sees an edit
+    // the user made after the timed message was started. Without the connection page there is
+    // nobody to ask for confirmation, so a tick with an unresolved placeholder is skipped instead
+    // of publishing the raw template; the probe below does not touch the counters, the message that
+    // really goes out is resolved once more.
     const { connectionService } = useServices()
-    const clientVariables = await connectionService.getVariables(connectionId)
-    const variables = mergeVariables(clientVariables, getGlobalVariableMap())
+    const source = await connectionService.getVariableSource(connectionId)
+    const variables = mergeVariables(source?.variables, getGlobalVariableMap(), connectionFieldVariables(source))
     const texts = ['Plaintext', 'JSON'].includes(type) ? [message.topic, message.payload as string] : [message.topic]
     const unresolved = collectUnresolvedVariables(variables, texts)
     if (unresolved.length) {
