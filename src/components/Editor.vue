@@ -164,6 +164,8 @@ export default class Editor extends Vue {
       minimap: {
         enabled: false,
       },
+      // a container can change size without the window resizing (a resizable box in a dialog)
+      automaticLayout: true,
       lightbulb: {
         enabled: false,
       },

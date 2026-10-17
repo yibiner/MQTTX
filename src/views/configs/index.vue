@@ -155,8 +155,10 @@
     <my-dialog
       :title="editingId ? $t('configs.editProfile') : addBtnText"
       :visible.sync="dialogVisible"
-      :width="'460px'"
+      :width="dialogWidth"
+      :top="dialogType === 'message' ? '8vh' : '15vh'"
       @confirm="handleSave"
+      @open="handleDialogOpen"
     >
       <el-form
         ref="profileForm"
@@ -208,16 +210,25 @@
             <el-input v-model.trim="profileForm.topic" clearable placeholder="sensor/temperature"></el-input>
           </el-form-item>
           <el-form-item :label="$t('configs.message')" prop="payload">
-            <el-input
-              v-model="profileForm.payload"
-              type="textarea"
-              :rows="6"
-              :placeholder="`{&quot;temperature&quot;: ${'${timestamp}'}}`"
-            ></el-input>
+            <!-- the same editor as the publish panel: JSON highlight, formatting and a resizable box -->
+            <div class="preset-payload-editor" @keyup.enter.stop @keydown.enter.stop>
+              <Editor
+                ref="presetPayloadEditor"
+                id="preset-payload"
+                v-model="profileForm.payload"
+                :lang="presetPayloadLang"
+                :useShadows="true"
+                @format="formatPresetPayload"
+              />
+            </div>
+            <div class="preset-payload-bar">
+              <span class="preset-payload-hint">{{ $t('configs.payloadEditorHint') }}</span>
+              <a href="javascript:;" class="preset-payload-format" @click="formatPresetPayload">
+                {{ $t('configs.formatPayload') }}
+              </a>
+              <VariablesHelp />
+            </div>
           </el-form-item>
-          <p class="preset-variables-help">
-            <VariablesHelp />
-          </p>
         </template>
 
         <template v-else-if="dialogType === 'variable'">
@@ -306,7 +317,10 @@ import {
   deleteGlobalVariable,
 } from '@/utils/configProfiles'
 import VariablesHelp from '@/components/VariablesHelp.vue'
+import Editor from '@/components/Editor.vue'
 import { PAYLOAD_VARIABLE_NAME_PATTERN, isBuiltinPayloadVariable } from '@/utils/payloadVariables'
+import isJsonPayload from '@/utils/payloadLanguage'
+import validFormatJson from '@/utils/validFormatJson'
 
 type DialogType = 'server' | 'client' | 'message' | 'variable'
 
@@ -361,7 +375,7 @@ interface VariableForm {
 }
 
 @Component({
-  components: { MyDialog, MessagePreview, VariablesHelp },
+  components: { MyDialog, MessagePreview, VariablesHelp, Editor },
 })
 export default class Configs extends Vue {
   private activeTab: DialogType = 'server'
@@ -373,6 +387,8 @@ export default class Configs extends Vue {
   private dialogVisible = false
   private editingId: string | null = null
   private dialogType: DialogType = 'server'
+  // which language the preset editor highlights, decided when the dialog opens
+  private presetPayloadLang = 'json'
 
   private profileForm: (ServerProfileForm | ClientProfileForm | MessagePresetForm | VariableForm) & {
     [key: string]: any
@@ -475,6 +491,33 @@ export default class Configs extends Vue {
     return (this.activeTab === 'variable' ? this.$t('configs.addVariable') : this.$t('configs.addProfile')) as string
   }
 
+  /** The message preset edits a payload, so its dialog is wider than the ones of the other tabs. */
+  private get dialogWidth(): string {
+    return this.dialogType === 'message' ? '760px' : '460px'
+  }
+
+  /**
+   * The preset editor lives in a dialog, which has no size until it is done opening, so lay the
+   * editor out once the dialog is fully visible. Later resizes are handled by the editor itself.
+   */
+  private handleDialogOpen() {
+    setTimeout(() => {
+      const editor = this.$refs.presetPayloadEditor as Editor | undefined
+      editor?.editorLayout()
+    }, 400)
+  }
+
+  private formatPresetPayload() {
+    try {
+      const formatted = validFormatJson(this.profileForm.payload as string)
+      if (formatted) {
+        this.profileForm.payload = formatted
+      }
+    } catch (error) {
+      this.$message.error((error as Error).toString())
+    }
+  }
+
   private handleAdd() {
     this.dialogType = this.activeTab
     this.editingId = null
@@ -482,6 +525,7 @@ export default class Configs extends Vue {
       this.profileForm = { alias: '', host: '', port: 1883, protocol: 'mqtt', path: undefined }
     } else if (this.activeTab === 'message') {
       this.profileForm = { name: '', topic: '', payload: '' }
+      this.presetPayloadLang = 'json'
     } else if (this.activeTab === 'variable') {
       this.profileForm = { name: '', value: '' }
     } else {
@@ -527,6 +571,7 @@ export default class Configs extends Vue {
         topic: preset.topic,
         payload: preset.payload,
       }
+      this.presetPayloadLang = isJsonPayload(preset.payload) ? 'json' : 'plaintext'
     } else {
       const client = row as ClientProfileModel
       this.profileForm = {
@@ -655,10 +700,32 @@ export default class Configs extends Vue {
     margin-left: 8px;
     color: var(--color-text-default);
   }
-  .preset-variables-help {
-    margin: -12px 0 18px;
-    text-align: right;
+  .preset-payload-editor {
+    height: 240px;
+    min-height: 120px;
+    max-height: 70vh;
+    border: 1px solid var(--color-border-default);
+    border-radius: 4px;
+    // the bottom right corner can be dragged to give the payload more room
+    overflow: hidden;
+    resize: vertical;
+  }
+  .preset-payload-bar {
+    display: flex;
+    align-items: center;
+    margin-top: 8px;
     font-size: 12px;
+    line-height: 1.6;
+    .preset-payload-hint {
+      margin-right: auto;
+      color: var(--color-text-tips);
+    }
+    .preset-payload-format {
+      color: var(--color-main-green);
+      &:hover {
+        text-decoration: underline;
+      }
+    }
   }
   .variable-preset-hint {
     margin: 0 0 12px;

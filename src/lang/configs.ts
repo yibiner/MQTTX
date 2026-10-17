@@ -167,6 +167,22 @@ export default {
     hu: 'Még nincs változó. A jobb felső "Változó hozzáadása" gombbal vehetsz fel egyet, pl. productType = SN0106',
     ko: '아직 변수가 없습니다. 오른쪽 위 "변수 추가"로 추가하세요. 예: productType = SN0106',
   },
+  formatPayload: {
+    zh: '格式化 JSON',
+    en: 'Format JSON',
+    tr: 'JSON biçimlendir',
+    ja: 'JSON を整形',
+    hu: 'JSON formázása',
+    ko: 'JSON 정리',
+  },
+  payloadEditorHint: {
+    zh: '拖动右下角可调整大小',
+    en: 'Drag the bottom right corner to resize',
+    tr: 'Boyutu değiştirmek için sağ alt köşeyi sürükleyin',
+    ja: '右下をドラッグしてサイズを変更できます',
+    hu: 'A jobb alsó sarok húzásával átméretezhető',
+    ko: '오른쪽 아래 모서리를 끌어 크기를 조절할 수 있습니다',
+  },
   variablesHelp: {
     zh: '变量说明',
     en: 'Variable guide',
