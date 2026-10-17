@@ -281,7 +281,7 @@ async function publishWithoutView(connectionId: string, message: MessageModel, t
       filledPayload = resolver.resolve(filledPayload as string)
     }
     resolver.commit()
-    await saveTimedMessageHistory(connectionId, message, filledPayload, type)
+    await saveTimedMessageHistory(connectionId, message, filledPayload, type, wireTopic)
     const wirePayload = convertPayloadForFallback(filledPayload, type)
     if (wirePayload === undefined || wirePayload === '') {
       return
@@ -305,6 +305,7 @@ async function saveTimedMessageHistory(
   template: MessageModel,
   publishedPayload: string | Buffer | undefined,
   type: PayloadType,
+  wireTopic: string,
 ): Promise<void> {
   try {
     const appState = (store.state as any).app ?? {}
@@ -331,7 +332,8 @@ async function saveTimedMessageHistory(
           id: template.id,
           out: true,
           createAt: time.getNowDate(),
-          topic: template.topic,
+          // the message list shows what went on the wire, the topic template stays in the history
+          topic: wireTopic,
           payload: publishedPayload.toString(),
           qos: template.qos,
           retain: template.retain,

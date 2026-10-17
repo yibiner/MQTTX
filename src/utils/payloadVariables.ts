@@ -459,7 +459,7 @@ export const applyPayloadVariables = (
  * The values a connection exposes to its own messages: `${clientId}`, `${username}`, `${name}`,
  * `${host}` and `${port}`.
  *
- * A device usually shows up in its topic, so a template like `app/${clientId}/device/post` serves
+ * A device usually shows up in its topic, so a template like `sensor/${clientId}/data` serves
  * every connection without editing the message. These values are derived from the connection
  * itself, so a variable the user defined (client or global) still wins over them.
  *

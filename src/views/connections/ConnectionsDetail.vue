@@ -1919,7 +1919,13 @@ export default class ConnectionsDetail extends Vue {
          * 1. The finalPayload might be a Buffer, which isn't suitable for storage.
          * 2. To retain a human-readable payload that reflects the original or the user-script processed data.
          */
-        await this.handleSuccessfulPublish(message, convertedPayload)
+        /*
+         * The message list shows the message that really went out, so it takes the resolved topic:
+         * a preset or a manually typed template like "sensor/${deviceType}/${clientId}/..." would
+         * otherwise be listed verbatim and look as if the variables were never replaced. The
+         * publish history above keeps the template, so re-sending it refills the variables.
+         */
+        await this.handleSuccessfulPublish({ ...message, topic: publishTopic }, convertedPayload)
       },
     )
 

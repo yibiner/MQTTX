@@ -236,7 +236,7 @@
             <el-input v-model.trim="profileForm.name" clearable placeholder="deviceId"></el-input>
           </el-form-item>
           <el-form-item :label="$t('configs.variableValue')" prop="value">
-            <el-input v-model="profileForm.value" clearable :placeholder="`${'${timestamp}'} / dl / 26.5`"></el-input>
+            <el-input v-model="profileForm.value" clearable :placeholder="`${'${timestamp}'} / 26.5 / A1`"></el-input>
           </el-form-item>
           <p class="variable-preset-hint">{{ $t('configs.variableValueTip') }}</p>
         </template>
