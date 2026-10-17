@@ -18,6 +18,7 @@
       <!-- 服务器配置列表 -->
       <el-table
         v-if="activeTab === 'server'"
+        key="server"
         :data="serverProfiles"
         size="mini"
         :empty-text="$t('configs.empty')"
@@ -55,6 +56,7 @@
       <!-- 客户端预设列表 -->
       <el-table
         v-else-if="activeTab === 'client'"
+        key="client"
         :data="clientProfiles"
         size="mini"
         :empty-text="$t('configs.empty')"
@@ -91,7 +93,7 @@
           {{ $t('configs.variablesTip') }}
           <VariablesHelp />
         </p>
-        <el-table :data="globalVariables" size="mini" :empty-text="$t('configs.empty')" row-key="id">
+        <el-table key="variable" :data="globalVariables" size="mini" :empty-text="$t('configs.empty')" row-key="id">
           <el-table-column
             :label="$t('configs.variableName')"
             prop="name"
@@ -115,7 +117,7 @@
       </template>
 
       <!-- 消息预设列表 -->
-      <el-table v-else :data="messagePresets" size="mini" :empty-text="$t('configs.empty')" row-key="id">
+      <el-table v-else key="message" :data="messagePresets" size="mini" :empty-text="$t('configs.empty')" row-key="id">
         <el-table-column
           :label="$t('configs.name')"
           prop="name"

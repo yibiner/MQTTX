@@ -1,7 +1,7 @@
 import { expect } from 'chai'
 import Vue from 'vue'
 import ElementUI from 'element-ui'
-import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+import { createLocalVue, mount, shallowMount, Wrapper } from '@vue/test-utils'
 import Configs from '@/views/configs/index.vue'
 import MessagePreview from '@/components/MessagePreview.vue'
 import {
@@ -55,6 +55,32 @@ describe('configs view', () => {
 
     const presets = (wrapper.vm as any).messagePresets as { name: string }[]
     expect(presets.map((preset) => preset.name)).to.contain('preview')
+  })
+
+  it('rebuilds the table of a tab instead of patching the one of the previous tab', async () => {
+    // `el-table` keeps the column instances of the table it was rendered with, so patching one
+    // tab's table into the one of the next tab swapped two column slots: the password column then
+    // showed the edit/delete buttons and the actions column showed the "-" of the password column.
+    const wrapper = mount(Configs, {
+      localVue,
+      mocks: { $t: (key: string) => key },
+      stubs: { ElSelect: true },
+    })
+    const vm = wrapper.vm as any
+
+    vm.activeTab = 'client'
+    await wrapper.vm.$nextTick()
+    const clientTable = wrapper.find('.el-table').element
+
+    vm.activeTab = 'message'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.el-table').element).to.not.equal(clientTable)
+
+    vm.activeTab = 'client'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.el-table').element).to.not.equal(clientTable)
+
+    wrapper.destroy()
   })
 
   it('rejects a message without visible content when saving a preset', async () => {
