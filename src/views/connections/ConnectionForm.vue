@@ -315,15 +315,12 @@
 
         <div class="info-header">
           <h3>{{ $t('connections.clientVariables') }}</h3>
+          <VariablesHelp :tooltip="$t('connections.clientVariablesTip')" />
         </div>
         <el-card shadow="never" class="info-body item-card">
           <el-row :gutter="10">
             <el-col :span="24">
               <VariableEditor v-model="record.variables" />
-              <p class="client-variables-tip">
-                {{ $t('connections.clientVariablesTip') }}
-                <VariablesHelp />
-              </p>
             </el-col>
           </el-row>
         </el-card>
@@ -1194,12 +1191,6 @@ export default class ConnectionForm extends Vue {
       color: var(--color-text-default);
       line-height: 43px;
       font-size: 12px;
-    }
-    .client-variables-tip {
-      margin: 10px 0 0;
-      color: var(--color-text-tips);
-      font-size: 12px;
-      line-height: 1.6;
     }
     // icon style without fake class such as `:hover` style
     .icon-oper-pure {

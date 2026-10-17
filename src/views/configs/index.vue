@@ -11,7 +11,7 @@
     </div>
     <div class="configs-view-header">
       <el-button class="profile-add-btn" type="primary" size="mini" icon="el-icon-plus" @click="handleAdd">
-        {{ $t('configs.addProfile') }}
+        {{ addBtnText }}
       </el-button>
     </div>
     <div class="configs-view-body">
@@ -89,11 +89,16 @@
 
       <!-- 全局变量预设列表 -->
       <template v-else-if="activeTab === 'variable'">
-        <p class="variable-preset-tip">
-          {{ $t('configs.variablesTip') }}
-          <VariablesHelp />
-        </p>
-        <el-table key="variable" :data="globalVariables" size="mini" :empty-text="$t('configs.empty')" row-key="id">
+        <div class="variable-preset-bar">
+          <VariablesHelp :tooltip="$t('configs.variablesTip')" />
+        </div>
+        <el-table
+          key="variable"
+          :data="globalVariables"
+          size="mini"
+          :empty-text="$t('configs.variablesEmpty')"
+          row-key="id"
+        >
           <el-table-column
             :label="$t('configs.variableName')"
             prop="name"
@@ -150,7 +155,7 @@
 
     <!-- 新增 / 编辑对话框 -->
     <my-dialog
-      :title="editingId ? $t('configs.editProfile') : $t('configs.addProfile')"
+      :title="editingId ? $t('configs.editProfile') : addBtnText"
       :visible.sync="dialogVisible"
       :width="'460px'"
       @confirm="handleSave"
@@ -213,7 +218,7 @@
             ></el-input>
           </el-form-item>
           <p class="preset-variables-help">
-            <VariablesHelp />
+            <VariablesHelp :tooltip="$t('configs.variablesTip')" />
           </p>
         </template>
 
@@ -467,6 +472,11 @@ export default class Configs extends Vue {
     this.loadData()
   }
 
+  /** The variable tab adds variables, every other tab adds a profile or a preset. */
+  private get addBtnText(): string {
+    return (this.activeTab === 'variable' ? this.$t('configs.addVariable') : this.$t('configs.addProfile')) as string
+  }
+
   private handleAdd() {
     this.dialogType = this.activeTab
     this.editingId = null
@@ -647,7 +657,11 @@ export default class Configs extends Vue {
     text-align: right;
     font-size: 12px;
   }
-  .variable-preset-tip,
+  .variable-preset-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+  }
   .variable-preset-hint {
     margin: 0 0 12px;
     color: var(--color-text-tips);

@@ -167,6 +167,14 @@ export default {
     hu: 'A változóra a témában vagy az üzenetben ${név} formában hivatkozz. A beépített változók (${timestamp}, ${uuid}, ...) élveznek elsőbbséget és a nevük foglalt; egyébként a sorrend: kliens változók → az itteni globális változók → a kapcsolat mezői (${clientId}, ${username}, ${name}, ${host}, ${port}) → beágyazott írásmódok (${count:1}, ${rssi:-30..-60}), a nem definiált változókról pedig küldés előtt értesítést kapsz.',
     ko: '토픽이나 메시지에서 ${이름} 형식으로 참조합니다. 내장 변수(${timestamp}, ${uuid} 등)가 우선이며 이름이 예약되어 있습니다. 그 외에는 클라이언트 변수 → 이곳의 전역 변수 → 연결 필드(${clientId}, ${username}, ${name}, ${host}, ${port}) → 인라인 표기(${count:1}, ${rssi:-30..-60}) 순서로 해석되고, 정의되지 않은 변수는 전송 전에 알려드립니다.',
   },
+  variablesEmpty: {
+    zh: '还没有变量。点右上角「添加变量」新增一条，例如 productType = SN0106',
+    en: 'No variables yet. Use "Add variable" in the top right, e.g. productType = SN0106',
+    tr: 'Henüz değişken yok. Sağ üstteki "Değişken ekle" ile ekleyin, örn. productType = SN0106',
+    ja: '変数がまだありません。右上の「変数を追加」から作成できます（例：productType = SN0106）',
+    hu: 'Még nincs változó. A jobb felső "Változó hozzáadása" gombbal vehetsz fel egyet, pl. productType = SN0106',
+    ko: '아직 변수가 없습니다. 오른쪽 위 "변수 추가"로 추가하세요. 예: productType = SN0106',
+  },
   variablesHelp: {
     zh: '查看提示',
     en: 'View tips',
