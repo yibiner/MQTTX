@@ -254,6 +254,10 @@ declare global {
     clean?: boolean
     /** Variables of the client itself, copied into its "客户端变量" when the preset is applied. */
     variables?: { [name: string]: string } | null
+    /** Subscriptions the preset starts after connecting, copied into the connection. */
+    autoSubscriptions?: AutoSubscribeGroupModel[] | null
+    /** Automatic replies of the preset, copied into the connection. */
+    autoReplies?: AutoReplyRuleModel[] | null
   }
 
   /** Reusable topic + message preset, selectable directly in the publish window. */
@@ -346,6 +350,54 @@ declare global {
      * the preset manager.
      */
     variables?: { [name: string]: string } | null
+    /** Topics subscribed automatically once the connection is established. */
+    autoSubscriptions?: AutoSubscribeGroupModel[] | null
+    /** Rules that answer a received message automatically on this connection. */
+    autoReplies?: AutoReplyRuleModel[] | null
+  }
+
+  /** One topic filter of an automatic subscription batch. */
+  interface AutoSubscribeTopicModel {
+    topic: string
+    qos: QoS
+  }
+
+  /**
+   * A batch of topics subscribed together after the connection is established, e.g. what a device
+   * sends right after it came online. `delayMs` counts from the moment the connection succeeded and
+   * `merge` sends all topics of the batch in one SUBSCRIBE packet (one SUBACK for the whole batch).
+   */
+  interface AutoSubscribeGroupModel {
+    id: string
+    delayMs: number
+    merge: boolean
+    enabled: boolean
+    topics: AutoSubscribeTopicModel[]
+  }
+
+  /** What a matched message is answered with. */
+  interface AutoReplyReplyModel {
+    topic: string
+    /** `echo` merges `payload` into the received JSON object, `fixed` sends `payload` as it is. */
+    mode: 'echo' | 'fixed'
+    payload: string
+    qos: QoS
+    retain: boolean
+    delayMs: number
+  }
+
+  /**
+   * One automatic reply rule, e.g. answering a device command. `matchTopic` is an MQTT topic filter
+   * and `matchCondition` a JMESPath expression evaluated against the received payload parsed as
+   * JSON, so a rule reads like `cmd == 'WIFI_RECONNECT_SERVICE'`.
+   */
+  interface AutoReplyRuleModel {
+    id: string
+    name: string
+    enabled: boolean
+    matchTopic: string
+    matchCondition: string
+    reply: AutoReplyReplyModel
   }
 
   // MQTT 5 feature

@@ -1,0 +1,260 @@
+<template>
+  <div class="auto-subscribe-editor">
+    <div v-for="(group, index) in groups" :key="group.id" class="auto-subscribe-group">
+      <div class="group-header">
+        <div class="group-delay">
+          <span class="field-label">{{ $t('connections.autoSubscribeDelay') }}</span>
+          <el-input-number
+            v-model="group.delayMs"
+            size="mini"
+            :min="0"
+            :step="500"
+            :controls="false"
+            class="delay-input"
+            @change="emitChange"
+          ></el-input-number>
+          <span class="field-unit">ms</span>
+          <span class="quick-delays">
+            <a
+              v-for="quick in quickDelays"
+              :key="quick"
+              href="javascript:;"
+              :class="['quick-delay', { active: Number(group.delayMs) === quick }]"
+              @click="setDelay(index, quick)"
+            >
+              {{ quick }}
+            </a>
+          </span>
+        </div>
+        <div class="group-options">
+          <el-checkbox v-model="group.merge" class="merge-checkbox" @change="emitChange">
+            {{ $t('connections.autoSubscribeMerge') }}
+          </el-checkbox>
+          <el-tooltip :content="$t('connections.autoReplyEnableRule')" placement="top">
+            <el-switch
+              v-model="group.enabled"
+              active-color="#13ce66"
+              inactive-color="#A2A9B0"
+              @change="emitChange"
+            ></el-switch>
+          </el-tooltip>
+          <a href="javascript:;" class="group-delete" @click="removeGroup(index)">
+            <i class="el-icon-delete"></i>
+          </a>
+        </div>
+      </div>
+
+      <div v-for="(topic, topicIndex) in group.topics" :key="topicIndex" class="topic-row">
+        <el-input
+          v-model="topic.topic"
+          size="mini"
+          class="topic-input"
+          :placeholder="topicPlaceholder"
+          @input="emitChange"
+        ></el-input>
+        <el-select v-model="topic.qos" size="mini" class="topic-qos" @change="emitChange">
+          <el-option v-for="qos in qosList" :key="qos" :label="'QoS ' + qos" :value="qos"></el-option>
+        </el-select>
+        <a href="javascript:;" class="topic-delete" @click="removeTopic(index, topicIndex)">
+          <i class="el-icon-delete"></i>
+        </a>
+      </div>
+
+      <el-button type="text" icon="el-icon-plus" class="topic-add" @click="addTopic(index)">
+        {{ $t('connections.autoSubscribeAddTopic') }}
+      </el-button>
+    </div>
+
+    <el-button type="text" icon="el-icon-plus" class="group-add" @click="addGroup">
+      {{ $t('connections.autoSubscribeAddGroup') }}
+    </el-button>
+    <p v-if="!groups.length" class="empty-hint">{{ $t('connections.autoSubscribeEmpty') }}</p>
+    <p v-else class="group-hint">{{ $t('connections.autoSubscribeMergeHint') }}</p>
+  </div>
+</template>
+
+<script lang="ts">
+import { Component, Model, Vue, Watch } from 'vue-property-decorator'
+
+const createId = (): string => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+
+const createTopic = (): AutoSubscribeTopicModel => ({ topic: '', qos: 0 })
+
+const createGroup = (): AutoSubscribeGroupModel => ({
+  id: createId(),
+  delayMs: 0,
+  merge: true,
+  enabled: true,
+  topics: [createTopic()],
+})
+
+/**
+ * Editor for the automatic subscriptions of a connection / client preset.
+ *
+ * One group is "wait this long after the connection succeeded, then subscribe these topics". When
+ * `merge` is set the topics of the group go out in a single SUBSCRIBE packet; a second group (with
+ * its own delay, or with merge switched off) is sent separately, which is how a device is simulated
+ * that first listens on one topic and only later on another.
+ */
+@Component
+export default class AutoSubscribeEditor extends Vue {
+  @Model('change', { type: Array }) private readonly value!: AutoSubscribeGroupModel[] | null | undefined
+
+  private groups: AutoSubscribeGroupModel[] = []
+  private quickDelays: number[] = [0, 500, 1000, 2000]
+  private qosList: QoS[] = [0, 1, 2]
+
+  get topicPlaceholder(): string {
+    return this.$t('connections.autoSubscribeTopicPlaceholder') as string
+  }
+
+  @Watch('value', { immediate: true })
+  private handleValueChanged(value: AutoSubscribeGroupModel[] | null | undefined) {
+    if (this.isSameAsGroups(value)) {
+      return
+    }
+    this.groups = this.clone(value ?? [])
+  }
+
+  private clone(groups: AutoSubscribeGroupModel[]): AutoSubscribeGroupModel[] {
+    return JSON.parse(JSON.stringify(groups ?? []))
+  }
+
+  private isSameAsGroups(value: AutoSubscribeGroupModel[] | null | undefined): boolean {
+    return JSON.stringify(value ?? []) === JSON.stringify(this.groups ?? [])
+  }
+
+  private emitChange() {
+    // Strip the empty rows before they reach the connection record: a topic without a name is not
+    // a subscription the user meant to configure.
+    const cleaned = this.groups
+      .map((group) => ({
+        ...group,
+        topics: (group.topics ?? []).filter((topic) => (topic.topic ?? '').trim() !== ''),
+      }))
+      .filter((group) => group.topics.length > 0)
+    this.$emit('change', cleaned)
+  }
+
+  private setDelay(index: number, delayMs: number) {
+    this.groups[index].delayMs = delayMs
+    this.emitChange()
+  }
+
+  private addGroup() {
+    this.groups.push(createGroup())
+    this.emitChange()
+  }
+
+  private removeGroup(index: number) {
+    this.groups.splice(index, 1)
+    this.emitChange()
+  }
+
+  private addTopic(groupIndex: number) {
+    this.groups[groupIndex].topics.push(createTopic())
+    this.emitChange()
+  }
+
+  private removeTopic(groupIndex: number, topicIndex: number) {
+    this.groups[groupIndex].topics.splice(topicIndex, 1)
+    if (!this.groups[groupIndex].topics.length) {
+      this.groups.splice(groupIndex, 1)
+    }
+    this.emitChange()
+  }
+}
+</script>
+
+<style lang="scss">
+.auto-subscribe-editor {
+  font-size: 12px;
+
+  .auto-subscribe-group {
+    padding: 8px 10px 4px;
+    margin-bottom: 8px;
+    border: 1px solid #eceff2;
+    border-radius: 4px;
+    background: #fafbfc;
+  }
+
+  .group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+
+  .group-delay {
+    display: flex;
+    align-items: center;
+    .field-label {
+      margin-right: 6px;
+      color: #606266;
+    }
+    .delay-input {
+      width: 88px;
+    }
+    .field-unit {
+      margin: 0 8px 0 4px;
+      color: #909399;
+    }
+  }
+
+  .quick-delays {
+    .quick-delay {
+      margin-right: 6px;
+      padding: 0 6px;
+      color: #409eff;
+      border-radius: 3px;
+      &.active {
+        color: #fff;
+        background: #409eff;
+      }
+    }
+  }
+
+  .group-options {
+    display: flex;
+    align-items: center;
+    .merge-checkbox {
+      margin-right: 12px;
+    }
+    .group-delete {
+      margin-left: 10px;
+      color: #f56c6c;
+    }
+  }
+
+  .topic-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+    .topic-input {
+      flex: 1;
+    }
+    .topic-qos {
+      width: 92px;
+      margin: 0 8px;
+    }
+    .topic-delete {
+      color: #f56c6c;
+    }
+  }
+
+  .topic-add,
+  .group-add {
+    padding: 0;
+    font-size: 12px;
+  }
+
+  .empty-hint,
+  .group-hint {
+    margin: 6px 0 0;
+    color: #909399;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+}
+</style>

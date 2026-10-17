@@ -101,6 +101,14 @@ export default class ConnectionEntity {
   @Column({ type: 'simple-json', nullable: true, default: null })
   variables?: { [name: string]: string } | null
 
+  // Topics subscribed right after connecting, see ConnectionModel['autoSubscriptions']
+  @Column({ type: 'simple-json', nullable: true, default: null })
+  autoSubscriptions?: AutoSubscribeGroupModel[] | null
+
+  // Automatic replies to received messages, see ConnectionModel['autoReplies']
+  @Column({ type: 'simple-json', nullable: true, default: null })
+  autoReplies?: AutoReplyRuleModel[] | null
+
   @OneToOne(() => WillEntity, (will) => will.connection, { onDelete: 'CASCADE' })
   @JoinColumn()
   will?: WillEntity

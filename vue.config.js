@@ -34,6 +34,25 @@ module.exports = {
       .loader('raw-loader')
       .end()
 
+    // `@ai-sdk/openai` maps its "./internal" subpath only through package.json "exports", which
+    // webpack 4 does not understand. The Copilot bundle imports it through `@ai-sdk/azure`, so point
+    // the subpath at the built file.
+    config.resolve.alias.set(
+      '@ai-sdk/openai/internal',
+      path.resolve(__dirname, 'node_modules/@ai-sdk/openai/internal/dist/index.js'),
+    )
+    // `@modelcontextprotocol/sdk` imports Node builtins with the "node:" scheme, which webpack 4
+    // cannot resolve either. The renderer never runs its stdio transport (the SSE transport is what
+    // the Copilot uses), so empty stand-ins keep the bundle buildable.
+    config.resolve.alias.set('node:child_process', path.resolve(__dirname, 'src/shims/nodeBuiltinShim.js'))
+    config.resolve.alias.set('node:process', path.resolve(__dirname, 'src/shims/nodeBuiltinShim.js'))
+    // `pkce-challenge` picks its Node build by package.json "main" and that one is an ES module with
+    // a top-level await, which webpack 4 cannot parse. The browser build is the one for the renderer.
+    config.resolve.alias.set(
+      'pkce-challenge',
+      path.resolve(__dirname, 'node_modules/pkce-challenge/dist/index.browser.js'),
+    )
+
     // Use Electron mock in test environment
     if (process.env.NODE_ENV === 'test') {
       config.resolve.alias.set(
