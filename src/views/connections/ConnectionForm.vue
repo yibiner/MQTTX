@@ -326,6 +326,30 @@
         </el-card>
 
         <div class="info-header">
+          <h3>{{ $t('connections.autoSubscribe') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-row :gutter="10">
+            <el-col :span="24">
+              <p class="automation-desc">{{ $t('connections.autoSubscribeDesc') }}</p>
+              <AutoSubscribeEditor v-model="record.autoSubscriptions" />
+            </el-col>
+          </el-row>
+        </el-card>
+
+        <div class="info-header">
+          <h3>{{ $t('connections.autoReply') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-row :gutter="10">
+            <el-col :span="24">
+              <p class="automation-desc">{{ $t('connections.autoReplyDesc') }}</p>
+              <AutoReplyEditor v-model="record.autoReplies" />
+            </el-col>
+          </el-row>
+        </el-card>
+
+        <div class="info-header">
           <h3>
             {{ $t('settings.advanced') }}
             <a
@@ -701,6 +725,8 @@ import { getClientId } from '@/utils/idGenerator'
 import { getMQTTProtocol, getDefaultRecord } from '@/utils/mqttUtils'
 import { getClientProfiles, getServerProfiles } from '@/utils/configProfiles'
 import VariableEditor from '@/components/VariableEditor.vue'
+import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
+import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
 import VariablesHelp from '@/components/VariablesHelp.vue'
 import Editor from '@/components/Editor.vue'
 import KeyValueEditor from '@/components/KeyValueEditor.vue'
@@ -712,6 +738,8 @@ import { sortConnectionTree } from '@/utils/connections'
     Editor,
     KeyValueEditor,
     VariableEditor,
+    AutoSubscribeEditor,
+    AutoReplyEditor,
     VariablesHelp,
   },
 })
@@ -1118,6 +1146,10 @@ export default class ConnectionForm extends Vue {
     if (profile.clean !== undefined) {
       this.record.clean = profile.clean
     }
+    // The preset describes everything the device does after connecting, so its automatic
+    // subscriptions and replies come along; the connection can still tune them afterwards.
+    this.record.autoSubscriptions = JSON.parse(JSON.stringify(profile.autoSubscriptions ?? []))
+    this.record.autoReplies = JSON.parse(JSON.stringify(profile.autoReplies ?? []))
     // The variables describe the client the preset belongs to, so they come along into the
     // "客户端变量" of the connection that is being created from it.
     this.record.variables = { ...(profile.variables ?? {}) }
@@ -1130,6 +1162,12 @@ export default class ConnectionForm extends Vue {
 
 .connection-form {
   padding: 0 16px;
+  .automation-desc {
+    margin: 0 0 8px;
+    color: #909399;
+    font-size: 12px;
+    line-height: 1.5;
+  }
   .topbar {
     -webkit-app-region: drag;
     a {

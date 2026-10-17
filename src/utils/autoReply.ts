@@ -81,7 +81,11 @@ export const renderReplyTemplate = (template: string, scope: AutoReplyTemplateSc
  * received message and merges the configured JSON object into it, which is what answers a command
  * with "the same message plus a result code".
  */
-export const buildReplyPayload = (rule: AutoReplyRuleModel, received: any, scope: AutoReplyTemplateScope): string => {
+export const buildReplyPayload = (
+  rule: AutoReplyRuleModel,
+  received: unknown,
+  scope: AutoReplyTemplateScope,
+): string => {
   const body = rule.reply?.payload ?? ''
   if (rule.reply?.mode !== 'echo') {
     return renderReplyTemplate(body, scope)
@@ -98,7 +102,7 @@ export const buildReplyPayload = (rule: AutoReplyRuleModel, received: any, scope
     // Nothing to echo: fall back to sending the configured fields on their own.
     return JSON.stringify(extra)
   }
-  return JSON.stringify({ ...received, ...extra })
+  return JSON.stringify({ ...(received as Record<string, unknown>), ...extra })
 }
 
 /** Whether the rule matches this message: topic filter first, then the JMESPath condition. */

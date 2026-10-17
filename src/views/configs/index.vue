@@ -79,6 +79,9 @@
         <el-table-column :label="$t('connections.clientVariables')" min-width="170" show-overflow-tooltip>
           <template slot-scope="{ row }">{{ describeVariables(row.variables) }}</template>
         </el-table-column>
+        <el-table-column :label="$t('connections.automation')" min-width="150" show-overflow-tooltip>
+          <template slot-scope="{ row }">{{ describeAutomation(row) }}</template>
+        </el-table-column>
         <el-table-column :label="$t('common.oper')" width="110" align="center">
           <template slot-scope="{ row }">
             <a href="javascript:;" class="profile-oper" @click="handleEdit(row)">
@@ -298,6 +301,12 @@
             <VariableEditor v-model="profileForm.variables" />
           </el-form-item>
           <p class="variable-preset-hint">{{ $t('configs.clientVariablesProfileTip') }}</p>
+          <el-form-item :label="$t('connections.autoSubscribe')">
+            <AutoSubscribeEditor v-model="profileForm.autoSubscriptions" />
+          </el-form-item>
+          <el-form-item :label="$t('connections.autoReply')">
+            <AutoReplyEditor v-model="profileForm.autoReplies" />
+          </el-form-item>
         </template>
       </el-form>
     </my-dialog>
@@ -326,6 +335,8 @@ import {
 import VariablesHelp from '@/components/VariablesHelp.vue'
 import Editor from '@/components/Editor.vue'
 import VariableEditor from '@/components/VariableEditor.vue'
+import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
+import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
 import { PAYLOAD_VARIABLE_NAME_PATTERN, isBuiltinPayloadVariable } from '@/utils/payloadVariables'
 import isJsonPayload from '@/utils/payloadLanguage'
 import validFormatJson from '@/utils/validFormatJson'
@@ -354,6 +365,8 @@ interface ClientProfileForm {
   reconnectPeriod: number
   clean: boolean
   variables: { [name: string]: string }
+  autoSubscriptions: AutoSubscribeGroupModel[]
+  autoReplies: AutoReplyRuleModel[]
 }
 
 /** Mirrors getDefaultRecord() so a fresh client profile matches a fresh connection form. */
@@ -369,6 +382,8 @@ const defaultClientProfileForm = (): ClientProfileForm => ({
   reconnectPeriod: 4000,
   clean: true,
   variables: {},
+  autoSubscriptions: [],
+  autoReplies: [],
 })
 
 interface MessagePresetForm {
@@ -385,7 +400,15 @@ interface VariableForm {
 }
 
 @Component({
-  components: { MyDialog, MessagePreview, VariablesHelp, Editor, VariableEditor },
+  components: {
+    MyDialog,
+    MessagePreview,
+    VariablesHelp,
+    Editor,
+    VariableEditor,
+    AutoSubscribeEditor,
+    AutoReplyEditor,
+  },
 })
 export default class Configs extends Vue {
   private activeTab: DialogType = 'server'
@@ -506,7 +529,21 @@ export default class Configs extends Vue {
     if (this.dialogType === 'message') {
       return '760px'
     }
-    return this.dialogType === 'client' ? '620px' : '460px'
+    return this.dialogType === 'client' ? '720px' : '460px'
+  }
+
+  /** One line summary of the automatic subscriptions / replies of a client preset. */
+  private describeAutomation(profile: ClientProfileModel): string {
+    const groups = (profile.autoSubscriptions ?? []).filter((group) => group.enabled !== false).length
+    const rules = (profile.autoReplies ?? []).filter((rule) => rule.enabled !== false).length
+    const parts: string[] = []
+    if (groups) {
+      parts.push(`${this.$t('connections.autoSubscribe')} ${groups}`)
+    }
+    if (rules) {
+      parts.push(`${this.$t('connections.autoReply')} ${rules}`)
+    }
+    return parts.length ? parts.join(' / ') : '-'
   }
 
   /** One line summary of the variables of a client preset, for the table. */
@@ -610,6 +647,8 @@ export default class Configs extends Vue {
         reconnectPeriod: client.reconnectPeriod ?? 4000,
         clean: client.clean ?? true,
         variables: { ...(client.variables ?? {}) },
+        autoSubscriptions: JSON.parse(JSON.stringify(client.autoSubscriptions ?? [])),
+        autoReplies: JSON.parse(JSON.stringify(client.autoReplies ?? [])),
       }
     }
     this.dialogVisible = true
@@ -678,6 +717,8 @@ export default class Configs extends Vue {
           reconnectPeriod: Number(this.profileForm.reconnectPeriod) || 4000,
           clean: Boolean(this.profileForm.clean),
           variables: { ...(this.profileForm.variables ?? {}) },
+          autoSubscriptions: this.profileForm.autoSubscriptions ?? [],
+          autoReplies: this.profileForm.autoReplies ?? [],
         })
       }
       this.loadData()

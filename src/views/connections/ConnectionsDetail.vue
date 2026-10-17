@@ -375,6 +375,13 @@ import {
   timedMessagesNeedViewPipeline,
   unregisterTimedMessagePublisher,
 } from '@/utils/timedMessageManager'
+import { attachAutoSubscribe, onAutoSubscribed } from '@/utils/autoSubscribeManager'
+import {
+  processIncomingMessage,
+  registerAutoReply,
+  registerAutoReplyPublisher,
+  unregisterAutoReplyPublisher,
+} from '@/utils/autoReplyEngine'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import useServices from '@/database/useServices'
 import { getMessageId, getSubscriptionId } from '@/utils/idGenerator'
@@ -493,6 +500,8 @@ export default class ConnectionsDetail extends Vue {
   private timedMessages: TimedMessageRuntime[] = []
   private unsubTimedMessages: (() => void) | null = null
   private timedPublisherId: string | null = null
+  private autoReplyConnectionId: string | null = null
+  private unsubAutoSubscribed: (() => void) | null = null
   private sendTimedMessageCount = 0
   private receivedMsgType: PayloadType = this.getReceivedMsgType()
   private msgType: MessageType = 'all'
@@ -587,6 +596,10 @@ export default class ConnectionsDetail extends Vue {
   private async handleRecordChanged() {
     this.getConnectionValue(this.curConnectionId)
     this.loadMessages()
+    // The automatic reply rules are matched against a snapshot of the record.
+    if (this.record?.id) {
+      registerAutoReply(this.record.id, this.record)
+    }
   }
 
   @Watch('inputHeight')
@@ -666,6 +679,9 @@ export default class ConnectionsDetail extends Vue {
       this.client = curConnectClient
       if (id && this.client.on) {
         this.$log.info(`Assigned ID ${id} to MQTTX client`)
+        // Automatic subscriptions belong to the device being simulated: they are scheduled from the
+        // client itself, so they also fire on the reconnects mqtt.js does on its own.
+        attachAutoSubscribe(curConnectClient as MqttClient, id, this.record)
         this.client.on('connect', (conBack) => this.onConnect(conBack, { id, client: curConnectClient, mqttVersion }))
         this.client.on('error', this.onError)
         this.client.on('reconnect', this.onReConnect)
@@ -895,6 +911,7 @@ export default class ConnectionsDetail extends Vue {
     if (currentActiveConnection) {
       this.client = currentActiveConnection.client
       this.setClientsMessageListener()
+      this.syncAutomationBinding(id)
     } else {
       this.client = {
         connected: false,
@@ -911,6 +928,43 @@ export default class ConnectionsDetail extends Vue {
    * Registering a delegate routes ticks through the full view pipeline; when the view later
    * shows another connection, unregistering lets the manager publish via the store client.
    */
+  /**
+   * Keeps the automatic replies of the connection this view shows in sync with its record.
+   *
+   * The rules are matched against a snapshot, so an edit made in the connection form applies to the
+   * next received message. Replies leave through the same pipeline a manual send uses, which is why
+   * they show up in the message list and in the publish history.
+   */
+  private syncAutomationBinding(id: string) {
+    if (!id || this.autoReplyConnectionId === id) {
+      return
+    }
+    this.unbindAutomationBinding()
+    this.autoReplyConnectionId = id
+    registerAutoReply(id, this.record)
+    registerAutoReplyPublisher(id, async (message, type) => {
+      await this.publishMessage(message, type, undefined, { quiet: true })
+    })
+    this.unsubAutoSubscribed = onAutoSubscribed(id, () => {
+      // The subscriptions were added behind the panel's back: re-read the connection so the list,
+      // the topic tree and the session state show them.
+      this.$emit('reload', false, false)
+    })
+  }
+
+  private unbindAutomationBinding() {
+    const boundId = this.autoReplyConnectionId
+    this.autoReplyConnectionId = null
+    if (this.unsubAutoSubscribed) {
+      this.unsubAutoSubscribed()
+      this.unsubAutoSubscribed = null
+    }
+    if (boundId === null) {
+      return
+    }
+    unregisterAutoReplyPublisher(boundId)
+  }
+
   private syncTimedMessagesBinding(id: string) {
     // The detail view is created before the router resolved a connection id (and it stays mounted
     // on the bare connection list route), so a missing id must not become a registry key:
@@ -1683,6 +1737,19 @@ export default class ConnectionsDetail extends Vue {
       })
     }
 
+    // Automatic replies are matched against the raw payload, before a user script or a data schema
+    // transforms it: the simulated device answers what the server actually sent.
+    fromEvent(client, 'message')
+      .pipe(takeUntil(unsubscribe$))
+      .subscribe(([topic, payload, packet]: [string, Buffer, IPublishPacket]) => {
+        processIncomingMessage({
+          connectionId: id,
+          topic,
+          payload,
+          packetId: packet?.messageId,
+        }).catch((error) => this.$log.error(`Auto reply failed: ${(error as Error).toString()}`))
+      })
+
     // Process message stream
     const messageSubject$ = fromEvent(client, 'message').pipe(
       takeUntil(unsubscribe$),
@@ -2450,6 +2517,7 @@ export default class ConnectionsDetail extends Vue {
       this.unsubTimedMessages()
       this.unsubTimedMessages = null
     }
+    this.unbindAutomationBinding()
     this.forceStopToReconnect()
     window.removeEventListener('resize', () => {
       this.setMessageListHeight()

@@ -95,7 +95,8 @@ describe('configs view', () => {
     const wrapper = mount(Configs, {
       localVue,
       mocks: { $t: (key: string) => key },
-      stubs: { ElSelect: true },
+      // The preset dialog now hosts the two automation editors, which use dropdowns of their own.
+      stubs: { ElSelect: true, AutoSubscribeEditor: true, AutoReplyEditor: true },
     })
     const vm = wrapper.vm as any
 

@@ -49,7 +49,7 @@ const toBoolean = (value: any): boolean => {
  * Evaluates a JMESPath condition against an already parsed payload. An empty expression matches
  * everything, which is what a rule without a condition means.
  */
-export const evaluatePayloadCondition = (expression: string | null | undefined, data: any): ConditionResult => {
+export const evaluatePayloadCondition = (expression: string | null | undefined, data: unknown): ConditionResult => {
   if (!expression || !expression.trim()) {
     return { matched: true }
   }
