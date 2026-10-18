@@ -903,6 +903,22 @@ export default {
     hu: 'Legfeljebb 10 időzített üzenet futhat egyszerre',
     ko: '동시에 최대 10개의 타이머 메시지를 실행할 수 있습니다',
   },
+  autoSubscribedBadge: {
+    zh: '自动订阅',
+    en: 'Auto',
+    tr: 'Otomatik',
+    ja: '自動',
+    hu: 'Auto',
+    ko: '자동',
+  },
+  autoSubscribedBadgeHint: {
+    zh: '该 topic 由「连接后自动订阅」订阅，操作它之后角标会消失',
+    en: 'This topic was subscribed by "Subscriptions after connecting"; the badge disappears once you change it.',
+    tr: 'Bu konu "Bağlandıktan sonra abonelikler" tarafından abone olundu; değiştirdiğinizde rozet kaybolur.',
+    ja: 'このトピックは「接続後の自動サブスクライブ」で購読されました。変更するとバッジは消えます。',
+    hu: 'Ezt a témát az „Automatikus feliratkozás csatlakozás után” iratkozta fel; ha módosítja, a jelvény eltűnik.',
+    ko: '이 토픽은 "연결 후 자동 구독"으로 구독되었습니다. 변경하면 배지가 사라집니다.',
+  },
   autoSubscribe: {
     zh: '连接后自动订阅',
     en: 'Subscriptions after connecting',

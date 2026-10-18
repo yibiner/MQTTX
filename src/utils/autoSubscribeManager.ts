@@ -192,6 +192,8 @@ const saveSubscriptions = async (
         disabled: false,
         color: getRandomColor(),
         createAt: time.getNowDate(),
+        // The panel badges these rows until the user touches them.
+        autoSubscribed: true,
       }))
     if (!added.length) {
       return

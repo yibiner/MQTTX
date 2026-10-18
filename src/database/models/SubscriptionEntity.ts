@@ -43,6 +43,13 @@ export default class SubscriptionEntity {
   @Column({ type: 'varchar', nullable: true })
   color?: string
 
+  /**
+   * Set while the row was created by the automatic subscriptions of the connection, cleared as soon
+   * as the user touches it. The panel shows a badge for it.
+   */
+  @Column({ type: 'boolean', nullable: true, default: null })
+  autoSubscribed?: boolean | null
+
   @Column({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })
   createAt!: string
 

@@ -72,6 +72,9 @@
             {{ sub.alias || sub.topic }}
           </a>
         </el-popover>
+        <span v-if="sub.autoSubscribed" class="auto-badge" :title="$t('connections.autoSubscribedBadgeHint')">
+          {{ $t('connections.autoSubscribedBadge') }}
+        </span>
         <span class="qos">QoS {{ sub.qos }}</span>
         <a href="javascript:;" class="close" @click.stop="removeSubscription(sub)">
           <i :class="unsubLoading ? 'el-icon-loading' : 'el-icon-close'"></i>
@@ -471,9 +474,18 @@ export default class SubscriptionsList extends Vue {
   private saveTopicToSubList(topic: string, qos: QoS, index?: number, aliasArr?: string[], id?: string): void {
     const existTopicIndex: number = this.subsList.findIndex((item: SubscriptionModel) => item.topic === topic)
     if (existTopicIndex !== -1) {
-      // Re-subscribing an existing topic: sync the record with the options just sent to the broker
+      // Re-subscribing an existing topic: sync the record with the options just sent to the broker.
+      // It was subscribed here and not by the automation any more, so the badge goes away.
       const { nl, rap, rh, subscriptionIdentifier, userProperties } = this.subRecord
-      Object.assign(this.subsList[existTopicIndex], { qos, nl, rap, rh, subscriptionIdentifier, userProperties })
+      Object.assign(this.subsList[existTopicIndex], {
+        qos,
+        nl,
+        rap,
+        rh,
+        subscriptionIdentifier,
+        userProperties,
+        autoSubscribed: undefined,
+      })
     } else {
       let { topic: unuseTopic, id: recordID, color, alias, ...others } = this.subRecord
       if (index !== undefined && aliasArr !== undefined) {
@@ -488,6 +500,7 @@ export default class SubscriptionsList extends Vue {
         id: id ?? recordID,
         color,
         alias,
+        autoSubscribed: undefined,
         ...others,
       })
     }
@@ -660,7 +673,9 @@ export default class SubscriptionsList extends Vue {
       this.subscribe(this.subRecord)
       return
     }
-    const updatedSubs = this.subsList.map((sub) => (sub.id === selectedTopic.id ? { ...this.subRecord } : sub))
+    const updatedSubs = this.subsList.map((sub) =>
+      sub.id === selectedTopic.id ? { ...this.subRecord, autoSubscribed: undefined } : sub,
+    )
     await this.syncSubscriptions(updatedSubs, true)
     this.subLoading = false
   }
@@ -758,6 +773,9 @@ export default class SubscriptionsList extends Vue {
     return this.subsList.map((sub: SubscriptionModel) => {
       if (sub.topic === topic) {
         sub.disabled = disabled
+        // Pausing or resuming a row is the user taking it over: it is no longer "just subscribed by
+        // the automation".
+        sub.autoSubscribed = undefined
       }
       return sub
     })
@@ -997,6 +1015,22 @@ export default class SubscriptionsList extends Vue {
         white-space: nowrap;
         text-overflow: ellipsis;
         overflow: hidden;
+      }
+      .auto-badge {
+        // A corner mark, not part of the row flow: the topic keeps its width and the QoS stays on
+        // the row's line whatever the length of the topic.
+        position: absolute;
+        top: -6px;
+        left: 10px;
+        padding: 0 4px;
+        font-size: 10px;
+        font-weight: normal;
+        line-height: 14px;
+        color: #409eff;
+        background: #eaf3ff;
+        border: 1px solid #c6e0ff;
+        border-radius: 7px;
+        pointer-events: none;
       }
       .qos {
         float: right;

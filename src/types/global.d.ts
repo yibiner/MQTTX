@@ -178,6 +178,8 @@ declare global {
     rh?: RetainHandling
     subscriptionIdentifier?: number | null
     userProperties?: { [key: string]: string | string[] } | null
+    /** true while the row was subscribed by the automatic subscriptions and is untouched */
+    autoSubscribed?: boolean | null
   }
 
   interface MessageModel {
