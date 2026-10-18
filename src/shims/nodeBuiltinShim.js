@@ -1,4 +1,4 @@
-// Stand-in for Node builtins a dependency imports with the "node:" scheme, which webpack 4 cannot
-// resolve. The renderer never runs the affected code path (MQTTX Plus Copilot uses the SSE
-// transport of the MCP client, not the stdio one).
+// Stand-in for a Node builtin that the renderer bundle only reaches through a code path it never
+// runs (the MCP client uses the SSE transport, not the stdio one). Webpack 4 cannot resolve the
+// "node:" scheme at all, so the import is redirected here instead of failing the whole bundle.
 module.exports = {}

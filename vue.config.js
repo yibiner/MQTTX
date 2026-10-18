@@ -6,6 +6,53 @@ const identity = require('./app.identity.json')
 // "MQTTX Plus" -> "MQTTX-Plus", used for the artifact file names.
 const artifactPrefix = identity.name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 
+/**
+ * Redirects the Node builtin imports written with the "node:" scheme.
+ *
+ * Webpack 4 keeps the scheme during resolution, so `resolve.alias.set('node:child_process', ...)`
+ * never matches and the bundle fails with "This dependency was not found". A module replacement
+ * plugin does match, but the scheme has to be removed either way:
+ *
+ * - the renderer resolves the import to an empty stand-in, because the only code that reaches a
+ *   `node:` import is the stdio transport of the MCP client, which the Copilot panel never uses;
+ * - the main process strips the scheme and lets webpack externalise the real builtin, since it runs
+ *   on Node.
+ */
+const redirectNodeScheme = (config, replacement) => {
+  const webpack = require('webpack')
+  config.plugin('redirect-node-scheme').use(webpack.NormalModuleReplacementPlugin, [
+    /^node:/,
+    (resource) => {
+      resource.request = replacement ?? resource.request.replace(/^node:/, '')
+    },
+  ])
+}
+
+/**
+ * The main process bundle resolves `<builtin>` names to external requires, but a request written as
+ * "node:<builtin>" never reaches that list. Externalise the scheme form itself, which keeps a plain
+ * `require("node:child_process")` in the bundle.
+ */
+const externaliseNodeScheme = (config) => {
+  const webpack = require('webpack')
+  const builtins = require('module').builtinModules.map((name) => `node:${name}`)
+  config.plugin('node-scheme-externals').use(webpack.ExternalsPlugin, ['commonjs', builtins])
+}
+
+/**
+ * Points `pkce-challenge` at its browser build.
+ *
+ * Its package.json "main" is an ES module with a top-level `await import("node:crypto")`, which
+ * webpack 4 cannot parse. Electron 39 provides a global `crypto` in the renderer and in the main
+ * process alike, so the browser build is the right one in both bundles.
+ */
+const useBrowserPkceChallenge = (config) => {
+  config.resolve.alias.set(
+    'pkce-challenge',
+    path.resolve(__dirname, 'node_modules/pkce-challenge/dist/index.browser.js'),
+  )
+}
+
 module.exports = {
   productionSourceMap: false,
   devServer: {
@@ -42,16 +89,11 @@ module.exports = {
       path.resolve(__dirname, 'node_modules/@ai-sdk/openai/internal/dist/index.js'),
     )
     // `@modelcontextprotocol/sdk` imports Node builtins with the "node:" scheme, which webpack 4
-    // cannot resolve either. The renderer never runs its stdio transport (the SSE transport is what
-    // the Copilot uses), so empty stand-ins keep the bundle buildable.
-    config.resolve.alias.set('node:child_process', path.resolve(__dirname, 'src/shims/nodeBuiltinShim.js'))
-    config.resolve.alias.set('node:process', path.resolve(__dirname, 'src/shims/nodeBuiltinShim.js'))
-    // `pkce-challenge` picks its Node build by package.json "main" and that one is an ES module with
-    // a top-level await, which webpack 4 cannot parse. The browser build is the one for the renderer.
-    config.resolve.alias.set(
-      'pkce-challenge',
-      path.resolve(__dirname, 'node_modules/pkce-challenge/dist/index.browser.js'),
-    )
+    // cannot resolve at all: the scheme survives into resolution, so an alias on
+    // `node:child_process` never matches. Strip the prefix instead and let the builtin stay a plain
+    // require, which works because the renderer runs with nodeIntegration.
+    redirectNodeScheme(config, path.resolve(__dirname, 'src/shims/nodeBuiltinShim.js'))
+    useBrowserPkceChallenge(config)
 
     // Use Electron mock in test environment
     if (process.env.NODE_ENV === 'test') {
@@ -119,9 +161,14 @@ module.exports = {
   pluginOptions: {
     electronBuilder: {
       nodeIntegration: true,
-      // Prevent bundling of certain imported packages and instead retrieve these external dependencies at runtime.
-      // In order to connect to websocket.
+      // Prevent bundling of certain imported packages and instead retrieve these external dependencies
+      // at runtime, in order to connect to a websocket.
       externals: ['mqtt', 'vm2', 'log4js', 'typeorm'],
+      /** The electron builder plugin owns this hook, Vue CLI rejects it at the top level. */
+      chainWebpackMainProcess: (config) => {
+        externaliseNodeScheme(config)
+        useBrowserPkceChallenge(config)
+      },
       builderOptions: {
         // This build is "MQTTX Plus", a fork of MQTTX: its own app id, its own app name (=> its own
         // macOS bundle and its own user data directory) and its own artifact names, so it can be
