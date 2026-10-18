@@ -25,6 +25,26 @@ export default class SubscriptionService {
     })
   }
 
+  /**
+   * Adds rows without touching the ones that already exist.
+   *
+   * The automatic subscriptions use this instead of read-modify-write through
+   * `updateSubscriptions`, which deletes and re-inserts the whole list: a subscription the user adds
+   * at the same moment would be lost by that write, while an insert of only the new rows cannot
+   * drop anything.
+   */
+  public async addSubscriptions(connectionId: string, subs: SubscriptionModel[]) {
+    const entities: Partial<SubscriptionEntity>[] = subs.map((sub) => ({
+      ...sub,
+      connectionId,
+      userProperties: sub.userProperties ? JSON.stringify(sub.userProperties) : null,
+    }))
+    if (!entities.length) {
+      return
+    }
+    await this.subscriptionRepository.insert(entities)
+  }
+
   public async updateSubscriptions(connectionId: string, subs: SubscriptionModel[]) {
     const entities: Partial<SubscriptionEntity>[] = subs.map((sub) => ({
       ...sub,

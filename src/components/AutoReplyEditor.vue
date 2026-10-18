@@ -151,7 +151,10 @@ const createRule = (): AutoReplyRuleModel => ({
 export default class AutoReplyEditor extends Vue {
   @Model('change', { type: Array }) private readonly value!: AutoReplyRuleModel[] | null | undefined
 
+  /** Rows being edited, incomplete ones included: they are drafts until the user types into them. */
   private rules: AutoReplyRuleModel[] = []
+  /** JSON of the last value this editor emitted, to recognise its own echo (see the watcher). */
+  private lastEmitted = ''
   private quickDelays: number[] = [0, 100, 500, 1000]
   private qosList: QoS[] = [0, 1, 2]
 
@@ -161,10 +164,16 @@ export default class AutoReplyEditor extends Vue {
 
   @Watch('value', { immediate: true })
   private handleValueChanged(value: AutoReplyRuleModel[] | null | undefined) {
-    if (this.isSameAsRules(value)) {
+    // The value that comes back is the *cleaned* copy this editor emitted: a rule the user just
+    // added has no name and no topic filter yet, so it was stripped from it. Rebuilding the rules
+    // from that copy would delete the rule under the user's cursor the moment it is created, which
+    // made "添加回复规则" look like a dead button.
+    const incoming = JSON.stringify(value ?? [])
+    if (incoming === this.lastEmitted || incoming === JSON.stringify(this.rules ?? [])) {
       return
     }
     this.rules = this.clone(value ?? [])
+    this.lastEmitted = incoming
   }
 
   private clone(rules: AutoReplyRuleModel[]): AutoReplyRuleModel[] {
@@ -184,12 +193,15 @@ export default class AutoReplyEditor extends Vue {
   }
 
   private emitChange() {
+    // The stripped copy is only what is *saved*; the editor keeps incomplete drafts visible so the
+    // user can finish typing them.
     const cleaned = this.rules
       .map((rule) => ({
         ...rule,
         reply: { ...rule.reply, delayMs: Math.max(0, Number(rule.reply?.delayMs) || 0) },
       }))
       .filter((rule) => (rule.matchTopic ?? '').trim() !== '' || (rule.name ?? '').trim() !== '')
+    this.lastEmitted = JSON.stringify(cleaned)
     this.$emit('change', cleaned)
   }
 

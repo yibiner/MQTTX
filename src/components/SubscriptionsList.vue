@@ -443,9 +443,20 @@ export default class SubscriptionsList extends Vue {
     })
   }
 
-  public async resubscribe() {
+  /**
+   * Subscribes every saved subscription again after a connect.
+   *
+   * `excludeTopics` are left out: the topics of an automatic subscription are re-established by the
+   * automatic subscription manager, from the delay the user configured. Subscribing them here as
+   * well would defeat that delay (they went out at connect time) and send a second SUBSCRIBE.
+   */
+  public async resubscribe(excludeTopics: string[] = []) {
     this.getCurrentConnection(this.connectionId)
     for (let sub of this.subsList) {
+      if (excludeTopics.includes(sub.topic)) {
+        this.$log.info(`Resubscription skipped for automatic subscription topic: ${sub.topic}`)
+        continue
+      }
       this.$log.info(`Resubscription in progress for topic: ${sub.topic}`)
       this.subRecord = { ...sub }
       if (this.subRecord.disabled === false) {

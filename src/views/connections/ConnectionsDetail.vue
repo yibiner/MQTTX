@@ -375,13 +375,9 @@ import {
   timedMessagesNeedViewPipeline,
   unregisterTimedMessagePublisher,
 } from '@/utils/timedMessageManager'
-import { attachAutoSubscribe, onAutoSubscribed } from '@/utils/autoSubscribeManager'
-import {
-  processIncomingMessage,
-  registerAutoReply,
-  registerAutoReplyPublisher,
-  unregisterAutoReplyPublisher,
-} from '@/utils/autoReplyEngine'
+import { attachAutoSubscribe, detachAutoSubscribe, onAutoSubscribed } from '@/utils/autoSubscribeManager'
+import { planAutoSubscribe } from '@/utils/autoSubscribe'
+import { processIncomingMessage, registerAutoReply, unregisterAutoReply } from '@/utils/autoReplyEngine'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import useServices from '@/database/useServices'
 import { getMessageId, getSubscriptionId } from '@/utils/idGenerator'
@@ -734,6 +730,10 @@ export default class ConnectionsDetail extends Vue {
             this.$emit('delete')
             this.$message.success(this.$tc('common.deleteSuccess'))
             if (connection.id) {
+              // The device behaviour of a deleted connection has no owner left: cancel the groups
+              // that are still waiting for their delay and forget its reply rules.
+              detachAutoSubscribe(connection.id)
+              unregisterAutoReply(connection.id)
               this.removeActiveConnection({ id: connection.id })
               this.$log.info(
                 `Successfully removed MQTTX connection ${connection.name}@${connection.host} with clientID ${connection.clientId}`,
@@ -924,16 +924,11 @@ export default class ConnectionsDetail extends Vue {
   }
 
   /**
-   * Rebinds the timed message subscription/publisher to the given connection id.
-   * Registering a delegate routes ticks through the full view pipeline; when the view later
-   * shows another connection, unregistering lets the manager publish via the store client.
-   */
-  /**
    * Keeps the automatic replies of the connection this view shows in sync with its record.
    *
-   * The rules are matched against a snapshot, so an edit made in the connection form applies to the
-   * next received message. Replies leave through the same pipeline a manual send uses, which is why
-   * they show up in the message list and in the publish history.
+   * Only the rules are handed to the engine: it publishes through the client of the connection that
+   * received the message, so an answer still leaves the right connection when the user opens another
+   * one.
    */
   private syncAutomationBinding(id: string) {
     if (!id || this.autoReplyConnectionId === id) {
@@ -942,9 +937,6 @@ export default class ConnectionsDetail extends Vue {
     this.unbindAutomationBinding()
     this.autoReplyConnectionId = id
     registerAutoReply(id, this.record)
-    registerAutoReplyPublisher(id, async (message, type) => {
-      await this.publishMessage(message, type, undefined, { quiet: true })
-    })
     this.unsubAutoSubscribed = onAutoSubscribed(id, () => {
       // The subscriptions were added behind the panel's back: re-read the connection so the list,
       // the topic tree and the session state show them.
@@ -952,19 +944,26 @@ export default class ConnectionsDetail extends Vue {
     })
   }
 
+  /**
+   * Releases what this view holds for the automation of the connection it showed.
+   *
+   * The rules themselves stay registered: a connection keeps answering its messages while the user
+   * looks at another one. They are only dropped when the connection is deleted, see
+   * `removeConnection`.
+   */
   private unbindAutomationBinding() {
-    const boundId = this.autoReplyConnectionId
     this.autoReplyConnectionId = null
     if (this.unsubAutoSubscribed) {
       this.unsubAutoSubscribed()
       this.unsubAutoSubscribed = null
     }
-    if (boundId === null) {
-      return
-    }
-    unregisterAutoReplyPublisher(boundId)
   }
 
+  /**
+   * Rebinds the timed message subscription/publisher to the given connection id.
+   * Registering a delegate routes ticks through the full view pipeline; when the view later
+   * shows another connection, unregistering lets the manager publish via the store client.
+   */
   private syncTimedMessagesBinding(id: string) {
     // The detail view is created before the router resolved a connection id (and it stays mounted
     // on the bare connection list route), so a missing id must not become a registry key:
@@ -1744,6 +1743,7 @@ export default class ConnectionsDetail extends Vue {
       .subscribe(([topic, payload, packet]: [string, Buffer, IPublishPacket]) => {
         processIncomingMessage({
           connectionId: id,
+          client,
           topic,
           payload,
           packetId: packet?.messageId,
@@ -2372,9 +2372,24 @@ export default class ConnectionsDetail extends Vue {
       const { subscriptions } = this.record
       const needResub = resubscribe && subscriptions.length
       if (needResub) {
-        this.subListRef.resubscribe()
+        // The topics of an automatic subscription are (re-)subscribed by the automatic subscription
+        // manager, after the delay the user configured. Subscribing them here too would send them at
+        // connect time and make the delay meaningless on every connect after the first one.
+        this.subListRef.resubscribe(this.autoSubscriptionTopics())
       }
     }
+  }
+
+  /**
+   * Topics that the automatic subscriptions own, resolved with the current variables.
+   *
+   * A group that is disabled or that still has an unresolved placeholder owns nothing, so its topics
+   * are resubscribed normally if they happen to be in the saved list.
+   */
+  private autoSubscriptionTopics(): string[] {
+    return planAutoSubscribe(this.record.autoSubscriptions, this.findMessageVariables()).batches.flatMap((batch) =>
+      batch.topics.map((item) => item.topic),
+    )
   }
 
   // Show use script dialog

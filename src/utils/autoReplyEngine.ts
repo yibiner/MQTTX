@@ -1,26 +1,46 @@
 import log4js from 'log4js'
+import type { MqttClient } from 'mqtt'
 import { getGlobalVariableMap } from '@/utils/configProfiles'
 import { connectionFieldVariables, mergeVariables } from '@/utils/payloadVariables'
-import { planAutoReplies } from '@/utils/autoReply'
+import { planAutoReplies, PlannedAutoReply } from '@/utils/autoReply'
+import { savePublishedMessageHistory } from '@/utils/historyRecordUtils'
 import { getMessageId } from '@/utils/idGenerator'
 import time from '@/utils/time'
 
 /**
- * Publishes a reply through the publish pipeline of the connection, so an automatic answer shows up
- * in the message list and in the publish history exactly like a manually sent message.
+ * Runs the automatic replies of a connection.
+ *
+ * Like the automatic subscriptions, this is device behaviour that belongs to the client rather than
+ * to a page: a reply is published through the MQTT client of the connection that received the
+ * message, so it also works while the user looks at another connection. Publishing through the
+ * connection view was wrong in both directions - the reply left through whichever connection was
+ * on screen, or was dropped with a "not connected" warning while the log still claimed a reply.
  */
-export type AutoReplyPublishDelegate = (message: MessageModel, type: PayloadType) => Promise<void>
-
 export interface IncomingMessageInfo {
   connectionId: string
+  /** client of that connection; the reply is published through it, not through the open page */
+  client?: MqttClient
   topic: string
   payload: string | Buffer
   /** message id of the packet, used to answer a message only once */
   packetId?: number | null
 }
 
-const publishers = new Map<string, AutoReplyPublishDelegate>()
+/** Loop guard: a reply that comes back to us must not trigger the rules again. */
+const recentReplies = new Map<string, number>()
+const RECENT_REPLY_TTL = 5000
+
+/** Answers already sent for one received packet, keyed by `connectionId|topic|packetId|ruleId`. */
+const answered = new Map<string, number>()
+const ANSWERED_TTL = 60000
+
+/** Per connection rate limit, so a rule with a bad filter cannot flood the broker. */
+const MAX_REPLIES_PER_SECOND = 20
+const replyTimestamps = new Map<string, number[]>()
+
 const records = new Map<string, ConnectionModel>()
+
+const getLog = () => log4js.getLogger()
 
 /**
  * Registers the rules of one connection. Called again whenever the connection is opened or edited,
@@ -30,31 +50,10 @@ export const registerAutoReply = (connectionId: string, record: ConnectionModel)
   records.set(connectionId, record)
 }
 
+/** Forgets a connection, e.g. when it is deleted. */
 export const unregisterAutoReply = (connectionId: string): void => {
   records.delete(connectionId)
   resetAutoReplyState(connectionId)
-}
-
-/** Loop guard: a reply that comes back to us must not trigger the rules again. */
-const recentReplies = new Map<string, number>()
-const RECENT_REPLY_TTL = 5000
-
-/** Answers already sent for one received packet, keyed by `topic|packetId|ruleId`. */
-const answered = new Map<string, number>()
-const ANSWERED_TTL = 60000
-
-/** Per connection rate limit, so a rule with a bad filter cannot flood the broker. */
-const MAX_REPLIES_PER_SECOND = 20
-const replyTimestamps = new Map<string, number[]>()
-
-const getLog = () => log4js.getLogger()
-
-export const registerAutoReplyPublisher = (connectionId: string, delegate: AutoReplyPublishDelegate): void => {
-  publishers.set(connectionId, delegate)
-}
-
-export const unregisterAutoReplyPublisher = (connectionId: string): void => {
-  publishers.delete(connectionId)
 }
 
 const keyOf = (topic: string, payload: string): string => `${topic}\u0000${payload}`
@@ -136,20 +135,14 @@ export const processIncomingMessage = async (info: IncomingMessageInfo): Promise
       if (info.packetId !== undefined && info.packetId !== null && alreadyAnswered(answeredKey)) {
         continue
       }
-      if (reply.payload.includes('${')) {
-        getLog().warn(
-          `Auto reply ${reply.ruleId} skipped: the reply still contains an unresolved placeholder ` +
-            `(connection ${info.connectionId})`,
-        )
-        continue
-      }
-      const publish = () => publishReply(info, reply.topic, reply.payload, reply.qos, reply.retain, reply.ruleId)
       if (reply.delayMs > 0) {
         setTimeout(() => {
-          publish().catch((error) => getLog().error(`Auto reply failed: ${(error as Error).toString()}`))
+          publishReply(info, reply).catch((error) =>
+            getLog().error(`Auto reply failed: ${(error as Error).toString()}`),
+          )
         }, reply.delayMs)
       } else {
-        await publish()
+        await publishReply(info, reply)
       }
       if (info.packetId !== undefined && info.packetId !== null) {
         answered.set(answeredKey, Date.now())
@@ -160,33 +153,48 @@ export const processIncomingMessage = async (info: IncomingMessageInfo): Promise
   }
 }
 
-const publishReply = async (
-  info: IncomingMessageInfo,
-  topic: string,
-  payload: string,
-  qos: QoS,
-  retain: boolean,
-  ruleId: string,
-): Promise<void> => {
-  const publisher = publishers.get(info.connectionId)
-  if (!publisher) {
-    getLog().warn(`Auto reply ${ruleId} skipped: no publish pipeline for connection ${info.connectionId}`)
+/**
+ * Publishes one planned reply through the client of the message's own connection.
+ *
+ * Returns without publishing when that connection is gone, is not connected or has used up its
+ * reply budget; the caller never logs a success it did not observe.
+ */
+const publishReply = async (info: IncomingMessageInfo, reply: PlannedAutoReply): Promise<void> => {
+  const client = info.client
+  if (!client) {
+    getLog().warn(`Auto reply ${reply.ruleId} skipped: no client for connection ${info.connectionId}`)
+    return
+  }
+  if (!client.connected) {
+    getLog().warn(`Auto reply ${reply.ruleId} skipped: connection ${info.connectionId} is not connected`)
     return
   }
   if (!takeReplyBudget(info.connectionId)) {
-    getLog().warn(`Auto reply ${ruleId} skipped: too many replies per second (connection ${info.connectionId})`)
+    getLog().warn(`Auto reply ${reply.ruleId} skipped: too many replies per second (connection ${info.connectionId})`)
     return
   }
+
   const message: MessageModel = {
     id: getMessageId(),
-    topic,
-    payload,
-    qos,
-    retain,
+    topic: reply.topic,
+    payload: reply.payload,
+    qos: reply.qos,
+    retain: reply.retain,
     createAt: time.getNowDate(),
     out: true,
   }
-  await publisher(message, 'JSON')
-  markReply(topic, payload)
-  getLog().info(`Auto replied to ${info.topic} with ${topic} (rule ${ruleId}, connection ${info.connectionId})`)
+  try {
+    await new Promise<void>((resolve, reject) => {
+      client.publish(reply.topic, reply.payload, { qos: reply.qos, retain: reply.retain }, (error?: Error) => {
+        error ? reject(error) : resolve()
+      })
+    })
+    await savePublishedMessageHistory(info.connectionId, message, reply.payload, 'JSON', reply.topic)
+    markReply(reply.topic, reply.payload)
+    getLog().info(
+      `Auto replied to ${info.topic} with ${reply.topic} (rule ${reply.ruleId}, connection ${info.connectionId})`,
+    )
+  } catch (error) {
+    getLog().error(`Auto reply ${reply.ruleId} could not be published: ${(error as Error).toString()}`)
+  }
 }

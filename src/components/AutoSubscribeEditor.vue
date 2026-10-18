@@ -100,7 +100,10 @@ const createGroup = (): AutoSubscribeGroupModel => ({
 export default class AutoSubscribeEditor extends Vue {
   @Model('change', { type: Array }) private readonly value!: AutoSubscribeGroupModel[] | null | undefined
 
+  /** Rows being edited, empty ones included: they are drafts until the user types into them. */
   private groups: AutoSubscribeGroupModel[] = []
+  /** JSON of the last value this editor emitted, to recognise its own echo (see the watcher). */
+  private lastEmitted = ''
   private quickDelays: number[] = [0, 500, 1000, 2000]
   private qosList: QoS[] = [0, 1, 2]
 
@@ -110,10 +113,16 @@ export default class AutoSubscribeEditor extends Vue {
 
   @Watch('value', { immediate: true })
   private handleValueChanged(value: AutoSubscribeGroupModel[] | null | undefined) {
-    if (this.isSameAsGroups(value)) {
+    // The value that comes back is the *cleaned* copy this editor emitted: the row the user just
+    // added is still empty, so it was stripped from it. Rebuilding the rows from that copy would
+    // delete the row under the user's cursor the moment it is created, which made "添加一组" and
+    // "添加 topic" look like dead buttons.
+    const incoming = JSON.stringify(value ?? [])
+    if (incoming === this.lastEmitted || incoming === JSON.stringify(this.groups ?? [])) {
       return
     }
     this.groups = this.clone(value ?? [])
+    this.lastEmitted = incoming
   }
 
   private clone(groups: AutoSubscribeGroupModel[]): AutoSubscribeGroupModel[] {
@@ -126,13 +135,15 @@ export default class AutoSubscribeEditor extends Vue {
 
   private emitChange() {
     // Strip the empty rows before they reach the connection record: a topic without a name is not
-    // a subscription the user meant to configure.
+    // a subscription the user meant to configure. The stripped copy is only what is *saved*; the
+    // editor keeps its drafts so a row that is still empty stays visible and editable.
     const cleaned = this.groups
       .map((group) => ({
         ...group,
         topics: (group.topics ?? []).filter((topic) => (topic.topic ?? '').trim() !== ''),
       }))
       .filter((group) => group.topics.length > 0)
+    this.lastEmitted = JSON.stringify(cleaned)
     this.$emit('change', cleaned)
   }
 
@@ -157,9 +168,13 @@ export default class AutoSubscribeEditor extends Vue {
   }
 
   private removeTopic(groupIndex: number, topicIndex: number) {
-    this.groups[groupIndex].topics.splice(topicIndex, 1)
-    if (!this.groups[groupIndex].topics.length) {
-      this.groups.splice(groupIndex, 1)
+    const topics = this.groups[groupIndex].topics
+    topics.splice(topicIndex, 1)
+    if (!topics.length) {
+      // Keep the group: its delay and merge flag are configuration the user set, and deleting the
+      // last row of a group should not silently drop them. An empty row keeps the group editable,
+      // and the group itself is removed with its own delete button.
+      topics.push(createTopic())
     }
     this.emitChange()
   }

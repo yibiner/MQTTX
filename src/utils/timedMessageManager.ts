@@ -10,7 +10,7 @@ import {
   createPayloadVariableResolver,
   mergeVariables,
 } from '@/utils/payloadVariables'
-import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
+import { hasMessageHeaderID, savePublishedMessageHistory } from '@/utils/historyRecordUtils'
 import { DEFAULT_HISTORY_MAX_COUNT } from '@/utils/data'
 import { getGlobalVariableMap } from '@/utils/configProfiles'
 
@@ -281,7 +281,7 @@ async function publishWithoutView(connectionId: string, message: MessageModel, t
       filledPayload = resolver.resolve(filledPayload as string)
     }
     resolver.commit()
-    await saveTimedMessageHistory(connectionId, message, filledPayload, type, wireTopic)
+    await savePublishedMessageHistory(connectionId, message, filledPayload, type, wireTopic)
     const wirePayload = convertPayloadForFallback(filledPayload, type)
     if (wirePayload === undefined || wirePayload === '') {
       return
@@ -293,56 +293,6 @@ async function publishWithoutView(connectionId: string, message: MessageModel, t
     })
   } catch (error) {
     getLog().error(`Timed message publish failed: ${(error as Error).toString()}`)
-  }
-}
-
-/**
- * Mirrors the view pipeline's storage behavior: the publish history keeps the raw template
- * (dedupe + bump), while the message list entry keeps the filled payload.
- */
-async function saveTimedMessageHistory(
-  connectionId: string,
-  template: MessageModel,
-  publishedPayload: string | Buffer | undefined,
-  type: PayloadType,
-  wireTopic: string,
-): Promise<void> {
-  try {
-    const appState = (store.state as any).app ?? {}
-    const saveHistoryMessage: boolean = appState.saveHistoryMessage ?? true
-    const { historyMessageHeaderService, messageService } = useServices()
-    const header: HistoryMessageHeaderModel = {
-      connectionId,
-      qos: template.qos,
-      retain: template.retain,
-      topic: template.topic,
-      ...(saveHistoryMessage ? { payload: template.payload, payloadType: type } : {}),
-    }
-    const recordIdToUpdate = await hasMessageHeaderID(header, saveHistoryMessage)
-    recordIdToUpdate
-      ? await historyMessageHeaderService.updateCreateAt(recordIdToUpdate)
-      : await historyMessageHeaderService.create(header)
-    await historyMessageHeaderService.trim(appState.historyMaxCount ?? DEFAULT_HISTORY_MAX_COUNT)
-    if (publishedPayload === undefined || publishedPayload === '' || ignoreQoS0Message(template.qos)) {
-      return
-    }
-    await messageService.pushMsgsToConnection(
-      [
-        {
-          id: template.id,
-          out: true,
-          createAt: time.getNowDate(),
-          // the message list shows what went on the wire, the topic template stays in the history
-          topic: wireTopic,
-          payload: publishedPayload.toString(),
-          qos: template.qos,
-          retain: template.retain,
-        },
-      ],
-      connectionId,
-    )
-  } catch (error) {
-    getLog().error(`Timed message history save failed: ${(error as Error).toString()}`)
   }
 }
 

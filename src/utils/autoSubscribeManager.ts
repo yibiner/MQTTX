@@ -1,6 +1,5 @@
 import log4js from 'log4js'
 import type { MqttClient } from 'mqtt'
-import type SubscriptionEntity from '@/database/models/SubscriptionEntity'
 import useServices from '@/database/useServices'
 import { getGlobalVariableMap } from '@/utils/configProfiles'
 import { connectionFieldVariables, mergeVariables } from '@/utils/payloadVariables'
@@ -155,10 +154,13 @@ const subscribe = (client: MqttClient, connectionId: string, map: { [topic: stri
         resolve()
         return
       }
+      // `granted` is what the broker acknowledged; it can be empty when mqtt.js considered the
+      // topics already subscribed (same or higher QoS), so log the topics that were asked for.
       const grantedTopics = (granted ?? []).map((item) => item.topic)
+      const grantedText = grantedTopics.length ? `, granted ${grantedTopics.join(', ')}` : ''
       getLog().info(
-        `Auto subscribed ${grantedTopics.join(', ')} (connection ${connectionId}, ` +
-          `${topics.length > 1 ? 'one packet' : 'single topic'})`,
+        `Auto subscribed ${topics.join(', ')} (connection ${connectionId}, ` +
+          `${topics.length > 1 ? 'one packet' : 'single topic'}${grantedText})`,
       )
       await saveSubscriptions(connectionId, map, grantedTopics.length ? grantedTopics : topics)
       notify(connectionId)
@@ -166,29 +168,11 @@ const subscribe = (client: MqttClient, connectionId: string, map: { [topic: stri
     })
   })
 
-/** The service stores MQTT 5 user properties as JSON text; its input expects the map again. */
-const toSubscriptionModel = (item: SubscriptionEntity): SubscriptionModel => ({
-  id: item.id,
-  topic: item.topic,
-  qos: item.qos,
-  disabled: item.disabled ?? false,
-  alias: item.alias,
-  retain: item.retain,
-  color: item.color,
-  createAt: item.createAt,
-  nl: item.nl,
-  rap: item.rap,
-  rh: item.rh as RetainHandling,
-  subscriptionIdentifier: item.subscriptionIdentifier,
-  userProperties:
-    typeof item.userProperties === 'string'
-      ? JSON.parse(item.userProperties)
-      : (item.userProperties as { [key: string]: string | string[] } | null),
-})
-
 /**
  * Records what was subscribed, so it shows up in the subscription panel and survives a restart.
- * Existing rows are kept instead of replaced: automatic subscriptions are additions, not a reset.
+ *
+ * Only the missing rows are inserted: automatic subscriptions are additions, and rewriting the whole
+ * list would race with a subscription the user saves at the same moment.
  */
 const saveSubscriptions = async (
   connectionId: string,
@@ -212,8 +196,7 @@ const saveSubscriptions = async (
     if (!added.length) {
       return
     }
-    const merged: SubscriptionModel[] = [...existing.map((item) => toSubscriptionModel(item)), ...added]
-    await subscriptionService.updateSubscriptions(connectionId, merged)
+    await subscriptionService.addSubscriptions(connectionId, added)
   } catch (error) {
     getLog().error(`Auto subscribe could not save the subscriptions: ${(error as Error).toString()}`)
   }

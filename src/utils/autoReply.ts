@@ -45,6 +45,15 @@ export interface AutoReplyTemplateScope {
 
 const FIELD_PLACEHOLDER = /\$\{(msg(?:[.[][^}]*)?|topic)\}/g
 
+/** `setTimeout()` treats anything above 2^31-1 as 1ms, so a huge delay would fire immediately. */
+const normalizeDelay = (delayMs: unknown): number => {
+  const value = Number(delayMs)
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0
+  }
+  return Math.min(Math.round(value), 2147483647)
+}
+
 /** Reads `${msg.data.list[0].id}`, `${msg}` or `${topic}` of the received message. */
 const readMessageField = (scope: AutoReplyTemplateScope, path: string): any => {
   if (path === 'topic') {
@@ -90,7 +99,10 @@ export const buildReplyPayload = (
   if (rule.reply?.mode !== 'echo') {
     return renderReplyTemplate(body, scope)
   }
-  const extension = body.trim() ? parseJsonPayload(body) : { value: undefined }
+  // The configured fields are templates too: without resolving them here, a rule that reads
+  // `{"code":0,"seen":"${msg.msgId}"}` would send the placeholder literally (and then be refused
+  // as "still contains an unresolved placeholder"), which made echoing a field impossible.
+  const extension = body.trim() ? parseJsonPayload(renderReplyTemplate(body, scope)) : { value: undefined }
   if (extension.error !== undefined) {
     throw new Error(`reply JSON is invalid: ${extension.error}`)
   }
@@ -182,7 +194,7 @@ export const planAutoReplies = (
         payload: buildReplyPayload(rule, result.received, scope),
         qos: rule.reply?.qos ?? 0,
         retain: Boolean(rule.reply?.retain),
-        delayMs: Math.max(0, Number(rule.reply?.delayMs) || 0),
+        delayMs: normalizeDelay(rule.reply?.delayMs),
       })
     } catch (error) {
       replies.push({
