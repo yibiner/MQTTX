@@ -94,16 +94,22 @@ export const planAutoSubscribe = (
  *
  * The topics of an automatic subscription are shown as ordinary rows in the panel, so the user may
  * delete or pause them there like any other subscription. Without this step the next connect would
- * subscribe them again (the deletion would look undone), so the panel is the source of truth:
+ * subscribe them again (the deletion would look undone), so the panel is the source of truth - but
+ * only for the rows it already knew about:
  *
- * - a row that no longer exists removes its topic from the configuration (deleting the last one
- *   clears the automatic subscriptions of the connection entirely);
- * - a paused row marks its topic as paused, and an enabled row clears that mark;
- * - a topic whose placeholder does not resolve cannot be compared with any row and stays as it is.
+ * - a topic whose row disappeared between `previousRows` and `rows` was deleted by the user, and is
+ *   removed from the configuration (deleting the last one clears the automatic subscriptions);
+ * - a topic with no row in either list is left alone. It is simply not subscribed yet (the panel only
+ *   learns about the row once the delay has passed and the row was saved), and treating that as a
+ *   deletion used to wipe a whole configuration on the first connect of a connection that also had a
+ *   manually subscribed topic;
+ * - a paused row marks its topic as paused, an enabled row clears that mark;
+ * - a topic whose placeholder does not resolve cannot be compared with a row and stays as it is.
  */
 export const reconcileAutoSubscriptions = (
   groups: AutoSubscribeGroupModel[] | null | undefined,
   rows: Array<{ topic: string; disabled?: boolean }>,
+  previousRows: Array<{ topic: string; disabled?: boolean }>,
   variables: { [name: string]: string } = {},
 ): { groups: AutoSubscribeGroupModel[]; changed: boolean } => {
   if (!Array.isArray(groups) || !groups.length) {
@@ -111,6 +117,7 @@ export const reconcileAutoSubscriptions = (
   }
   const pausedByTopic = new Map<string, boolean>()
   rows.forEach((row) => pausedByTopic.set(row.topic, row.disabled === true))
+  const knownBefore = new Set(previousRows.map((row) => row.topic))
 
   let changed = false
   const next: AutoSubscribeGroupModel[] = []
@@ -132,9 +139,14 @@ export const reconcileAutoSubscriptions = (
         continue
       }
       if (!pausedByTopic.has(text)) {
-        // The subscription panel no longer holds this topic: the user removed it there.
-        changed = true
-        groupChanged = true
+        if (knownBefore.has(text)) {
+          // The row was there before this change and is gone now: the user removed it in the panel.
+          changed = true
+          groupChanged = true
+          continue
+        }
+        // The panel simply does not know this topic yet: it has not been subscribed, so no row for it.
+        topics.push(item)
         continue
       }
       const paused = pausedByTopic.get(text) === true

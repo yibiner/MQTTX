@@ -98,6 +98,9 @@ describe('autoSubscribe utility', () => {
 /**
  * The panel shows the automatic topics as ordinary rows, so deleting or pausing one there has to be
  * written back into the configuration - otherwise the next connect would subscribe it again.
+ *
+ * `before` is the list the panel had before the change, `after` the list it has now: a topic only
+ * counts as deleted when it was there before.
  */
 describe('reconcileAutoSubscriptions', () => {
   const groups = (): AutoSubscribeGroupModel[] => [
@@ -114,9 +117,16 @@ describe('reconcileAutoSubscriptions', () => {
     { id: 'g2', delayMs: 2000, merge: false, enabled: true, topics: [{ topic: 'app/${productType}/heart', qos: 0 }] },
   ]
   const rows = (...topics: string[]) => topics.map((topic) => ({ topic, disabled: false }))
+  const reconcile = (
+    current: AutoSubscribeGroupModel[] | null,
+    before: Array<{ topic: string; disabled?: boolean }>,
+    after: Array<{ topic: string; disabled?: boolean }>,
+  ) => reconcileAutoSubscriptions(current, after, before, variables)
 
   it('drops a topic that was deleted in the panel and keeps the rest', () => {
-    const result = reconcileAutoSubscriptions(groups(), rows('app/A1/post', 'app/A1/heart'), variables)
+    const before = rows('app/A1/post', 'app/A1/cmd', 'app/A1/heart')
+    const after = rows('app/A1/post', 'app/A1/heart')
+    const result = reconcile(groups(), before, after)
     expect(result.changed).to.equal(true)
     expect(result.groups.map((group) => group.id)).to.deep.equal(['g1', 'g2'])
     // the group keeps its delay and merge flag
@@ -127,29 +137,32 @@ describe('reconcileAutoSubscriptions', () => {
   })
 
   it('clears the automatic subscriptions when every topic is gone', () => {
-    const result = reconcileAutoSubscriptions(groups(), [], variables)
+    const before = rows('app/A1/post', 'app/A1/cmd', 'app/A1/heart')
+    const result = reconcile(groups(), before, [])
     expect(result.changed).to.equal(true)
     expect(result.groups).to.deep.equal([])
   })
 
+  it('keeps a topic the panel does not know yet', () => {
+    // The row only appears once the delay has passed and the row was saved: a connection with a
+    // manually subscribed topic used to wipe the whole configuration on its first connect.
+    const result = reconcile(groups(), rows('manual/keep'), rows('manual/keep'))
+    expect(result.changed).to.equal(false)
+    expect(result.groups).to.equal(groups.length ? result.groups : result.groups)
+    expect(result.groups[0].topics).to.have.lengthOf(2)
+  })
+
   it('marks a paused row as paused and clears the mark when it is enabled again', () => {
-    const paused = reconcileAutoSubscriptions(
-      groups(),
-      [
-        { topic: 'app/A1/post', disabled: true },
-        { topic: 'app/A1/cmd', disabled: false },
-        { topic: 'app/A1/heart', disabled: false },
-      ],
-      variables,
-    )
+    const before = rows('app/A1/post', 'app/A1/cmd', 'app/A1/heart')
+    const paused = reconcile(groups(), before, [
+      { topic: 'app/A1/post', disabled: true },
+      { topic: 'app/A1/cmd', disabled: false },
+      { topic: 'app/A1/heart', disabled: false },
+    ])
     expect(paused.changed).to.equal(true)
     expect(paused.groups[0].topics[0]).to.deep.equal({ topic: 'app/${productType}/post', qos: 1, disabled: true })
 
-    const enabledAgain = reconcileAutoSubscriptions(
-      paused.groups,
-      rows('app/A1/post', 'app/A1/cmd', 'app/A1/heart'),
-      variables,
-    )
+    const enabledAgain = reconcile(paused.groups, before, before)
     expect(enabledAgain.changed).to.equal(true)
     expect(enabledAgain.groups[0].topics[0]).to.deep.equal({
       topic: 'app/${productType}/post',
@@ -160,23 +173,20 @@ describe('reconcileAutoSubscriptions', () => {
 
   it('reports no change when the panel still holds every topic', () => {
     const current = groups()
-    const result = reconcileAutoSubscriptions(current, rows('app/A1/post', 'app/A1/cmd', 'app/A1/heart'), variables)
+    const all = rows('app/A1/post', 'app/A1/cmd', 'app/A1/heart')
+    const result = reconcile(current, all, all)
     expect(result.changed).to.equal(false)
     expect(result.groups).to.equal(current)
   })
 
   it('keeps a topic whose placeholder does not resolve, because no row can stand for it', () => {
-    const result = reconcileAutoSubscriptions(
-      [createGroup({ topics: [{ topic: 'app/${missing}/post', qos: 0 }] })],
-      [],
-      variables,
-    )
+    const result = reconcile([createGroup({ topics: [{ topic: 'app/${missing}/post', qos: 0 }] })], [], [])
     expect(result.changed).to.equal(false)
     expect(result.groups[0].topics).to.have.lengthOf(1)
   })
 
   it('handles a connection without automatic subscriptions', () => {
-    expect(reconcileAutoSubscriptions(null, [], variables)).to.deep.equal({ groups: [], changed: false })
-    expect(reconcileAutoSubscriptions([], [], variables)).to.deep.equal({ groups: [], changed: false })
+    expect(reconcile(null, [], [])).to.deep.equal({ groups: [], changed: false })
+    expect(reconcile([], [], [])).to.deep.equal({ groups: [], changed: false })
   })
 })

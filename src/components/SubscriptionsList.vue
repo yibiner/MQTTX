@@ -614,13 +614,17 @@ export default class SubscriptionsList extends Vue {
 
   // Sync subscriptions list with persistent storage.
   private async syncSubscriptions(subscriptions: SubscriptionModel[], closeDialog = false) {
+    // The list as it was before this change: the automatic subscriptions are only reconciled against
+    // the rows the panel already knew about, so a topic that is still on its way to the panel is not
+    // mistaken for one the user deleted.
+    const previousRows = Array.isArray(this.record.subscriptions) ? [...this.record.subscriptions] : []
     this.subsList = subscriptions
     this.record.subscriptions = subscriptions
     if (this.record.id) {
       const { subscriptionService } = useServices()
       await subscriptionService.updateSubscriptions(this.record.id, this.record.subscriptions)
       this.changeSubs({ id: this.connectionId, subscriptions })
-      await this.syncAutomationConfig()
+      await this.syncAutomationConfig(previousRows)
     }
     if (closeDialog) {
       this.showDialog = false
@@ -635,7 +639,7 @@ export default class SubscriptionsList extends Vue {
    * next connect and the deletion would look undone; removing the last topic of a connection clears
    * its automatic subscriptions entirely.
    */
-  private async syncAutomationConfig() {
+  private async syncAutomationConfig(previousRows: SubscriptionModel[]) {
     const groups = this.record.autoSubscriptions
     const connectionId = this.record.id
     if (!Array.isArray(groups) || !groups.length || !connectionId) {
@@ -646,7 +650,7 @@ export default class SubscriptionsList extends Vue {
       getGlobalVariableMap(),
       connectionFieldVariables(this.record),
     )
-    const { groups: nextGroups, changed } = reconcileAutoSubscriptions(groups, this.subsList, variables)
+    const { groups: nextGroups, changed } = reconcileAutoSubscriptions(groups, this.subsList, previousRows, variables)
     if (!changed) {
       return
     }

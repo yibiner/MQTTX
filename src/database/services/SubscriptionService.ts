@@ -45,6 +45,23 @@ export default class SubscriptionService {
     await this.subscriptionRepository.insert(entities)
   }
 
+  /**
+   * Clears the "came from the automatic subscriptions" mark of every row the automation does not own
+   * any more, e.g. after the user removed that topic from the configuration in the connection form.
+   *
+   * Only the mark is dropped: the row itself stays subscribed, the way a subscription the user has is
+   * expected to survive an edit of the automation settings.
+   */
+  public async clearAutoSubscribedOutside(connectionId: string, ownedTopics: string[]): Promise<string[]> {
+    const rows = (await this.getSubscriptions(connectionId)) ?? []
+    const stale = rows.filter((row) => row.autoSubscribed && !ownedTopics.includes(row.topic))
+    if (!stale.length) {
+      return []
+    }
+    await this.subscriptionRepository.update(stale.map((row) => row.id!).filter(Boolean), { autoSubscribed: null })
+    return stale.map((row) => row.topic)
+  }
+
   public async updateSubscriptions(connectionId: string, subs: SubscriptionModel[]) {
     const entities: Partial<SubscriptionEntity>[] = subs.map((sub) => ({
       ...sub,

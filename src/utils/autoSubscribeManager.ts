@@ -88,6 +88,12 @@ export const attachAutoSubscribe = (client: MqttClient, connectionId: string, re
           `(connection ${connectionId})`,
       )
     }
+    // Rows the automation does not own any more lose their badge: the configuration may have been
+    // edited in the connection form, and a badge saying "subscribed automatically" would be wrong.
+    syncBadges(
+      connectionId,
+      plan.batches.flatMap((batch) => batch.topics.map((item) => item.topic)),
+    ).catch((error) => getLog().error(`Auto subscribe could not update the badges: ${(error as Error).toString()}`))
     plan.batches.forEach((batch) => {
       addTimer(
         connectionId,
@@ -201,5 +207,17 @@ const saveSubscriptions = async (
     await subscriptionService.addSubscriptions(connectionId, added)
   } catch (error) {
     getLog().error(`Auto subscribe could not save the subscriptions: ${(error as Error).toString()}`)
+  }
+}
+
+/** Drops the badge of the rows that the automation no longer owns (see below). */
+const syncBadges = async (connectionId: string, ownedTopics: string[]): Promise<void> => {
+  const { subscriptionService } = useServices()
+  const cleared = await subscriptionService.clearAutoSubscribedOutside(connectionId, ownedTopics)
+  if (cleared.length) {
+    getLog().info(
+      `Auto subscribe: ${cleared.join(', ')} is no longer part of the configuration ` + `(connection ${connectionId})`,
+    )
+    notify(connectionId)
   }
 }
