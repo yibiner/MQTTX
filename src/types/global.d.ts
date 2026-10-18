@@ -360,6 +360,11 @@ declare global {
   interface AutoSubscribeTopicModel {
     topic: string
     qos: QoS
+    /**
+     * Paused from the subscription panel ("停止订阅"). The topic stays configured but is not
+     * subscribed after connecting, so pausing a row in the panel is not undone by the automation.
+     */
+    disabled?: boolean
   }
 
   /**

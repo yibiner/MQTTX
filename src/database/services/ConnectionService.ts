@@ -292,6 +292,16 @@ export default class ConnectionService {
     })
   }
 
+  /**
+   * Stores only the automatic subscription configuration of a connection.
+   *
+   * The subscription panel updates it whenever the user deletes or pauses one of those topics, and a
+   * partial update keeps that write away from the rest of the record (subscriptions, messages, will).
+   */
+  public async updateAutoSubscriptions(id: string, autoSubscriptions: AutoSubscribeGroupModel[]): Promise<void> {
+    await this.connectionRepository.update({ id }, { autoSubscriptions })
+  }
+
   public async update(id: string, data: ConnectionModel): Promise<ConnectionModel | undefined> {
     try {
       await this.saveConnection(id, data)

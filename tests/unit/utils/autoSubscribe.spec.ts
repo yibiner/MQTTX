@@ -1,5 +1,5 @@
 import { expect } from 'chai'
-import { planAutoSubscribe } from '@/utils/autoSubscribe'
+import { planAutoSubscribe, reconcileAutoSubscriptions } from '@/utils/autoSubscribe'
 
 const createGroup = (overrides: Partial<AutoSubscribeGroupModel> = {}): AutoSubscribeGroupModel => ({
   id: 'g1',
@@ -76,5 +76,107 @@ describe('autoSubscribe utility', () => {
   it('handles a connection without automatic subscriptions', () => {
     expect(planAutoSubscribe(null, variables)).to.deep.equal({ batches: [], unresolved: [] })
     expect(planAutoSubscribe(undefined, variables)).to.deep.equal({ batches: [], unresolved: [] })
+  })
+
+  it('skips a topic that the subscription panel paused', () => {
+    const plan = planAutoSubscribe(
+      [
+        createGroup({
+          topics: [
+            { topic: 'a/b', qos: 0 },
+            { topic: 'a/c', qos: 0, disabled: true },
+          ],
+        }),
+      ],
+      variables,
+    )
+    expect(plan.batches).to.have.lengthOf(1)
+    expect(plan.batches[0].topics.map((item) => item.topic)).to.deep.equal(['a/b'])
+  })
+})
+
+/**
+ * The panel shows the automatic topics as ordinary rows, so deleting or pausing one there has to be
+ * written back into the configuration - otherwise the next connect would subscribe it again.
+ */
+describe('reconcileAutoSubscriptions', () => {
+  const groups = (): AutoSubscribeGroupModel[] => [
+    {
+      id: 'g1',
+      delayMs: 1000,
+      merge: true,
+      enabled: true,
+      topics: [
+        { topic: 'app/${productType}/post', qos: 1 },
+        { topic: 'app/${productType}/cmd', qos: 0 },
+      ],
+    },
+    { id: 'g2', delayMs: 2000, merge: false, enabled: true, topics: [{ topic: 'app/${productType}/heart', qos: 0 }] },
+  ]
+  const rows = (...topics: string[]) => topics.map((topic) => ({ topic, disabled: false }))
+
+  it('drops a topic that was deleted in the panel and keeps the rest', () => {
+    const result = reconcileAutoSubscriptions(groups(), rows('app/A1/post', 'app/A1/heart'), variables)
+    expect(result.changed).to.equal(true)
+    expect(result.groups.map((group) => group.id)).to.deep.equal(['g1', 'g2'])
+    // the group keeps its delay and merge flag
+    expect(result.groups[0].delayMs).to.equal(1000)
+    expect(result.groups[0].merge).to.equal(true)
+    expect(result.groups[0].topics).to.deep.equal([{ topic: 'app/${productType}/post', qos: 1 }])
+    expect(result.groups[1].topics).to.deep.equal([{ topic: 'app/${productType}/heart', qos: 0 }])
+  })
+
+  it('clears the automatic subscriptions when every topic is gone', () => {
+    const result = reconcileAutoSubscriptions(groups(), [], variables)
+    expect(result.changed).to.equal(true)
+    expect(result.groups).to.deep.equal([])
+  })
+
+  it('marks a paused row as paused and clears the mark when it is enabled again', () => {
+    const paused = reconcileAutoSubscriptions(
+      groups(),
+      [
+        { topic: 'app/A1/post', disabled: true },
+        { topic: 'app/A1/cmd', disabled: false },
+        { topic: 'app/A1/heart', disabled: false },
+      ],
+      variables,
+    )
+    expect(paused.changed).to.equal(true)
+    expect(paused.groups[0].topics[0]).to.deep.equal({ topic: 'app/${productType}/post', qos: 1, disabled: true })
+
+    const enabledAgain = reconcileAutoSubscriptions(
+      paused.groups,
+      rows('app/A1/post', 'app/A1/cmd', 'app/A1/heart'),
+      variables,
+    )
+    expect(enabledAgain.changed).to.equal(true)
+    expect(enabledAgain.groups[0].topics[0]).to.deep.equal({
+      topic: 'app/${productType}/post',
+      qos: 1,
+      disabled: undefined,
+    })
+  })
+
+  it('reports no change when the panel still holds every topic', () => {
+    const current = groups()
+    const result = reconcileAutoSubscriptions(current, rows('app/A1/post', 'app/A1/cmd', 'app/A1/heart'), variables)
+    expect(result.changed).to.equal(false)
+    expect(result.groups).to.equal(current)
+  })
+
+  it('keeps a topic whose placeholder does not resolve, because no row can stand for it', () => {
+    const result = reconcileAutoSubscriptions(
+      [createGroup({ topics: [{ topic: 'app/${missing}/post', qos: 0 }] })],
+      [],
+      variables,
+    )
+    expect(result.changed).to.equal(false)
+    expect(result.groups[0].topics).to.have.lengthOf(1)
+  })
+
+  it('handles a connection without automatic subscriptions', () => {
+    expect(reconcileAutoSubscriptions(null, [], variables)).to.deep.equal({ groups: [], changed: false })
+    expect(reconcileAutoSubscriptions([], [], variables)).to.deep.equal({ groups: [], changed: false })
   })
 })

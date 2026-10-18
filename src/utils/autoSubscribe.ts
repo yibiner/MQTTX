@@ -54,7 +54,9 @@ export const planAutoSubscribe = (
     const topics: AutoSubscribeTopicModel[] = []
     group.topics.forEach((item) => {
       const template = (item?.topic ?? '').trim()
-      if (!template) {
+      if (!template || item?.disabled === true) {
+        // A paused topic stays configured but is not subscribed, so pausing it in the subscription
+        // panel is not undone by the next connect.
         return
       }
       const { text, unresolved } = resolvePayloadVariables(template, { variables })
@@ -85,4 +87,72 @@ export const planAutoSubscribe = (
   })
 
   return plan
+}
+
+/**
+ * Brings the configured groups back in line with what the subscription panel now holds.
+ *
+ * The topics of an automatic subscription are shown as ordinary rows in the panel, so the user may
+ * delete or pause them there like any other subscription. Without this step the next connect would
+ * subscribe them again (the deletion would look undone), so the panel is the source of truth:
+ *
+ * - a row that no longer exists removes its topic from the configuration (deleting the last one
+ *   clears the automatic subscriptions of the connection entirely);
+ * - a paused row marks its topic as paused, and an enabled row clears that mark;
+ * - a topic whose placeholder does not resolve cannot be compared with any row and stays as it is.
+ */
+export const reconcileAutoSubscriptions = (
+  groups: AutoSubscribeGroupModel[] | null | undefined,
+  rows: Array<{ topic: string; disabled?: boolean }>,
+  variables: { [name: string]: string } = {},
+): { groups: AutoSubscribeGroupModel[]; changed: boolean } => {
+  if (!Array.isArray(groups) || !groups.length) {
+    return { groups: [], changed: false }
+  }
+  const pausedByTopic = new Map<string, boolean>()
+  rows.forEach((row) => pausedByTopic.set(row.topic, row.disabled === true))
+
+  let changed = false
+  const next: AutoSubscribeGroupModel[] = []
+
+  for (const group of groups) {
+    const topics: AutoSubscribeTopicModel[] = []
+    // Whether this group's topic list differs from the configured one (a topic removed, or a paused
+    // flag written), so the group object is rebuilt only when it has to be.
+    let groupChanged = false
+    for (const item of group.topics ?? []) {
+      const template = (item?.topic ?? '').trim()
+      if (!template) {
+        continue
+      }
+      const { text, unresolved } = resolvePayloadVariables(template, { variables })
+      if (unresolved.length) {
+        // Cannot be compared with a row, and it is not subscribed either: leave it configured.
+        topics.push(item)
+        continue
+      }
+      if (!pausedByTopic.has(text)) {
+        // The subscription panel no longer holds this topic: the user removed it there.
+        changed = true
+        groupChanged = true
+        continue
+      }
+      const paused = pausedByTopic.get(text) === true
+      if ((item.disabled === true) !== paused) {
+        changed = true
+        groupChanged = true
+        topics.push(paused ? { ...item, disabled: true } : { ...item, disabled: undefined })
+        continue
+      }
+      topics.push(item)
+    }
+    if (!topics.length) {
+      // Every topic of this group is gone: the group (delay and merge flag included) goes with them.
+      changed = true
+      continue
+    }
+    next.push(groupChanged ? { ...group, topics } : group)
+  }
+
+  return changed ? { groups: next, changed } : { groups, changed }
 }

@@ -266,6 +266,9 @@ import useServices from '@/database/useServices'
 import time from '@/utils/time'
 import { getSubscriptionId } from '@/utils/idGenerator'
 import getContextmenuPosition from '@/utils/getContextmenuPosition'
+import { reconcileAutoSubscriptions } from '@/utils/autoSubscribe'
+import { getGlobalVariableMap } from '@/utils/configProfiles'
+import { connectionFieldVariables, mergeVariables } from '@/utils/payloadVariables'
 import { LeftValues } from '@/utils/styles'
 import getErrorReason from '@/utils/mqttErrorReason'
 import { hasPersistentSession, setSubscribeMQTT5Properties } from '@/utils/subscriptionUtils'
@@ -604,10 +607,40 @@ export default class SubscriptionsList extends Vue {
       const { subscriptionService } = useServices()
       await subscriptionService.updateSubscriptions(this.record.id, this.record.subscriptions)
       this.changeSubs({ id: this.connectionId, subscriptions })
+      await this.syncAutomationConfig()
     }
     if (closeDialog) {
       this.showDialog = false
     }
+  }
+
+  /**
+   * Keeps the automatic subscriptions in line with this list.
+   *
+   * The topics of an automatic subscription are ordinary rows here, so the user may delete or pause
+   * them like any other subscription. Without this the automation would subscribe them again on the
+   * next connect and the deletion would look undone; removing the last topic of a connection clears
+   * its automatic subscriptions entirely.
+   */
+  private async syncAutomationConfig() {
+    const groups = this.record.autoSubscriptions
+    const connectionId = this.record.id
+    if (!Array.isArray(groups) || !groups.length || !connectionId) {
+      return
+    }
+    const variables = mergeVariables(
+      this.record.variables,
+      getGlobalVariableMap(),
+      connectionFieldVariables(this.record),
+    )
+    const { groups: nextGroups, changed } = reconcileAutoSubscriptions(groups, this.subsList, variables)
+    if (!changed) {
+      return
+    }
+    this.record.autoSubscriptions = nextGroups
+    const { connectionService } = useServices()
+    await connectionService.updateAutoSubscriptions(connectionId, nextGroups)
+    this.$log.info(`Automatic subscriptions updated from the subscription panel: ${nextGroups.length} group(s) left`)
   }
 
   private async updateSub() {
