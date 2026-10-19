@@ -256,7 +256,7 @@
 
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
-import { MqttClient, IClientSubscribeOptions } from 'mqtt'
+import { MqttClient } from 'mqtt'
 import { Getter, Action } from 'vuex-class'
 import VueI18n from 'vue-i18n'
 import _ from 'lodash'
@@ -270,11 +270,12 @@ import time from '@/utils/time'
 import { getSubscriptionId } from '@/utils/idGenerator'
 import getContextmenuPosition from '@/utils/getContextmenuPosition'
 import { reconcileAutoSubscriptions } from '@/utils/autoSubscribe'
+import { buildRowSubscribeOptions } from '@/utils/subscribeOptions'
 import { getGlobalVariableMap } from '@/utils/configProfiles'
 import { connectionFieldVariables, mergeVariables } from '@/utils/payloadVariables'
 import { LeftValues } from '@/utils/styles'
 import getErrorReason from '@/utils/mqttErrorReason'
-import { hasPersistentSession, setSubscribeMQTT5Properties } from '@/utils/subscriptionUtils'
+import { hasPersistentSession } from '@/utils/subscriptionUtils'
 
 @Component({
   components: {
@@ -449,28 +450,6 @@ export default class SubscriptionsList extends Vue {
     })
   }
 
-  /**
-   * Subscribes every saved subscription again after a connect.
-   *
-   * `excludeTopics` are left out: the topics of an automatic subscription are re-established by the
-   * automatic subscription manager, from the delay the user configured. Subscribing them here as
-   * well would defeat that delay (they went out at connect time) and send a second SUBSCRIBE.
-   */
-  public async resubscribe(excludeTopics: string[] = []) {
-    this.getCurrentConnection(this.connectionId)
-    for (let sub of this.subsList) {
-      if (excludeTopics.includes(sub.topic)) {
-        this.$log.info(`Resubscription skipped for automatic subscription topic: ${sub.topic}`)
-        continue
-      }
-      this.$log.info(`Resubscription in progress for topic: ${sub.topic}`)
-      this.subRecord = { ...sub }
-      if (this.subRecord.disabled === false) {
-        await this.subscribe(this.subRecord)
-      }
-    }
-  }
-
   private saveTopicToSubList(topic: string, qos: QoS, index?: number, aliasArr?: string[], id?: string): void {
     const existTopicIndex: number = this.subsList.findIndex((item: SubscriptionModel) => item.topic === topic)
     if (existTopicIndex !== -1) {
@@ -546,15 +525,17 @@ export default class SubscriptionsList extends Vue {
     if (this.client.subscribe) {
       const topicsArr = this.multiTopics ? [...new Set(topic.split(','))].filter(Boolean) : topic
       const aliasArr = this.multiTopics ? alias?.split(',') : alias
-      let properties: IClientSubscribeOptions['properties'] = undefined
-      if (this.record.mqttVersion === '5.0') {
-        properties = setSubscribeMQTT5Properties({ subscriptionIdentifier, userProperties })
-      } else {
-        nl = undefined
-        rap = undefined
-        rh = undefined
-      }
-      this.client.subscribe(topicsArr, { qos, nl, rap, rh, properties }, async (error, granted) => {
+      // One shared builder for the panel and for the connect-time runner, so restoring a saved
+      // subscription sends exactly what subscribing it sent.
+      const rowOptions = buildRowSubscribeOptions(this.record.mqttVersion, {
+        qos,
+        nl,
+        rap,
+        rh,
+        subscriptionIdentifier,
+        userProperties,
+      })
+      this.client.subscribe(topicsArr, rowOptions, async (error, granted) => {
         this.subLoading = false
         if (error) {
           this.$emit('onSubError', error.toString(), `Topics: ${JSON.stringify(topicsArr)}`)

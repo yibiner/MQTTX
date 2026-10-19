@@ -1,5 +1,5 @@
 import { expect } from 'chai'
-import { planAutoSubscribe, reconcileAutoSubscriptions } from '@/utils/autoSubscribe'
+import { planAutoSubscribe, planConnectSubscriptions, reconcileAutoSubscriptions } from '@/utils/autoSubscribe'
 
 const createGroup = (overrides: Partial<AutoSubscribeGroupModel> = {}): AutoSubscribeGroupModel => ({
   id: 'g1',
@@ -188,5 +188,123 @@ describe('reconcileAutoSubscriptions', () => {
   it('handles a connection without automatic subscriptions', () => {
     expect(reconcile(null, [], [])).to.deep.equal({ groups: [], changed: false })
     expect(reconcile([], [], [])).to.deep.equal({ groups: [], changed: false })
+  })
+})
+
+/**
+ * The saved subscriptions of the panel and the automatic subscriptions of the connection are executed
+ * by one place now, so their interaction (which used to be an exclusion list) is decided here.
+ */
+describe('planConnectSubscriptions', () => {
+  const row = (topic: string, overrides: Partial<SubscriptionModel> = {}): SubscriptionModel => ({
+    id: `row-${topic}`,
+    topic,
+    qos: 0,
+    disabled: false,
+    createAt: '2026-10-19 10:00:00:000',
+    ...overrides,
+  })
+  const groups = (): AutoSubscribeGroupModel[] => [
+    {
+      id: 'g1',
+      delayMs: 1500,
+      merge: true,
+      enabled: true,
+      topics: [
+        { topic: 'app/${productType}/post', qos: 1 },
+        { topic: 'app/${productType}/cmd', qos: 0 },
+      ],
+    },
+    { id: 'g2', delayMs: 0, merge: false, enabled: true, topics: [{ topic: 'app/${productType}/heart', qos: 0 }] },
+  ]
+
+  it('subscribes the saved rows right away and the automatic topics with their delay', () => {
+    const plan = planConnectSubscriptions({
+      rows: [row('manual/keep')],
+      groups: groups(),
+      variables,
+    })
+    const manual = plan.batches.filter((batch) => batch.source === 'manual')
+    const auto = plan.batches.filter((batch) => batch.source === 'auto')
+    expect(manual).to.have.lengthOf(1)
+    expect(manual[0].delayMs).to.equal(0)
+    expect(manual[0].merge).to.equal(false)
+    expect(manual[0].topics[0].topic).to.equal('manual/keep')
+    // the saved row travels with the batch, so its MQTT 5 options survive
+    expect(manual[0].topics[0].row).to.deep.equal(row('manual/keep'))
+    expect(auto.map((batch) => [batch.groupId, batch.delayMs, batch.merge])).to.deep.equal([
+      ['g1', 1500, true],
+      ['g2', 0, false],
+    ])
+  })
+
+  it('lets a saved subscription win over the configured delay of the same topic', () => {
+    const plan = planConnectSubscriptions({
+      rows: [row('app/A1/post')],
+      groups: groups(),
+      variables,
+    })
+    const forPost = plan.batches.filter((batch) => batch.topics.some((item) => item.topic === 'app/A1/post'))
+    expect(forPost).to.have.lengthOf(1)
+    expect(forPost[0].source).to.equal('manual')
+    expect(forPost[0].delayMs).to.equal(0)
+    // the rest of the group is still subscribed with its delay
+    const remaining = plan.batches.find((batch) => batch.groupId === 'g1')
+    expect(remaining?.topics.map((item) => item.topic)).to.deep.equal(['app/A1/cmd'])
+  })
+
+  it('skips a paused saved row and a paused automatic topic', () => {
+    const plan = planConnectSubscriptions({
+      rows: [row('manual/paused', { disabled: true })],
+      groups: [{ id: 'g', delayMs: 0, merge: true, enabled: true, topics: [{ topic: 'a/b', qos: 0, disabled: true }] }],
+      variables,
+    })
+    expect(plan.batches).to.deep.equal([])
+  })
+
+  it('leaves the saved rows alone when "auto resubscribe" is off', () => {
+    const plan = planConnectSubscriptions({
+      rows: [row('manual/keep')],
+      groups: groups(),
+      variables,
+      restoreManual: false,
+    })
+    expect(plan.batches.every((batch) => batch.source === 'auto')).to.equal(true)
+  })
+
+  it('keeps a row the automation created under its own delay', () => {
+    // Reconnecting after the automatic topics were saved as rows must not turn them into ordinary
+    // subscriptions: they would be subscribed immediately and the configured delay would be gone.
+    const plan = planConnectSubscriptions({
+      rows: [row('app/A1/cmd', { autoSubscribed: true }), row('manual/keep')],
+      groups: groups(),
+      variables,
+    })
+    const cmdBatches = plan.batches.filter((batch) => batch.topics.some((item) => item.topic === 'app/A1/cmd'))
+    expect(cmdBatches).to.have.lengthOf(1)
+    expect(cmdBatches[0].source).to.equal('auto')
+    expect(cmdBatches[0].delayMs).to.equal(1500)
+  })
+
+  it('takes a row back as an ordinary subscription when the configuration dropped its topic', () => {
+    const plan = planConnectSubscriptions({
+      rows: [row('app/A1/old-topic', { autoSubscribed: true })],
+      groups: groups(),
+      variables,
+    })
+    const batches = plan.batches.filter((batch) => batch.topics.some((item) => item.topic === 'app/A1/old-topic'))
+    expect(batches).to.have.lengthOf(1)
+    expect(batches[0].source).to.equal('manual')
+    expect(batches[0].delayMs).to.equal(0)
+  })
+
+  it('reports the unresolved placeholders of the automatic subscriptions', () => {
+    const plan = planConnectSubscriptions({
+      rows: null,
+      groups: [{ id: 'g', delayMs: 0, merge: true, enabled: true, topics: [{ topic: 'x/${missing}/y', qos: 0 }] }],
+      variables,
+    })
+    expect(plan.batches).to.deep.equal([])
+    expect(plan.unresolved).to.deep.equal(['missing'])
   })
 })

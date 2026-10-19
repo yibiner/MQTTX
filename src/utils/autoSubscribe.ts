@@ -168,3 +168,110 @@ export const reconcileAutoSubscriptions = (
 
   return changed ? { groups: next, changed } : { groups, changed }
 }
+
+/** Where a topic that is subscribed right after connecting comes from. */
+export type ConnectSubscriptionSource = 'manual' | 'auto'
+
+/** One topic of a connect-time batch; `row` is set for a topic that comes from a saved subscription. */
+export interface ConnectSubscriptionTopic {
+  topic: string
+  qos: QoS
+  /** the saved row, so the batch keeps its MQTT 5 subscribe options */
+  row?: SubscriptionModel
+}
+
+/** One SUBSCRIBE (or a sequence of them when `merge` is false) sent after connecting. */
+export interface ConnectSubscriptionBatch {
+  delayMs: number
+  /** send every topic of this batch in one SUBSCRIBE packet */
+  merge: boolean
+  source: ConnectSubscriptionSource
+  /** set for an automatic subscription group */
+  groupId?: string
+  topics: ConnectSubscriptionTopic[]
+}
+
+export interface ConnectSubscriptionPlan {
+  batches: ConnectSubscriptionBatch[]
+  /** placeholders that could not be resolved, in order of first appearance */
+  unresolved: string[]
+}
+
+/**
+ * Plans everything that has to be subscribed after a connection succeeds, from both sources.
+ *
+ * This is the single place that decides "what is subscribed when": it replaced two features that
+ * used to subscribe independently and had to be kept out of each other's way with an exclusion list -
+ * the saved subscriptions of the panel (`autoResub`) and the automatic subscriptions of the
+ * connection. One owner means one rule set:
+ *
+ * - a saved row is subscribed right away (delay 0), one packet per row, with the options it was
+ *   saved with;
+ * - a topic that is both saved and configured as an automatic subscription is subscribed right away
+ *   too: a manual subscription means "I want this now", so it wins over the configured delay;
+ * - the automatic topics are subscribed with the delay of their group, merged into one packet when
+ *   the group says so, and a paused topic (`disabled`) is not subscribed at all;
+ * - `restoreManual: false` leaves the saved rows alone, which is what "auto resubscribe" switched off
+ *   in the settings means.
+ */
+export const planConnectSubscriptions = (
+  options: {
+    rows?: SubscriptionModel[] | null
+    groups?: AutoSubscribeGroupModel[] | null
+    variables?: { [name: string]: string }
+    /** whether the saved rows are restored after connecting (the "auto resubscribe" setting) */
+    restoreManual?: boolean
+  } = {},
+): ConnectSubscriptionPlan => {
+  const { rows, groups, variables = {}, restoreManual = true } = options
+  const plan: ConnectSubscriptionPlan = { batches: [], unresolved: [] }
+
+  const auto = planAutoSubscribe(groups, variables)
+  auto.unresolved.forEach((name) => {
+    if (!plan.unresolved.includes(name)) {
+      plan.unresolved.push(name)
+    }
+  })
+  const autoTopics = new Set(auto.batches.flatMap((batch) => batch.topics.map((item) => item.topic)))
+
+  const manualTopics = new Set<string>()
+  if (restoreManual && Array.isArray(rows)) {
+    rows.forEach((row) => {
+      const topic = (row?.topic ?? '').trim()
+      if (!topic || row.disabled === true || manualTopics.has(topic)) {
+        return
+      }
+      // A row the automation created (and the user has not touched yet) stays owned by the automatic
+      // subscription, so it keeps the delay of its group on every connect instead of being restored
+      // as an ordinary subscription. Once it is no longer part of the configuration, or once the user
+      // has touched it, the row is an ordinary subscription again.
+      if (row.autoSubscribed === true && autoTopics.has(topic)) {
+        return
+      }
+      manualTopics.add(topic)
+      plan.batches.push({
+        delayMs: 0,
+        merge: false,
+        source: 'manual',
+        topics: [{ topic, qos: row.qos, row }],
+      })
+    })
+  }
+
+  auto.batches.forEach((batch) => {
+    const topics = batch.topics.filter((item) => !manualTopics.has(item.topic))
+    if (!topics.length) {
+      // Every topic of the group is already subscribed as a saved row.
+      return
+    }
+    plan.batches.push({
+      delayMs: batch.delayMs,
+      merge: batch.merge,
+      source: 'auto',
+      groupId: batch.groupId,
+      topics,
+    })
+  })
+
+  return plan
+}

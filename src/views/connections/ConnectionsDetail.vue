@@ -375,8 +375,12 @@ import {
   timedMessagesNeedViewPipeline,
   unregisterTimedMessagePublisher,
 } from '@/utils/timedMessageManager'
-import { attachAutoSubscribe, detachAutoSubscribe, onAutoSubscribed } from '@/utils/autoSubscribeManager'
-import { planAutoSubscribe } from '@/utils/autoSubscribe'
+import {
+  attachConnectSubscriptions,
+  detachConnectSubscriptions,
+  onConnectSubscribed,
+  updateConnectSubscriptions,
+} from '@/utils/connectSubscriptions'
 import { processIncomingMessage, registerAutoReply, unregisterAutoReply } from '@/utils/autoReplyEngine'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import useServices from '@/database/useServices'
@@ -496,8 +500,8 @@ export default class ConnectionsDetail extends Vue {
   private timedMessages: TimedMessageRuntime[] = []
   private unsubTimedMessages: (() => void) | null = null
   private timedPublisherId: string | null = null
-  private autoReplyConnectionId: string | null = null
-  private unsubAutoSubscribed: (() => void) | null = null
+  private automationConnectionId: string | null = null
+  private unsubConnectSubscribed: (() => void) | null = null
   private sendTimedMessageCount = 0
   private receivedMsgType: PayloadType = this.getReceivedMsgType()
   private msgType: MessageType = 'all'
@@ -592,9 +596,11 @@ export default class ConnectionsDetail extends Vue {
   private async handleRecordChanged() {
     this.getConnectionValue(this.curConnectionId)
     this.loadMessages()
-    // The automatic reply rules are matched against a snapshot of the record.
+    // The rules of the automatic replies and the plan of the connect-time subscriptions are matched
+    // against a snapshot of the record.
     if (this.record?.id) {
       registerAutoReply(this.record.id, this.record)
+      updateConnectSubscriptions(this.record.id, this.record)
     }
   }
 
@@ -675,9 +681,10 @@ export default class ConnectionsDetail extends Vue {
       this.client = curConnectClient
       if (id && this.client.on) {
         this.$log.info(`Assigned ID ${id} to MQTTX client`)
-        // Automatic subscriptions belong to the device being simulated: they are scheduled from the
-        // client itself, so they also fire on the reconnects mqtt.js does on its own.
-        attachAutoSubscribe(curConnectClient as MqttClient, id, this.record)
+        // Everything a connection subscribes after connecting (the saved rows and the automatic
+        // subscriptions) is planned and executed by one runner attached to the client, so it also
+        // fires on the reconnects mqtt.js performs on its own.
+        attachConnectSubscriptions(curConnectClient as MqttClient, id, this.record)
         this.client.on('connect', (conBack) => this.onConnect(conBack, { id, client: curConnectClient, mqttVersion }))
         this.client.on('error', this.onError)
         this.client.on('reconnect', this.onReConnect)
@@ -732,7 +739,7 @@ export default class ConnectionsDetail extends Vue {
             if (connection.id) {
               // The device behaviour of a deleted connection has no owner left: cancel the groups
               // that are still waiting for their delay and forget its reply rules.
-              detachAutoSubscribe(connection.id)
+              detachConnectSubscriptions(connection.id)
               unregisterAutoReply(connection.id)
               this.removeActiveConnection({ id: connection.id })
               this.$log.info(
@@ -931,13 +938,13 @@ export default class ConnectionsDetail extends Vue {
    * one.
    */
   private syncAutomationBinding(id: string) {
-    if (!id || this.autoReplyConnectionId === id) {
+    if (!id || this.automationConnectionId === id) {
       return
     }
     this.unbindAutomationBinding()
-    this.autoReplyConnectionId = id
+    this.automationConnectionId = id
     registerAutoReply(id, this.record)
-    this.unsubAutoSubscribed = onAutoSubscribed(id, () => {
+    this.unsubConnectSubscribed = onConnectSubscribed(id, () => {
       // The subscriptions were added behind the panel's back: re-read the connection so the list,
       // the topic tree and the session state show them.
       this.$emit('reload', false, false)
@@ -952,10 +959,10 @@ export default class ConnectionsDetail extends Vue {
    * `removeConnection`.
    */
   private unbindAutomationBinding() {
-    this.autoReplyConnectionId = null
-    if (this.unsubAutoSubscribed) {
-      this.unsubAutoSubscribed()
-      this.unsubAutoSubscribed = null
+    this.automationConnectionId = null
+    if (this.unsubConnectSubscribed) {
+      this.unsubConnectSubscribed()
+      this.unsubConnectSubscribed = null
     }
   }
 
@@ -1342,7 +1349,7 @@ export default class ConnectionsDetail extends Vue {
       offset: 30,
     })
     this.setShowClientInfo(false)
-    this.$emit('reload', false, false, this.handleReSubTopics)
+    this.$emit('reload', false, false)
     this.$log.info(`Successful connection for ${this.record.name}@${this.record.host}, MQTT.js onConnect trigger`)
   }
 
@@ -2366,32 +2373,6 @@ export default class ConnectionsDetail extends Vue {
   }
 
   // Re-subscribe topic
-  private handleReSubTopics() {
-    if (this.client.options) {
-      const { resubscribe } = this.client.options
-      const { subscriptions } = this.record
-      const needResub = resubscribe && subscriptions.length
-      if (needResub) {
-        // The topics of an automatic subscription are (re-)subscribed by the automatic subscription
-        // manager, after the delay the user configured. Subscribing them here too would send them at
-        // connect time and make the delay meaningless on every connect after the first one.
-        this.subListRef.resubscribe(this.autoSubscriptionTopics())
-      }
-    }
-  }
-
-  /**
-   * Topics that the automatic subscriptions own, resolved with the current variables.
-   *
-   * A group that is disabled or that still has an unresolved placeholder owns nothing, so its topics
-   * are resubscribed normally if they happen to be in the saved list.
-   */
-  private autoSubscriptionTopics(): string[] {
-    return planAutoSubscribe(this.record.autoSubscriptions, this.findMessageVariables()).batches.flatMap((batch) =>
-      batch.topics.map((item) => item.topic),
-    )
-  }
-
   // Show use script dialog
   private handleUseScript() {
     this.showUseScript = true

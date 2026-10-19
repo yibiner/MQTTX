@@ -104,7 +104,13 @@ export const getClientOptions = (record: ConnectionModel): IClientOptions => {
     }
   }
   // Auto Resubscribe, Valid only when reconnecting
-  options.resubscribe = Store.getters.autoResub
+  /**
+   * mqtt.js must not re-subscribe on its own: `connectSubscriptions` owns everything that is
+   * subscribed after connecting, including the "restore the saved subscriptions" step that the
+   * "auto resubscribe" setting controls. Letting mqtt.js do it too sent a second SUBSCRIBE at the
+   * moment of a reconnect and defeated the delay of the automatic subscriptions.
+   */
+  options.resubscribe = false
   return options
 }
 
