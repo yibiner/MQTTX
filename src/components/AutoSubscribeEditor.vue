@@ -1,5 +1,20 @@
 <template>
   <div class="auto-subscribe-editor">
+    <div class="editor-head">
+      <el-button type="text" icon="el-icon-plus" class="group-add" @click="addGroup">
+        {{ $t('connections.autoSubscribeAddGroup') }}
+      </el-button>
+      <el-tooltip placement="top" :open-delay="150">
+        <div slot="content" class="automation-tip">
+          <p>{{ $t('connections.autoSubscribeDesc') }}</p>
+          <p>{{ $t('connections.autoSubscribeMergeHint') }}</p>
+        </div>
+        <span class="editor-help"><i class="el-icon-question"></i></span>
+      </el-tooltip>
+    </div>
+
+    <p v-if="!groups.length" class="empty-hint">{{ $t('connections.autoSubscribeEmpty') }}</p>
+
     <div v-for="(group, index) in groups" :key="group.id" class="auto-subscribe-group">
       <div class="group-header">
         <div class="group-delay">
@@ -30,7 +45,7 @@
           <el-checkbox v-model="group.merge" class="merge-checkbox" @change="emitChange">
             {{ $t('connections.autoSubscribeMerge') }}
           </el-checkbox>
-          <el-tooltip :content="$t('connections.autoReplyEnableRule')" placement="top">
+          <el-tooltip :content="$t('connections.autoSubscribeEnableGroup')" placement="top">
             <el-switch
               v-model="group.enabled"
               active-color="#13ce66"
@@ -64,12 +79,6 @@
         {{ $t('connections.autoSubscribeAddTopic') }}
       </el-button>
     </div>
-
-    <el-button type="text" icon="el-icon-plus" class="group-add" @click="addGroup">
-      {{ $t('connections.autoSubscribeAddGroup') }}
-    </el-button>
-    <p v-if="!groups.length" class="empty-hint">{{ $t('connections.autoSubscribeEmpty') }}</p>
-    <p v-else class="group-hint">{{ $t('connections.autoSubscribeMergeHint') }}</p>
   </div>
 </template>
 
@@ -185,10 +194,27 @@ export default class AutoSubscribeEditor extends Vue {
 .auto-subscribe-editor {
   font-size: 12px;
 
+  .editor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .editor-help {
+    color: #909399;
+    cursor: help;
+    font-size: 14px;
+    line-height: 1;
+    &:hover {
+      color: #409eff;
+    }
+  }
+
   .auto-subscribe-group {
-    padding: 8px 10px 4px;
-    margin-bottom: 8px;
-    border: 1px solid #eceff2;
+    padding: 10px 12px 4px;
+    margin-bottom: 10px;
+    border: 1px solid #ebeef5;
     border-radius: 4px;
     background: #fafbfc;
   }
@@ -198,7 +224,8 @@ export default class AutoSubscribeEditor extends Vue {
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    margin-bottom: 6px;
+    gap: 6px;
+    margin-bottom: 8px;
   }
 
   .group-delay {
@@ -209,7 +236,7 @@ export default class AutoSubscribeEditor extends Vue {
       color: #606266;
     }
     .delay-input {
-      width: 88px;
+      width: 76px;
     }
     .field-unit {
       margin: 0 8px 0 4px;
@@ -218,9 +245,11 @@ export default class AutoSubscribeEditor extends Vue {
   }
 
   .quick-delays {
+    display: flex;
+    align-items: center;
+    gap: 2px;
     .quick-delay {
-      margin-right: 6px;
-      padding: 0 6px;
+      padding: 0 5px;
       color: #409eff;
       border-radius: 3px;
       &.active {
@@ -233,11 +262,11 @@ export default class AutoSubscribeEditor extends Vue {
   .group-options {
     display: flex;
     align-items: center;
+    gap: 10px;
     .merge-checkbox {
-      margin-right: 12px;
+      margin-right: 0;
     }
     .group-delete {
-      margin-left: 10px;
       color: #f56c6c;
     }
   }
@@ -246,15 +275,17 @@ export default class AutoSubscribeEditor extends Vue {
     display: flex;
     align-items: center;
     margin-bottom: 6px;
+    gap: 8px;
     .topic-input {
       flex: 1;
     }
     .topic-qos {
-      width: 92px;
-      margin: 0 8px;
+      width: 88px;
+      flex: none;
     }
     .topic-delete {
       color: #f56c6c;
+      flex: none;
     }
   }
 
@@ -264,12 +295,15 @@ export default class AutoSubscribeEditor extends Vue {
     font-size: 12px;
   }
 
-  .empty-hint,
-  .group-hint {
-    margin: 6px 0 0;
+  .topic-add {
+    margin-bottom: 4px;
+  }
+
+  .empty-hint {
+    margin: 0;
     color: #909399;
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 1.6;
   }
 }
 </style>

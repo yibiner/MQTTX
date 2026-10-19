@@ -1,5 +1,20 @@
 <template>
   <div class="auto-reply-editor">
+    <div class="editor-head">
+      <el-button type="text" icon="el-icon-plus" class="rule-add" @click="addRule">
+        {{ $t('connections.autoReplyAdd') }}
+      </el-button>
+      <el-tooltip placement="top" :open-delay="150">
+        <div slot="content" class="automation-tip">
+          <p>{{ $t('connections.autoReplyDesc') }}</p>
+          <p>{{ $t('connections.autoReplyOnceHint') }}</p>
+        </div>
+        <span class="editor-help"><i class="el-icon-question"></i></span>
+      </el-tooltip>
+    </div>
+
+    <p v-if="!rules.length" class="empty-hint">{{ $t('connections.autoReplyEmpty') }}</p>
+
     <div v-for="(rule, index) in rules" :key="rule.id" class="reply-rule">
       <div class="rule-header">
         <el-input
@@ -33,7 +48,15 @@
           @input="emitChange"
         ></el-input>
 
-        <label>{{ $t('connections.autoReplyCondition') }}</label>
+        <label class="with-help">
+          {{ $t('connections.autoReplyCondition') }}
+          <el-tooltip placement="top" :open-delay="150">
+            <div slot="content" class="automation-tip">
+              <p>{{ $t('connections.autoReplyConditionHint') }}</p>
+            </div>
+            <i class="el-icon-question field-help"></i>
+          </el-tooltip>
+        </label>
         <div>
           <el-input
             v-model="rule.matchCondition"
@@ -50,24 +73,29 @@
           <el-radio-button label="fixed">{{ $t('connections.autoReplyModeFixed') }}</el-radio-button>
         </el-radio-group>
 
-        <label>{{ $t('connections.autoReplyPayload') }}</label>
-        <div>
-          <el-input
-            v-model="rule.reply.payload"
-            type="textarea"
-            :autosize="{ minRows: 2, maxRows: 6 }"
-            class="payload-input"
-            :placeholder="rule.reply.mode === 'echo' ? '{&quot;code&quot;: 0, &quot;msg&quot;: null}' : ''"
-            @input="emitChange"
-          ></el-input>
-          <p class="cell-hint">
-            {{
-              rule.reply.mode === 'echo'
-                ? $t('connections.autoReplyPayloadEchoHint')
-                : $t('connections.autoReplyPayloadFixedHint')
-            }}
-          </p>
-        </div>
+        <label class="with-help">
+          {{ $t('connections.autoReplyPayload') }}
+          <el-tooltip placement="top" :open-delay="150">
+            <div slot="content" class="automation-tip">
+              <p>
+                {{
+                  rule.reply.mode === 'echo'
+                    ? $t('connections.autoReplyPayloadEchoHint')
+                    : $t('connections.autoReplyPayloadFixedHint')
+                }}
+              </p>
+            </div>
+            <i class="el-icon-question field-help"></i>
+          </el-tooltip>
+        </label>
+        <el-input
+          v-model="rule.reply.payload"
+          type="textarea"
+          :autosize="{ minRows: 2, maxRows: 6 }"
+          class="payload-input"
+          :placeholder="rule.reply.mode === 'echo' ? '{&quot;code&quot;: 0, &quot;msg&quot;: null}' : ''"
+          @input="emitChange"
+        ></el-input>
 
         <label>{{ $t('connections.autoReplyReplyTopic') }}</label>
         <el-input
@@ -109,12 +137,6 @@
         </div>
       </div>
     </div>
-
-    <el-button type="text" icon="el-icon-plus" class="rule-add" @click="addRule">
-      {{ $t('connections.autoReplyAdd') }}
-    </el-button>
-    <p v-if="!rules.length" class="empty-hint">{{ $t('connections.autoReplyEmpty') }}</p>
-    <p v-else class="rule-hint">{{ $t('connections.autoReplyOnceHint') }}</p>
   </div>
 </template>
 
@@ -226,10 +248,27 @@ export default class AutoReplyEditor extends Vue {
 .auto-reply-editor {
   font-size: 12px;
 
+  .editor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .editor-help {
+    color: #909399;
+    cursor: help;
+    font-size: 14px;
+    line-height: 1;
+    &:hover {
+      color: #409eff;
+    }
+  }
+
   .reply-rule {
-    padding: 8px 10px;
+    padding: 10px 12px;
     margin-bottom: 10px;
-    border: 1px solid #eceff2;
+    border: 1px solid #ebeef5;
     border-radius: 4px;
     background: #fafbfc;
   }
@@ -237,7 +276,7 @@ export default class AutoReplyEditor extends Vue {
   .rule-header {
     display: flex;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     .rule-name {
       flex: 1;
       max-width: 260px;
@@ -245,9 +284,9 @@ export default class AutoReplyEditor extends Vue {
     .rule-options {
       display: flex;
       align-items: center;
+      gap: 10px;
       margin-left: 12px;
       .rule-delete {
-        margin-left: 10px;
         color: #f56c6c;
       }
     }
@@ -279,12 +318,26 @@ export default class AutoReplyEditor extends Vue {
 
   .rule-grid {
     display: grid;
-    grid-template-columns: 104px 1fr;
-    gap: 6px 10px;
+    grid-template-columns: 92px 1fr;
+    gap: 8px 10px;
     align-items: center;
     label {
       color: #606266;
       line-height: 28px;
+      white-space: nowrap;
+    }
+    .with-help {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .field-help {
+      color: #c0c4cc;
+      cursor: help;
+      font-size: 12px;
+      &:hover {
+        color: #409eff;
+      }
     }
   }
 
@@ -292,13 +345,6 @@ export default class AutoReplyEditor extends Vue {
     margin: 2px 0 0;
     color: #f56c6c;
     font-size: 12px;
-  }
-
-  .cell-hint {
-    margin: 4px 0 0;
-    color: #909399;
-    font-size: 12px;
-    line-height: 1.5;
   }
 
   .payload-input {
@@ -312,15 +358,14 @@ export default class AutoReplyEditor extends Vue {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
+    gap: 4px 6px;
     .delay-input {
-      width: 80px;
+      width: 76px;
     }
     .unit {
-      margin: 0 8px 0 4px;
       color: #909399;
     }
     .quick-delay {
-      margin-right: 6px;
       padding: 0 5px;
       color: #409eff;
       border-radius: 3px;
@@ -332,10 +377,10 @@ export default class AutoReplyEditor extends Vue {
     .reply-flags {
       display: flex;
       align-items: center;
-      margin-left: 8px;
+      gap: 6px;
+      margin-left: 6px;
       .qos-select {
         width: 84px;
-        margin-left: 6px;
       }
     }
   }
@@ -345,12 +390,21 @@ export default class AutoReplyEditor extends Vue {
     font-size: 12px;
   }
 
-  .empty-hint,
-  .rule-hint {
-    margin: 6px 0 0;
+  .empty-hint {
+    margin: 0;
     color: #909399;
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 1.6;
+  }
+}
+
+// Tooltip content is rendered in a popper attached to the body, so it cannot be nested in the editor.
+.automation-tip p {
+  margin: 0 0 4px;
+  max-width: 340px;
+  line-height: 1.6;
+  &:last-child {
+    margin-bottom: 0;
   }
 }
 </style>

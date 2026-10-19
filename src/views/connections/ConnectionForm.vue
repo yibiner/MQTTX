@@ -331,7 +331,6 @@
         <el-card shadow="never" class="info-body item-card">
           <el-row :gutter="10">
             <el-col :span="24">
-              <p class="automation-desc">{{ $t('connections.autoSubscribeDesc') }}</p>
               <AutoSubscribeEditor v-model="record.autoSubscriptions" />
             </el-col>
           </el-row>
@@ -343,7 +342,6 @@
         <el-card shadow="never" class="info-body item-card">
           <el-row :gutter="10">
             <el-col :span="24">
-              <p class="automation-desc">{{ $t('connections.autoReplyDesc') }}</p>
               <AutoReplyEditor v-model="record.autoReplies" />
             </el-col>
           </el-row>
@@ -1162,12 +1160,6 @@ export default class ConnectionForm extends Vue {
 
 .connection-form {
   padding: 0 16px;
-  .automation-desc {
-    margin: 0 0 8px;
-    color: #909399;
-    font-size: 12px;
-    line-height: 1.5;
-  }
   .topbar {
     -webkit-app-region: drag;
     a {
