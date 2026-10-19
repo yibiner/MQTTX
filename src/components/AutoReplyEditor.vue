@@ -253,6 +253,28 @@ export default class AutoReplyEditor extends Vue {
     }
   }
 
+  // The mode switch has long labels ("回显原消息 + 合并字段"), while the global element reset fixes
+  // every mini radio button to 90px so the message filter tabs line up. Without this the label
+  // overflows its box and runs into the next button.
+  .el-radio-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-width: 100%;
+  }
+
+  .el-radio-button {
+    margin-right: 0;
+  }
+
+  .el-radio-button--mini .el-radio-button__inner {
+    width: auto;
+    padding: 7px 12px;
+    white-space: nowrap;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
   .rule-grid {
     display: grid;
     grid-template-columns: 104px 1fr;
