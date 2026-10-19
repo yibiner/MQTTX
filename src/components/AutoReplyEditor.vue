@@ -254,17 +254,11 @@ export default class AutoReplyEditor extends Vue {
   }
 
   // The mode switch has long labels ("回显原消息 + 合并字段"), while the global element reset fixes
-  // every mini radio button to 90px so the message filter tabs line up. Without this the label
-  // overflows its box and runs into the next button.
+  // every mini radio button to 90px so the message filter tabs line up. Only the width is relaxed
+  // here: the buttons keep Element's joined segmented look, which is what the rest of the app uses.
   .el-radio-group {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    max-width: 100%;
-  }
-
-  .el-radio-button {
-    margin-right: 0;
   }
 
   .el-radio-button--mini .el-radio-button__inner {
@@ -273,6 +267,14 @@ export default class AutoReplyEditor extends Vue {
     white-space: nowrap;
     font-size: 12px;
     line-height: 1.2;
+  }
+
+  // In a joined group Element removes the left border of every button but the first and closes the
+  // seam of the selected one with a box-shadow of its own; the global element reset drops that shadow,
+  // so the selected button was outlined on three sides only. Draw the seam instead.
+  .el-radio-button--mini .el-radio-button__orig-radio:checked + .el-radio-button__inner {
+    border-color: var(--color-main-green);
+    border-left: 1px solid var(--color-main-green);
   }
 
   .rule-grid {
