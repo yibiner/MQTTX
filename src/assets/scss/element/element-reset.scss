@@ -182,13 +182,37 @@
 .el-dialog {
   background: var(--color-bg-normal);
   border-radius: 8px;
+  // The dialog scrolls inside its wrapper, and a tall one (a connection preset with a few automation
+  // rules) used to take the title row and its close button out of the viewport. Keep them pinned, so
+  // the button is always reachable no matter how far the content is scrolled.
   .el-dialog__header {
-    padding: 0 20px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 0 56px 0 20px;
     line-height: 56px;
     border-bottom: 1px solid var(--color-border-default);
+    border-radius: 8px 8px 0 0;
+    background: var(--color-bg-normal);
     .el-dialog__title {
       color: var(--color-text-title);
       font-size: $font-size--subtitle;
+    }
+  }
+  // Element draws the close icon as a bare 16px glyph; a comfortable box also means a near miss on the
+  // icon still closes the dialog.
+  .el-dialog__headerbtn {
+    top: 8px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+    border-radius: 4px;
+    &:hover {
+      background: var(--color-bg-item);
     }
   }
 }
