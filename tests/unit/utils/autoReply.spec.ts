@@ -112,3 +112,70 @@ describe('autoReply utility', () => {
     expect(rendered).to.equal('a/b -> first / c1 / ')
   })
 })
+
+/**
+ * The NTP scenario: the device message carries a 20 digit `msgId`, and the reply echoes it with
+ * `${msg.msgId}`. The digits have to survive the round trip.
+ */
+describe('auto reply with a big integer field', () => {
+  const received = '{"cmd":"NTP_SYNC","ts":1792486795034,"msgId":16541683218561123115,"timezone":8}'
+  const rule = (overrides: Partial<AutoReplyRuleModel> = {}): AutoReplyRuleModel => ({
+    id: 'ntp-rule',
+    name: 'NTP 应答',
+    enabled: true,
+    matchTopic: 'app/+/+/device/ntp/sub',
+    matchCondition: '',
+    reply: {
+      topic: 'app/${productType}/${clientId}/device/ntp/post',
+      mode: 'fixed',
+      payload: '{"cmd":"NTP","ts":${msg.ts},"msgId":${msg.msgId},"code":0}',
+      qos: 0,
+      retain: false,
+      delayMs: 0,
+    },
+    ...overrides,
+  })
+
+  it('renders the exact digits when the template injects them unquoted', () => {
+    const [reply] = planAutoReplies([rule()], {
+      topic: 'app/ACME900/AF020120F9CA37EX/device/ntp/sub',
+      payload: received,
+      variables: { productType: 'ACME900', clientId: 'AF020120F9CA37EX' },
+    })
+    expect(reply.error).to.equal(undefined)
+    expect(reply.payload).to.contain('"msgId":16541683218561123115')
+    expect(reply.payload).to.not.contain('16541683218561122000')
+  })
+
+  it('keeps the digits when the template quotes the field', () => {
+    const quoted = rule({
+      reply: {
+        topic: 'app/device/ntp/post',
+        mode: 'fixed',
+        payload: '{"msgId":"${msg.msgId}"}',
+        qos: 0,
+        retain: false,
+        delayMs: 0,
+      },
+    })
+    const [reply] = planAutoReplies([quoted], { topic: 'app/+/+/device/ntp/sub', payload: received })
+    expect(reply.payload).to.equal('{"msgId":"16541683218561123115"}')
+  })
+
+  it('echoes a big integer as the exact digits too', () => {
+    const echoed = rule({
+      reply: {
+        topic: 'app/device/ntp/post',
+        mode: 'echo',
+        payload: '{"code":0}',
+        qos: 0,
+        retain: false,
+        delayMs: 0,
+      },
+    })
+    const [reply] = planAutoReplies([echoed], { topic: 'app/+/+/device/ntp/sub', payload: received })
+    expect(reply.error).to.equal(undefined)
+    expect(reply.payload).to.contain('"msgId":"16541683218561123115"')
+    expect(reply.payload).to.contain('"code":0')
+  })
+})

@@ -141,7 +141,7 @@
                 :content="$t('common.config')"
               >
                 <a
-                  :class="['edit-btn', { disabled: client.connected || connectLoading }]"
+                  :class="['edit-btn', { disabled: connectLoading }]"
                   href="javascript:;"
                   @click="handleEdit($route.params.id)"
                 >
@@ -321,6 +321,12 @@
         />
       </div>
     </div>
+    <AutomationDialog
+      :visible.sync="automationDialogVisible"
+      :record="record"
+      :connected="client.connected"
+      @save="handleAutomationSave"
+    />
     <ExportData :visible.sync="showExportData" :connection="record" />
     <ImportData :visible.sync="showImportData" />
     <UseScript ref="useScript" :visible.sync="showUseScript" @setScript="handleSetScript" />
@@ -358,6 +364,7 @@ import ConnectionInfo from './ConnectionInfo.vue'
 import ResponseInformation from './ResponseInformation.vue'
 import Contextmenu from '@/components/Contextmenu.vue'
 import ExportData from '@/components/ExportData.vue'
+import AutomationDialog from '@/components/AutomationDialog.vue'
 import ImportData from '@/components/ImportData.vue'
 import UseScript from '@/components/UseScript.vue'
 import MsgTypeTabs from '@/components/MsgTypeTabs.vue'
@@ -424,6 +431,7 @@ type CommandType =
 
 @Component({
   components: {
+    AutomationDialog,
     ConnectionInfo,
     ResponseInformation,
     MsgPublish,
@@ -501,6 +509,9 @@ export default class ConnectionsDetail extends Vue {
   private unsubTimedMessages: (() => void) | null = null
   private timedPublisherId: string | null = null
   private automationConnectionId: string | null = null
+
+  /** Open while a connected connection edits its automation rules. */
+  private automationDialogVisible = false
   private unsubConnectSubscribed: (() => void) | null = null
   private sendTimedMessageCount = 0
   private receivedMsgType: PayloadType = this.getReceivedMsgType()
@@ -1088,13 +1099,53 @@ export default class ConnectionsDetail extends Vue {
 
   // Route to edit page
   private handleEdit(id: string): boolean | void {
-    if (this.client.connected || this.connectLoading) {
+    if (this.connectLoading) {
       return false
+    }
+    // The connection settings cannot be edited while connected (the client would have to be rebuilt),
+    // but the automation rules describe the device and are tuned against a live broker: they open in
+    // their own dialog instead of sending the user through a disconnect.
+    if (this.client.connected) {
+      this.automationDialogVisible = true
+      return
     }
     this.$router.push({
       path: `/recent_connections/${id}`,
       query: { oper: 'edit' },
     })
+  }
+
+  /** Persists the automation rules of a connected connection and applies them without reconnecting. */
+  private async handleAutomationSave(payload: {
+    autoSubscriptions: AutoSubscribeGroupModel[]
+    autoReplies: AutoReplyRuleModel[]
+  }): Promise<void> {
+    const id = this.record?.id
+    if (!id) {
+      return
+    }
+    try {
+      const { connectionService } = useServices()
+      await connectionService.updateAutomation(id, {
+        autoSubscriptions: payload.autoSubscriptions,
+        autoReplies: payload.autoReplies,
+      })
+      // The record is the live object the reply engine and the connect planner read from, so replacing
+      // the two lists here is what makes the new rules answer the next message.
+      this.record.autoSubscriptions = payload.autoSubscriptions
+      this.record.autoReplies = payload.autoReplies
+      registerAutoReply(id, this.record)
+      updateConnectSubscriptions(id, this.record)
+      this.automationDialogVisible = false
+      this.$message.success(this.$t('common.saveSuccess') as string)
+      this.$log.info(
+        `Automation rules updated while connected: ${payload.autoSubscriptions.length} subscription group(s), ` +
+          `${payload.autoReplies.length} reply rule(s) (connection ${id})`,
+      )
+    } catch (error) {
+      this.$message.error((error as Error).toString())
+      this.$log.error(`Updating the automation rules failed: ${(error as Error).toString()}`)
+    }
   }
 
   private hideNewMsgsTip() {

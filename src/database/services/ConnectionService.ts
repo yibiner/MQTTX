@@ -302,6 +302,27 @@ export default class ConnectionService {
     await this.connectionRepository.update({ id }, { autoSubscriptions })
   }
 
+  /**
+   * Updates only the automation of a connection, so a rule edited while the client is connected does
+   * not have to rewrite (and risk rewriting wrongly) every other column.
+   */
+  public async updateAutomation(
+    id: string,
+    automation: { autoSubscriptions?: AutoSubscribeGroupModel[]; autoReplies?: AutoReplyRuleModel[] },
+  ): Promise<void> {
+    const patch: Partial<ConnectionEntity> = {}
+    if (automation.autoSubscriptions !== undefined) {
+      patch.autoSubscriptions = automation.autoSubscriptions
+    }
+    if (automation.autoReplies !== undefined) {
+      patch.autoReplies = automation.autoReplies
+    }
+    if (!Object.keys(patch).length) {
+      return
+    }
+    await this.connectionRepository.update({ id }, patch)
+  }
+
   public async update(id: string, data: ConnectionModel): Promise<ConnectionModel | undefined> {
     try {
       await this.saveConnection(id, data)

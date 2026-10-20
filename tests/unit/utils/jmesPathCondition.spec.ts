@@ -1,5 +1,11 @@
 import { expect } from 'chai'
-import { evaluatePayloadCondition, isValidCondition, parseJsonPayload } from '@/utils/jmesPathCondition'
+import {
+  evaluatePayloadCondition,
+  formatJsonText,
+  isValidCondition,
+  parseJsonKeepingBigIntegers,
+  parseJsonPayload,
+} from '@/utils/jmesPathCondition'
 
 describe('jmesPathCondition utility', () => {
   it('matches a field equality', () => {
@@ -43,5 +49,54 @@ describe('jmesPathCondition utility', () => {
     expect(parseJsonPayload('not json').error).to.be.a('string')
     expect(parseJsonPayload('').error).to.be.a('string')
     expect(parseJsonPayload(Buffer.from('{"a":2}')).value).to.deep.equal({ a: 2 })
+  })
+})
+
+/**
+ * A device `msgId` is a 64-bit integer: `JSON.parse` rounds it to the nearest double, and a reply that
+ * echoed the field used to send the rounded number back (…115 became …222000).
+ */
+describe('parseJsonPayload big integers', () => {
+  it('keeps an integer beyond 2^53 as its exact digits', () => {
+    const text = '{"msgId":16541683218561123115}'
+    expect(parseJsonPayload(text).value).to.deep.equal({ msgId: '16541683218561123115' })
+    expect(parseJsonKeepingBigIntegers(text).msgId).to.equal('16541683218561123115')
+  })
+
+  it('leaves ordinary numbers as numbers', () => {
+    const value = parseJsonPayload('{"ts":1792486795034,"timezone":8,"ratio":1.5,"code":0}').value
+    expect(value).to.deep.equal({ ts: 1792486795034, timezone: 8, ratio: 1.5, code: 0 })
+  })
+
+  it('does not touch digits inside strings, and survives escapes', () => {
+    const value = parseJsonPayload('{"note":"16541683218561123115 \\"x\\"","msgId":16541683218561123115}').value
+    expect(value.note).to.equal('16541683218561123115 "x"')
+    expect(value.msgId).to.equal('16541683218561123115')
+  })
+
+  it('reports invalid JSON instead of throwing', () => {
+    expect(parseJsonPayload('{oops}').error).to.be.a('string')
+  })
+})
+
+describe('formatJsonText', () => {
+  it('indents JSON without rounding big integers', () => {
+    const formatted = formatJsonText('{"cmd":"NTP","ts":1792486795034,"msgId":16541683218561123115}')
+    expect(formatted).to.contain('"msgId": 16541683218561123115')
+    expect(formatted).to.not.contain('16541683218561122000')
+    // `{`, three entries and `}`
+    expect(formatted.split('\n')).to.have.lengthOf(5)
+  })
+
+  it('handles nested objects, arrays and empty containers', () => {
+    const formatted = formatJsonText('{"a":[1,2],"b":{"c":"x"},"e":{},"f":[]}')
+    expect(formatted).to.contain('"a": [')
+    expect(formatted).to.contain('"e": {}')
+    expect(formatted).to.contain('"f": []')
+    expect(formatJsonText('{"a":1}').split('\n')).to.have.lengthOf(3)
+  })
+
+  it('returns text that is not JSON untouched', () => {
+    expect(formatJsonText('not json at all')).to.equal('not json at all')
   })
 })
