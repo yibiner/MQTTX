@@ -259,10 +259,14 @@ export default class AutoReplyEditor extends Vue {
 .auto-reply-editor {
   font-size: 12px;
 
+  // The head row holds the add button and the hint icon. Its height matches a form label
+  // (`el-form-item__label` is 32px and centres its text), so the button sits on the same line as the
+  // section label in the preset dialog instead of floating above it.
   .editor-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    min-height: 32px;
     margin-bottom: 6px;
   }
 
