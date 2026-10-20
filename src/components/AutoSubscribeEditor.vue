@@ -4,12 +4,14 @@
       <el-button type="text" icon="el-icon-plus" class="group-add" @click="addGroup">
         {{ $t('connections.autoSubscribeAddGroup') }}
       </el-button>
-      <el-tooltip placement="top" :open-delay="150">
+      <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
         <div slot="content" class="automation-tip">
           <p>{{ $t('connections.autoSubscribeDesc') }}</p>
           <p>{{ $t('connections.autoSubscribeMergeHint') }}</p>
         </div>
-        <span class="editor-help"><i class="el-icon-question"></i></span>
+        <a href="javascript:;" class="editor-help">
+          <i class="el-icon-warning-outline"></i>
+        </a>
       </el-tooltip>
     </div>
 
@@ -45,7 +47,7 @@
           <el-checkbox v-model="group.merge" class="merge-checkbox" @change="emitChange">
             {{ $t('connections.autoSubscribeMerge') }}
           </el-checkbox>
-          <el-tooltip :content="$t('connections.autoSubscribeEnableGroup')" placement="top">
+          <el-tooltip :content="$t('connections.autoSubscribeEnableGroup')" placement="top" :effect="tooltipEffect">
             <el-switch
               v-model="group.enabled"
               active-color="#13ce66"
@@ -118,6 +120,13 @@ export default class AutoSubscribeEditor extends Vue {
 
   get topicPlaceholder(): string {
     return this.$t('connections.autoSubscribeTopicPlaceholder') as string
+  }
+
+  /** Same light/dark choice as the other hints of the app (the tooltip must stay readable). */
+  get tooltipEffect(): 'dark' | 'light' {
+    const theme = (this as unknown as { $store?: { getters?: { currentTheme?: string } } }).$store?.getters
+      ?.currentTheme
+    return theme && theme !== 'light' ? 'light' : 'dark'
   }
 
   @Watch('value', { immediate: true })
@@ -201,13 +210,15 @@ export default class AutoSubscribeEditor extends Vue {
     margin-bottom: 6px;
   }
 
+  // Same hint affordance as elsewhere in the app (settings, connection form): a "!" icon that
+  // opens the explanation on hover.
   .editor-help {
-    color: #909399;
+    color: var(--color-text-default);
     cursor: help;
-    font-size: 14px;
     line-height: 1;
+    font-size: 15px;
     &:hover {
-      color: #409eff;
+      color: var(--color-main-green);
     }
   }
 

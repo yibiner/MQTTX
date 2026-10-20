@@ -241,10 +241,18 @@
           <el-form-item :label="$t('configs.variableName')" prop="name">
             <el-input v-model.trim="profileForm.name" clearable placeholder="deviceId"></el-input>
           </el-form-item>
-          <el-form-item :label="$t('configs.variableValue')" prop="value">
+          <el-form-item prop="value">
+            <template slot="label">
+              {{ $t('configs.variableValue') }}
+              <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
+                <div slot="content">{{ $t('configs.variableValueTip') }}</div>
+                <a href="javascript:;" class="preset-help">
+                  <i class="el-icon-warning-outline"></i>
+                </a>
+              </el-tooltip>
+            </template>
             <el-input v-model="profileForm.value" clearable :placeholder="`${'${timestamp}'} / 26.5 / A1`"></el-input>
           </el-form-item>
-          <p class="variable-preset-hint">{{ $t('configs.variableValueTip') }}</p>
         </template>
 
         <template v-else>
@@ -297,10 +305,18 @@
           <el-form-item :label="profileForm.mqttVersion === '5.0' ? 'Clean Start' : 'Clean Session'">
             <el-switch v-model="profileForm.clean" active-color="#13ce66" inactive-color="#A2A9B0"> </el-switch>
           </el-form-item>
-          <el-form-item :label="$t('connections.clientVariables')">
+          <el-form-item>
+            <template slot="label">
+              {{ $t('connections.clientVariables') }}
+              <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
+                <div slot="content">{{ $t('configs.clientVariablesProfileTip') }}</div>
+                <a href="javascript:;" class="preset-help">
+                  <i class="el-icon-warning-outline"></i>
+                </a>
+              </el-tooltip>
+            </template>
             <VariableEditor v-model="profileForm.variables" />
           </el-form-item>
-          <p class="variable-preset-hint">{{ $t('configs.clientVariablesProfileTip') }}</p>
           <el-form-item :label="$t('connections.autoSubscribe')">
             <AutoSubscribeEditor v-model="profileForm.autoSubscriptions" />
           </el-form-item>
@@ -434,6 +450,13 @@ export default class Configs extends Vue {
     clientId: '',
     username: '',
     password: '',
+  }
+
+  /** Same light/dark choice as the other hints of the app (the tooltip must stay readable). */
+  get tooltipEffect(): 'dark' | 'light' {
+    const theme = (this as unknown as { $store?: { getters?: { currentTheme?: string } } }).$store?.getters
+      ?.currentTheme
+    return theme && theme !== 'light' ? 'light' : 'dark'
   }
 
   get profileRules() {
@@ -791,14 +814,15 @@ export default class Configs extends Vue {
       }
     }
   }
-  .variable-preset-hint {
-    margin: 0 0 12px;
-    color: var(--color-text-tips);
-    font-size: 12px;
-    line-height: 1.7;
-  }
-  .variable-preset-hint {
-    margin: 4px 0 0;
+  // Same hint affordance as the settings page: a "!" icon next to the label.
+  .preset-help {
+    color: var(--color-text-default);
+    cursor: help;
+    line-height: 1;
+    font-size: 14px;
+    &:hover {
+      color: var(--color-main-green);
+    }
   }
 }
 </style>

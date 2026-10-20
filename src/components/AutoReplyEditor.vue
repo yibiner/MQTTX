@@ -4,12 +4,14 @@
       <el-button type="text" icon="el-icon-plus" class="rule-add" @click="addRule">
         {{ $t('connections.autoReplyAdd') }}
       </el-button>
-      <el-tooltip placement="top" :open-delay="150">
+      <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
         <div slot="content" class="automation-tip">
           <p>{{ $t('connections.autoReplyDesc') }}</p>
           <p>{{ $t('connections.autoReplyOnceHint') }}</p>
         </div>
-        <span class="editor-help"><i class="el-icon-question"></i></span>
+        <a href="javascript:;" class="editor-help">
+          <i class="el-icon-warning-outline"></i>
+        </a>
       </el-tooltip>
     </div>
 
@@ -25,7 +27,7 @@
           @input="emitChange"
         ></el-input>
         <div class="rule-options">
-          <el-tooltip :content="$t('connections.autoReplyEnableRule')" placement="top">
+          <el-tooltip :content="$t('connections.autoReplyEnableRule')" placement="top" :effect="tooltipEffect">
             <el-switch
               v-model="rule.enabled"
               active-color="#13ce66"
@@ -50,11 +52,13 @@
 
         <label class="with-help">
           {{ $t('connections.autoReplyCondition') }}
-          <el-tooltip placement="top" :open-delay="150">
+          <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
             <div slot="content" class="automation-tip">
               <p>{{ $t('connections.autoReplyConditionHint') }}</p>
             </div>
-            <i class="el-icon-question field-help"></i>
+            <a href="javascript:;" class="field-help">
+              <i class="el-icon-warning-outline"></i>
+            </a>
           </el-tooltip>
         </label>
         <div>
@@ -75,7 +79,7 @@
 
         <label class="with-help">
           {{ $t('connections.autoReplyPayload') }}
-          <el-tooltip placement="top" :open-delay="150">
+          <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
             <div slot="content" class="automation-tip">
               <p>
                 {{
@@ -85,7 +89,9 @@
                 }}
               </p>
             </div>
-            <i class="el-icon-question field-help"></i>
+            <a href="javascript:;" class="field-help">
+              <i class="el-icon-warning-outline"></i>
+            </a>
           </el-tooltip>
         </label>
         <el-input
@@ -184,6 +190,13 @@ export default class AutoReplyEditor extends Vue {
     return "cmd == 'WIFI_RECONNECT_SERVICE'"
   }
 
+  /** Same light/dark choice as the other hints of the app (the tooltip must stay readable). */
+  get tooltipEffect(): 'dark' | 'light' {
+    const theme = (this as unknown as { $store?: { getters?: { currentTheme?: string } } }).$store?.getters
+      ?.currentTheme
+    return theme && theme !== 'light' ? 'light' : 'dark'
+  }
+
   @Watch('value', { immediate: true })
   private handleValueChanged(value: AutoReplyRuleModel[] | null | undefined) {
     // The value that comes back is the *cleaned* copy this editor emitted: a rule the user just
@@ -255,13 +268,15 @@ export default class AutoReplyEditor extends Vue {
     margin-bottom: 6px;
   }
 
+  // Same hint affordance as elsewhere in the app (settings, connection form): a "!" icon that
+  // opens the explanation on hover.
   .editor-help {
-    color: #909399;
+    color: var(--color-text-default);
     cursor: help;
-    font-size: 14px;
     line-height: 1;
+    font-size: 15px;
     &:hover {
-      color: #409eff;
+      color: var(--color-main-green);
     }
   }
 
@@ -332,11 +347,12 @@ export default class AutoReplyEditor extends Vue {
       gap: 4px;
     }
     .field-help {
-      color: #c0c4cc;
+      color: var(--color-text-default);
       cursor: help;
-      font-size: 12px;
+      font-size: 13px;
+      line-height: 1;
       &:hover {
-        color: #409eff;
+        color: var(--color-main-green);
       }
     }
   }
