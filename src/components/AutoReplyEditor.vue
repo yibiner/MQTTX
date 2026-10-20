@@ -15,8 +15,6 @@
       </el-tooltip>
     </div>
 
-    <p v-if="!rules.length" class="empty-hint">{{ $t('connections.autoReplyEmpty') }}</p>
-
     <div v-for="(rule, index) in rules" :key="rule.id" class="reply-rule">
       <div class="rule-header">
         <el-input
@@ -404,13 +402,6 @@ export default class AutoReplyEditor extends Vue {
   .rule-add {
     padding: 0;
     font-size: 12px;
-  }
-
-  .empty-hint {
-    margin: 0;
-    color: #909399;
-    font-size: 12px;
-    line-height: 1.6;
   }
 }
 

@@ -74,7 +74,7 @@ describe('AutoReplyEditor.vue', () => {
 
   it('keeps a rule the user just added visible when the parent echoes the value back', async () => {
     wrapper = buildWrapper(null)
-    expect(wrapper.find('.empty-hint').exists()).to.equal(true)
+    expect(wrapper.findAll('.reply-rule')).to.have.lengthOf(0)
     ;(wrapper.vm as any).addRule()
     await echo(wrapper)
 

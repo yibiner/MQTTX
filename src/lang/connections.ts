@@ -999,14 +999,6 @@ export default {
     hu: 'Csoport hozzáadása',
     ko: '그룹 추가',
   },
-  autoSubscribeEmpty: {
-    zh: '还没有自动订阅',
-    en: 'No automatic subscriptions yet.',
-    tr: 'Henüz otomatik abonelik yok.',
-    ja: '自動サブスクライブはまだありません。',
-    hu: 'Még nincs automatikus feliratkozás.',
-    ko: '아직 자동 구독이 없습니다.',
-  },
   autoSubscribeTopicPlaceholder: {
     zh: '支持变量，如 ${productType}/${clientId}/device/heart/post',
     en: 'Variables allowed, e.g. ${productType}/${clientId}/device/heart/post',
@@ -1038,14 +1030,6 @@ export default {
     ja: '応答ルールを追加',
     hu: 'Válaszszabály hozzáadása',
     ko: '응답 규칙 추가',
-  },
-  autoReplyEmpty: {
-    zh: '还没有自动回复规则',
-    en: 'No automatic replies yet.',
-    tr: 'Henüz otomatik yanıt yok.',
-    ja: '自動応答はまだありません。',
-    hu: 'Még nincs automatikus válasz.',
-    ko: '아직 자동 응답이 없습니다.',
   },
   autoReplyName: {
     zh: '规则名（可选）',

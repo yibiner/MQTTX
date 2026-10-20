@@ -215,7 +215,17 @@
           <el-form-item :label="$t('configs.topic')" prop="topic">
             <el-input v-model.trim="profileForm.topic" clearable placeholder="sensor/temperature"></el-input>
           </el-form-item>
-          <el-form-item :label="$t('configs.message')" prop="payload">
+          <el-form-item prop="payload">
+            <!-- The resize hint lives on the label, like every other hint of this dialog. -->
+            <template slot="label">
+              {{ $t('configs.message') }}
+              <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
+                <div slot="content">{{ $t('configs.payloadEditorHint') }}</div>
+                <a href="javascript:;" class="preset-help">
+                  <i class="el-icon-warning-outline"></i>
+                </a>
+              </el-tooltip>
+            </template>
             <!-- the same editor as the publish panel: JSON highlight, formatting and a resizable box -->
             <div class="preset-payload-editor" @keyup.enter.stop @keydown.enter.stop>
               <Editor
@@ -228,7 +238,6 @@
               />
             </div>
             <div class="preset-payload-bar">
-              <span class="preset-payload-hint">{{ $t('configs.payloadEditorHint') }}</span>
               <a href="javascript:;" class="preset-payload-format" @click="formatPresetPayload">
                 {{ $t('configs.formatPayload') }}
               </a>
@@ -800,13 +809,11 @@ export default class Configs extends Vue {
   .preset-payload-bar {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
     margin-top: 8px;
     font-size: 12px;
     line-height: 1.6;
-    .preset-payload-hint {
-      margin-right: auto;
-      color: var(--color-text-tips);
-    }
     .preset-payload-format {
       color: var(--color-main-green);
       &:hover {

@@ -72,7 +72,7 @@ describe('AutoSubscribeEditor.vue', () => {
 
   it('keeps a group the user just added visible when the parent echoes the value back', async () => {
     wrapper = buildWrapper(null)
-    expect(wrapper.find('.empty-hint').exists()).to.equal(true)
+    expect(wrapper.findAll('.auto-subscribe-group')).to.have.lengthOf(0)
     ;(wrapper.vm as any).addGroup()
     await echo(wrapper)
 

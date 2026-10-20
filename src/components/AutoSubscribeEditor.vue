@@ -15,8 +15,6 @@
       </el-tooltip>
     </div>
 
-    <p v-if="!groups.length" class="empty-hint">{{ $t('connections.autoSubscribeEmpty') }}</p>
-
     <div v-for="(group, index) in groups" :key="group.id" class="auto-subscribe-group">
       <div class="group-header">
         <div class="group-delay">
@@ -308,13 +306,6 @@ export default class AutoSubscribeEditor extends Vue {
 
   .topic-add {
     margin-bottom: 4px;
-  }
-
-  .empty-hint {
-    margin: 0;
-    color: #909399;
-    font-size: 12px;
-    line-height: 1.6;
   }
 }
 </style>
