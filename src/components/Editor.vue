@@ -13,6 +13,84 @@ import LogEditorDark from '@/assets/scss/theme/custom/log-editor-dark.json'
 import LogEditorNight from '@/assets/scss/theme/custom/log-editor-night.json'
 import LogEditorRules from '@/assets/scss/theme/custom/log-editor-rules.json'
 
+/**
+ * Monaco performs clipboard actions by asking the browser: `document.execCommand('copy' | 'cut' | 'paste')`.
+ * Chromium answers `false` for all three in an Electron renderer (`paste` was removed for security, and
+ * `copy`/`cut` need a trusted user gesture Blink recognises), and monaco only falls back to the async
+ * clipboard API when it believes it runs in a plain browser - `platform.isWeb` is false in Electron. So
+ * the copy/paste entries of the editor context menu did nothing at all.
+ *
+ * Electron hands the renderer a synchronous clipboard through node integration, which answers the same
+ * three commands here. The native path is attempted first: when Chromium handles the command (keyboard
+ * shortcuts reach it through the application menu) this is never involved.
+ */
+let clipboardCommandsPatched = false
+let focusedEditor: monaco.editor.IStandaloneCodeEditor | null = null
+
+const getElectronClipboard = (): { readText: () => string; writeText: (text: string) => void } | null => {
+  try {
+    // webpack leaves `electron` to the runtime (see the other components that import ipcRenderer)
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { clipboard } = require('electron')
+    return clipboard ?? null
+  } catch (error) {
+    return null
+  }
+}
+
+/** Whether the focused element belongs to a monaco editor, so a fallback never steals other widgets. */
+const isEditorFocused = (): boolean => {
+  const active = document.activeElement as HTMLElement | null
+  return Boolean(active && typeof active.closest === 'function' && active.closest('.monaco-editor'))
+}
+
+const patchClipboardCommands = () => {
+  if (clipboardCommandsPatched || typeof document === 'undefined' || typeof document.execCommand !== 'function') {
+    return
+  }
+  clipboardCommandsPatched = true
+  const originalExecCommand = document.execCommand.bind(document)
+  document.execCommand = ((command: string, ...args: unknown[]) => {
+    let handled = false
+    try {
+      handled = originalExecCommand(command, ...(args as []))
+    } catch (error) {
+      handled = false
+    }
+    if (handled || !focusedEditor || !isEditorFocused() || !['copy', 'cut', 'paste'].includes(command)) {
+      return handled
+    }
+    const clipboard = getElectronClipboard()
+    if (!clipboard) {
+      return handled
+    }
+    const editor = focusedEditor
+    if (command === 'paste') {
+      const text = clipboard.readText()
+      if (text) {
+        editor.trigger('mqttx', 'paste', { text, pasteOnNewLine: false, multicursorText: null, mode: null })
+      }
+      return true
+    }
+    const model = editor.getModel()
+    if (!model) {
+      return handled
+    }
+    const selections = editor.getSelections() ?? []
+    const text = selections.map((range) => model.getValueInRange(range)).join('\n')
+    if (text) {
+      clipboard.writeText(text)
+    }
+    if (command === 'cut' && selections.length) {
+      editor.executeEdits(
+        'mqttx-cut',
+        selections.map((range) => ({ range, text: '' })),
+      )
+    }
+    return true
+  }) as typeof document.execCommand
+}
+
 @Component
 export default class Editor extends Vue {
   @Prop({ required: true }) public id!: string
@@ -222,12 +300,18 @@ export default class Editor extends Vue {
     if (model) {
       model.updateOptions({ tabSize: 2 })
     }
-    this.editor.onDidFocusEditorText(() => {
+    const singleEditor = this.editor as monaco.editor.IStandaloneCodeEditor
+    singleEditor.onDidFocusEditorText(() => {
+      focusedEditor = singleEditor
       this.$emit('focus')
     })
-    this.editor.onDidBlurEditorText(() => {
+    singleEditor.onDidBlurEditorText(() => {
+      if (focusedEditor === singleEditor) {
+        focusedEditor = null
+      }
       this.$emit('blur')
     })
+    patchClipboardCommands()
     // Add contextmenu item
     this.addContextmenuItem()
   }
@@ -255,6 +339,16 @@ export default class Editor extends Vue {
     this.editor.getOriginalEditor().updateOptions(gutterOptions)
     this.editor.getModifiedEditor().updateOptions(gutterOptions)
     this.editor.getModifiedEditor().updateOptions({ readOnly: this.disabled })
+    const modifiedEditor = (this.editor as monaco.editor.IStandaloneDiffEditor).getModifiedEditor()
+    modifiedEditor.onDidFocusEditorText(() => {
+      focusedEditor = modifiedEditor
+    })
+    modifiedEditor.onDidBlurEditorText(() => {
+      if (focusedEditor === modifiedEditor) {
+        focusedEditor = null
+      }
+    })
+    patchClipboardCommands()
     this.editor.getModifiedEditor().onDidChangeModelContent((event) => {
       if (this.editor) {
         const value = (this.editor as monaco.editor.IStandaloneDiffEditor).getModifiedEditor().getValue()
