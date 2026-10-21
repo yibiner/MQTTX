@@ -345,7 +345,7 @@ import { Getter, Action } from 'vuex-class'
 import { ipcRenderer } from 'electron'
 import { MqttClient, IConnackPacket, IPublishPacket, IClientPublishOptions, IDisconnectPacket, Packet } from 'mqtt'
 import _ from 'lodash'
-import { Subject, fromEvent } from 'rxjs'
+import { Subject, fromEvent, Subscription } from 'rxjs'
 import { bufferTime, map, filter, takeUntil, shareReplay, distinctUntilChanged } from 'rxjs/operators'
 import cbor from 'cbor'
 import { pack, unpack } from 'msgpackr'
@@ -388,7 +388,7 @@ import {
   onConnectSubscribed,
   updateConnectSubscriptions,
 } from '@/utils/connectSubscriptions'
-import { processIncomingMessage, registerAutoReply, unregisterAutoReply } from '@/utils/autoReplyEngine'
+import { attachAutoReply, registerAutoReply, unregisterAutoReply } from '@/utils/autoReplyEngine'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import useServices from '@/database/useServices'
 import { getMessageId, getSubscriptionId } from '@/utils/idGenerator'
@@ -513,6 +513,14 @@ export default class ConnectionsDetail extends Vue {
   /** Open while a connected connection edits its automation rules. */
   private automationDialogVisible = false
   private unsubConnectSubscribed: (() => void) | null = null
+  /**
+   * The message subscriptions this view owns, per connection id.
+   *
+   * They are kept so they can be unsubscribed one by one when the view is destroyed. While the
+   * teardown removed *every* `'message'` listener of the client, it also removed the automatic
+   * replies, which are attached to the client and must survive a page change.
+   */
+  private messageListenerSubscriptions: Map<string, Subscription[]> = new Map()
   private sendTimedMessageCount = 0
   private receivedMsgType: PayloadType = this.getReceivedMsgType()
   private msgType: MessageType = 'all'
@@ -696,6 +704,9 @@ export default class ConnectionsDetail extends Vue {
         // subscriptions) is planned and executed by one runner attached to the client, so it also
         // fires on the reconnects mqtt.js performs on its own.
         attachConnectSubscriptions(curConnectClient as MqttClient, id, this.record)
+        // The automatic replies answer through this client and belong to the connection, not to this
+        // view: attached here (next to the client) they keep working when the user opens another page.
+        attachAutoReply(curConnectClient as MqttClient, id)
         this.client.on('connect', (conBack) => this.onConnect(conBack, { id, client: curConnectClient, mqttVersion }))
         this.client.on('error', this.onError)
         this.client.on('reconnect', this.onReConnect)
@@ -1781,34 +1792,37 @@ export default class ConnectionsDetail extends Vue {
 
   // received message
   private onMessageArrived(client: MqttClient, id: string) {
+    // Attaching twice would render and store every message twice (the view re-binds on every
+    // connection switch), so a connection keeps exactly one set of subscriptions in this view.
+    const previous = this.messageListenerSubscriptions.get(id)
+    if (previous) {
+      previous.forEach((subscription) => subscription.unsubscribe())
+    }
+    const subscriptions: Subscription[] = []
+    this.messageListenerSubscriptions.set(id, subscriptions)
+
     const unsubscribe$ = new Subject<void>()
     const messageBuffer$ = new Subject<MessageModel>()
     let isBufferEnabled = false
 
     // Add close event handler
     if (client.listenerCount('close') <= 1) {
-      fromEvent(client, 'close').subscribe(() => {
+      const closeSubscription = fromEvent(client, 'close').subscribe(() => {
         unsubscribe$.next()
         unsubscribe$.complete()
+        // These streams are done for this connection: release them (this handler included) so a
+        // reconnect re-binds them instead of finding this view "already attached" - and so the
+        // `listenerCount('close')` guard above still sees a clean client next time.
+        subscriptions.forEach((subscription) => subscription.unsubscribe())
+        this.messageListenerSubscriptions.delete(id)
         this.onClose()
       })
+      subscriptions.push(closeSubscription)
     }
 
-    // Automatic replies are matched against the raw payload, before a user script or a data schema
-    // transforms it: the simulated device answers what the server actually sent.
-    fromEvent(client, 'message')
-      .pipe(takeUntil(unsubscribe$))
-      .subscribe(([topic, payload, packet]: [string, Buffer, IPublishPacket]) => {
-        processIncomingMessage({
-          connectionId: id,
-          client,
-          topic,
-          payload,
-          packetId: packet?.messageId,
-        }).catch((error) => this.$log.error(`Auto reply failed: ${(error as Error).toString()}`))
-      })
-
     // Process message stream
+    // (The automatic replies are NOT wired here any more: they belong to the client, see
+    // autoReplyEngine.attachAutoReply, so they keep answering after this view is gone.)
     const messageSubject$ = fromEvent(client, 'message').pipe(
       takeUntil(unsubscribe$),
       map(([topic, payload, packet]: [string, Buffer, IPublishPacket]) => {
@@ -1818,16 +1832,18 @@ export default class ConnectionsDetail extends Vue {
     )
 
     // Save messages with QoS filtering
-    messageSubject$
-      .pipe(
-        filter((message: MessageModel) => !ignoreQoS0Message(message.qos)),
-        bufferTime(1000),
-      )
-      .subscribe((messages: MessageModel[]) => {
-        if (messages.length) {
-          this.saveMessage(id, messages)
-        }
-      })
+    subscriptions.push(
+      messageSubject$
+        .pipe(
+          filter((message: MessageModel) => !ignoreQoS0Message(message.qos)),
+          bufferTime(1000),
+        )
+        .subscribe((messages: MessageModel[]) => {
+          if (messages.length) {
+            this.saveMessage(id, messages)
+          }
+        }),
+    )
 
     // Rate monitoring stream
     const rateCheck$ = messageSubject$.pipe(
@@ -1838,35 +1854,41 @@ export default class ConnectionsDetail extends Vue {
     )
 
     // Toggle buffer mode based on message rate
-    rateCheck$.subscribe((shouldEnableBuffer) => {
-      isBufferEnabled = shouldEnableBuffer
-      if (isBufferEnabled) {
-        this.$log.info(`Message buffer mode enabled (> ${MESSAGE_RATE_THRESHOLD}/s)`)
-      }
-    })
+    subscriptions.push(
+      rateCheck$.subscribe((shouldEnableBuffer) => {
+        isBufferEnabled = shouldEnableBuffer
+        if (isBufferEnabled) {
+          this.$log.info(`Message buffer mode enabled (> ${MESSAGE_RATE_THRESHOLD}/s)`)
+        }
+      }),
+    )
 
     // Handle message rendering with dynamic buffering
-    messageSubject$.subscribe((message) => {
-      if (!message) return
-      this.printMessageLog(id, message)
-      if (isBufferEnabled) {
-        messageBuffer$.next(message)
-      } else {
-        this.renderMessage(id, message)
-      }
-    })
+    subscriptions.push(
+      messageSubject$.subscribe((message) => {
+        if (!message) return
+        this.printMessageLog(id, message)
+        if (isBufferEnabled) {
+          messageBuffer$.next(message)
+        } else {
+          this.renderMessage(id, message)
+        }
+      }),
+    )
 
     // Buffer rendering stream
-    messageBuffer$
-      .pipe(
-        bufferTime(MESSAGES_BUFFER_TIME),
-        filter((messages) => messages.length > 0),
-      )
-      .subscribe((messages) => {
-        if (messages.length) {
-          this.renderMessage(id, messages)
-        }
-      })
+    subscriptions.push(
+      messageBuffer$
+        .pipe(
+          bufferTime(MESSAGES_BUFFER_TIME),
+          filter((messages) => messages.length > 0),
+        )
+        .subscribe((messages: MessageModel[]) => {
+          if (messages.length) {
+            this.renderMessage(id, messages)
+          }
+        }),
+    )
   }
 
   /**
@@ -2434,11 +2456,10 @@ export default class ConnectionsDetail extends Vue {
     Object.keys(this.activeConnection).forEach((connectionID: string) => {
       const $connection = this.activeConnection[connectionID]
       const { client } = $connection
-      let msgEventCount = 0
-      if (client.listenerCount) {
-        msgEventCount = client.listenerCount('message')
-      }
-      if (client.connected && msgEventCount === 0) {
+      // A client no longer carries only this view's listeners: the automatic replies subscribe to
+      // `message` on the client itself (see autoReplyEngine.attachAutoReply), so "the client has no
+      // message listener" would wrongly mean "this view is already rendering it". Ask this view.
+      if (client.connected && !this.messageListenerSubscriptions.has(connectionID)) {
         this.onMessageArrived(client, connectionID)
       }
       this.changeActiveConnection({
@@ -2450,13 +2471,13 @@ export default class ConnectionsDetail extends Vue {
 
   // Remove connected clients message event listeners
   private removeClinetsMessageListener() {
-    Object.keys(this.activeConnection).forEach((connectionID: string) => {
-      const currentActiveConnection = this.activeConnection[connectionID]
-      const { client } = currentActiveConnection
-      if (client.removeAllListeners) {
-        client.removeAllListeners('message')
-      }
+    // Only this view's own rendering subscriptions are torn down. `client.removeAllListeners(
+    // 'message')` used to run here and took the automatic replies of every connection with it, so a
+    // page change silently stopped them.
+    this.messageListenerSubscriptions.forEach((subscriptions) => {
+      subscriptions.forEach((subscription) => subscription.unsubscribe())
     })
+    this.messageListenerSubscriptions.clear()
   }
 
   /**

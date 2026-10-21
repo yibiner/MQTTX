@@ -1,5 +1,5 @@
 import log4js from 'log4js'
-import type { MqttClient } from 'mqtt'
+import type { IPublishPacket, MqttClient, OnMessageCallback } from 'mqtt'
 import { getGlobalVariableMap } from '@/utils/configProfiles'
 import { connectionFieldVariables, mergeVariables } from '@/utils/payloadVariables'
 import { planAutoReplies, PlannedAutoReply } from '@/utils/autoReply'
@@ -40,6 +40,16 @@ const replyTimestamps = new Map<string, number[]>()
 
 const records = new Map<string, ConnectionModel>()
 
+/**
+ * The `'message'` handler this module keeps on each client, keyed by the client instance.
+ *
+ * The replies belong to the connection, not to the connection page: while they were attached from
+ * the page, leaving it (settings, presets, ...) removed its listeners and the device silently
+ * stopped answering although it still looked connected. They are attached next to the client, so
+ * they survive page changes, and detached only when that client goes away.
+ */
+const attachedClients = new Map<MqttClient, { connectionId: string; handler: OnMessageCallback }>()
+
 const getLog = () => log4js.getLogger()
 
 /**
@@ -54,6 +64,54 @@ export const registerAutoReply = (connectionId: string, record: ConnectionModel)
 export const unregisterAutoReply = (connectionId: string): void => {
   records.delete(connectionId)
   resetAutoReplyState(connectionId)
+  detachAutoReplyByConnection(connectionId)
+}
+
+/**
+ * Answers every message this client receives with the rules of its connection.
+ *
+ * Safe to call again for the same client: the handler is attached once and the connection id is
+ * refreshed (the view calls this for the connection it opens, and the client outlives the view).
+ */
+export const attachAutoReply = (client: MqttClient, connectionId: string): void => {
+  const existing = attachedClients.get(client)
+  if (existing) {
+    existing.connectionId = connectionId
+    return
+  }
+  const handler: OnMessageCallback = (topic: string, payload: Buffer, packet: IPublishPacket) => {
+    processIncomingMessage({
+      connectionId,
+      client,
+      topic,
+      payload,
+      packetId: packet?.messageId,
+    }).catch((error) => getLog().error(`Auto reply failed: ${(error as Error).toString()}`))
+  }
+  attachedClients.set(client, { connectionId, handler })
+  client.on('message', handler)
+  // `end` is the final teardown of a client. A `close` is not: mqtt.js reconnects the same instance
+  // afterwards and the replies must keep working across those reconnects.
+  client.once('end', () => detachAutoReply(client))
+}
+
+/** Removes the automatic-reply handler of a client; a no-op when it had none. */
+export const detachAutoReply = (client: MqttClient): void => {
+  const attached = attachedClients.get(client)
+  if (!attached) {
+    return
+  }
+  attachedClients.delete(client)
+  client.removeListener('message', attached.handler)
+}
+
+/** Removes the handler of every client attached for this connection, e.g. when it is deleted. */
+export const detachAutoReplyByConnection = (connectionId: string): void => {
+  Array.from(attachedClients.entries()).forEach(([client, attached]) => {
+    if (attached.connectionId === connectionId) {
+      detachAutoReply(client)
+    }
+  })
 }
 
 const keyOf = (topic: string, payload: string): string => `${topic}\u0000${payload}`
