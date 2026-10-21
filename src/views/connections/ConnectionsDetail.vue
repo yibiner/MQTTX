@@ -1411,6 +1411,13 @@ export default class ConnectionsDetail extends Vue {
       offset: 30,
     })
     this.setShowClientInfo(false)
+    // A `close` tears this view's message streams down (see onMessageArrived); mqtt.js then reconnects
+    // the same client and fires `connect` again, which is where they have to come back - otherwise the
+    // connection looks healthy while nothing new is rendered or stored any more.
+    // (`?.` and `=== false`: the spec calls this method with a partial `this` that has no map.)
+    if (id && client.connected && this.messageListenerSubscriptions?.has(id) === false) {
+      this.onMessageArrived(client, id)
+    }
     this.$emit('reload', false, false)
     this.$log.info(`Successful connection for ${this.record.name}@${this.record.host}, MQTT.js onConnect trigger`)
   }
