@@ -23,6 +23,14 @@ export interface AutoReplyContext {
   /** raw payload of the received message */
   payload: string | Buffer
   variables?: { [name: string]: string }
+  /**
+   * The payload parsed once, shared by every rule of this message.
+   *
+   * A device normally has several rules that only differ in their condition, so parsing inside each
+   * rule parsed the very same text once per rule. `planAutoReplies` fills this in; a caller that
+   * matches a single rule may leave it out and the rule parses for itself.
+   */
+  parsed?: { value?: any; error?: string }
 }
 
 export interface PlannedAutoReply {
@@ -132,12 +140,11 @@ export const matchesAutoReplyRule = (
   if (!matchTopicMethod(filter, context.topic)) {
     return { matched: false }
   }
+  const parsed = context.parsed ?? parseJsonPayload(context.payload)
   const condition = (rule.matchCondition ?? '').trim()
   if (!condition) {
-    const parsed = parseJsonPayload(context.payload)
     return { matched: true, received: parsed.value }
   }
-  const parsed = parseJsonPayload(context.payload)
   if (parsed.error !== undefined) {
     return { matched: false }
   }
@@ -156,9 +163,14 @@ export const planAutoReplies = (
   if (!Array.isArray(rules) || !rules.length) {
     return []
   }
+  // All rules match the same message, so its payload is parsed once here instead of once per rule:
+  // rules usually share the topic filter and differ only in their condition.
+  const sharedContext: AutoReplyContext = context.parsed
+    ? context
+    : { ...context, parsed: parseJsonPayload(context.payload) }
   const replies: PlannedAutoReply[] = []
   rules.forEach((rule) => {
-    const result = matchesAutoReplyRule(rule, context)
+    const result = matchesAutoReplyRule(rule, sharedContext)
     if (!result.matched) {
       if (result.error) {
         replies.push({

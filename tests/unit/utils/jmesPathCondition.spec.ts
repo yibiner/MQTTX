@@ -100,3 +100,36 @@ describe('formatJsonText', () => {
     expect(formatJsonText('not json at all')).to.equal('not json at all')
   })
 })
+
+describe('parseJsonKeepingBigIntegers precision guard', () => {
+  it('parses a payload without unsafe integers exactly like JSON.parse', () => {
+    const text = '{"cmd":"NTP_SYNC","ts":1792486795034,"list":[1,2.5,-3],"ok":true,"none":null}'
+    expect(parseJsonKeepingBigIntegers(text)).to.deep.equal(JSON.parse(text))
+  })
+
+  it('does not rewrite digits that only appear inside a string', () => {
+    // The 20 digits are preceded by the opening quote of the string, so nothing can lose precision.
+    const value = parseJsonKeepingBigIntegers('{"id":"16541683218561123115","n":1}')
+    expect(value.id).to.equal('16541683218561123115')
+    expect(value.n).to.equal(1)
+  })
+
+  it('keeps every position of an unsafe integer, not just an object value', () => {
+    expect(parseJsonKeepingBigIntegers('16541683218561123115')).to.equal('16541683218561123115')
+    expect(parseJsonKeepingBigIntegers('[1, 16541683218561123115]')).to.deep.equal([1, '16541683218561123115'])
+    expect(parseJsonKeepingBigIntegers('{"n": -16541683218561123115}')).to.deep.equal({ n: '-16541683218561123115' })
+  })
+
+  it('keeps a long number-heavy payload linear', () => {
+    // The scanner used to re-slice the rest of the text per number, which is quadratic: at this size
+    // the old implementation needed seconds, the linear one a few milliseconds. The bound is generous
+    // on purpose, so the assertion measures the complexity and not the machine.
+    const numbers = Array.from({ length: 3000 }, (_value, index) => 1234567 + index)
+    const text = JSON.stringify({ numbers })
+    const started = Date.now()
+    const value = parseJsonKeepingBigIntegers(text)
+    const elapsed = Date.now() - started
+    expect(value.numbers).to.deep.equal(numbers)
+    expect(elapsed).to.be.lessThan(500)
+  })
+})

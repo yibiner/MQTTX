@@ -16,6 +16,13 @@ export interface ConditionResult {
   error?: string
 }
 
+/** Number and keyword literals of the two scanners below, matched in place with a sticky regex. */
+const NUMBER_LITERAL = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/y
+const JSON_TOKEN_LITERAL = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/y
+const INTEGER_LITERAL = /^-?\d+$/
+/** A number literal that `Number` cannot hold exactly: 16 digits or more, after `:`/`,`/`[`/start. */
+const UNSAFE_INTEGER_LITERAL = /(?:^|[:,[])\s*-?\d{16,}/
+
 /** Parses a payload as JSON without throwing; `error` is undefined when it parsed. */
 /**
  * Parses JSON while keeping integers that `JSON.parse` cannot represent exactly.
@@ -26,6 +33,13 @@ export interface ConditionResult {
  * string, so `${msg.msgId}` renders what the device sent. Numbers that fit in a double are untouched.
  */
 export const parseJsonKeepingBigIntegers = (text: string): any => {
+  // Fast path: an integer only loses precision above 2^53-1, i.e. from 16 digits on, and a number
+  // literal can only start after `:`, `,`, `[` or at the very beginning of the text (an occurrence
+  // inside a string literal is preceded by its opening quote). Without such a literal the text can
+  // go to the native parser, which is both exact and several times faster than the scan below.
+  if (!UNSAFE_INTEGER_LITERAL.test(text)) {
+    return JSON.parse(text)
+  }
   let json = ''
   let index = 0
   let inString = false
@@ -51,17 +65,20 @@ export const parseJsonKeepingBigIntegers = (text: string): any => {
       continue
     }
     if (char === '-' || (char >= '0' && char <= '9')) {
-      const literal = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(text.slice(index))
+      // Sticky: matching from `index` reads the literal in place. Re-slicing the rest of the text
+      // here made a number-heavy payload quadratic (`slice()` copies the tail on every number).
+      NUMBER_LITERAL.lastIndex = index
+      const literal = NUMBER_LITERAL.exec(text)
       if (literal) {
         const token = literal[0]
         // Only integer literals are rewritten: `1.5` and `1e3` are still numbers.
-        const isInteger = /^-?\d+$/.test(token)
+        const isInteger = INTEGER_LITERAL.test(token)
         if (isInteger && !Number.isSafeInteger(Number(token))) {
           json += `"${token}"`
         } else {
           json += token
         }
-        index += token.length
+        index = NUMBER_LITERAL.lastIndex
         continue
       }
     }
@@ -110,10 +127,12 @@ export const formatJsonText = (text: string): string => {
       index += 1
       continue
     }
-    const literal = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/.exec(text.slice(index))
+    // Sticky, like the number scan above: formatting must not copy the tail of the text per token.
+    JSON_TOKEN_LITERAL.lastIndex = index
+    const literal = JSON_TOKEN_LITERAL.exec(text)
     if (literal) {
       tokens.push(literal[0])
-      index += literal[0].length
+      index = JSON_TOKEN_LITERAL.lastIndex
       continue
     }
     // Not JSON after all: give the caller the original text.

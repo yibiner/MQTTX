@@ -91,3 +91,29 @@ describe('configProfiles global variables', () => {
     expect(result.unresolved).to.deep.equal(['nope'])
   })
 })
+
+describe('configProfiles list cache', () => {
+  it('returns an edit immediately: a local write refreshes the cached list', () => {
+    // The lists are cached per process now (`conf` re-reads config.json on every `get()`), so a
+    // save, an update and a delete all have to be visible on the very next read.
+    const saved = saveClientProfile({ alias: 'cached', clientId: 'cached-1', variables: { a: '1' } })
+    expect(getClientProfile(saved.id)?.alias).to.equal('cached')
+
+    saveClientProfile({ ...saved, alias: 'cached-renamed' })
+    expect(getClientProfile(saved.id)?.alias).to.equal('cached-renamed')
+
+    deleteClientProfile(saved.id)
+    expect(getClientProfile(saved.id)).to.equal(undefined)
+  })
+
+  it('serves the hot path, the global variable map, from the cached list', () => {
+    // getGlobalVariableMap() runs once per received message, so it must not reach the store again.
+    const saved = saveGlobalVariable({ name: 'cachedVar', value: 'v1' })
+    expect(getGlobalVariableMap().cachedVar).to.equal('v1')
+
+    saveGlobalVariable({ ...saved, value: 'v2' })
+    expect(getGlobalVariableMap().cachedVar).to.equal('v2')
+    deleteGlobalVariable(saved.id)
+    expect(getGlobalVariableMap().cachedVar).to.equal(undefined)
+  })
+})

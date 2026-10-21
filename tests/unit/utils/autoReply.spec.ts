@@ -179,3 +179,50 @@ describe('auto reply with a big integer field', () => {
     expect(reply.payload).to.contain('"code":0')
   })
 })
+
+describe('planAutoReplies payload parsing', () => {
+  const rule = (id: string, condition: string): AutoReplyRuleModel => ({
+    id,
+    name: id,
+    enabled: true,
+    matchTopic: 'app/+/+/device/system/post',
+    matchCondition: condition,
+    reply: {
+      topic: 'app/device/system/reply',
+      mode: 'fixed',
+      payload: '{"code":0}',
+      qos: 0,
+      retain: false,
+      delayMs: 0,
+    },
+  })
+
+  it('matches every rule against the payload parsed once, not once per rule', () => {
+    // A caller that parsed the message hands the value over; every rule has to see that value even
+    // though `payload` alone would parse to something else.
+    const replies = planAutoReplies([rule('a', 'code == `0`')], {
+      topic: 'app/A1/AF0201/device/system/post',
+      payload: '{"code":9}',
+      parsed: { value: { code: 0 } },
+    })
+    expect(replies).to.have.lengthOf(1)
+    expect(replies[0].error).to.equal(undefined)
+  })
+
+  it('still parses for itself when a single rule is matched on its own', () => {
+    // `matchesAutoReplyRule` is exported: without `parsed` it must keep working as before.
+    const replies = planAutoReplies([rule('a', 'code == `0`')], {
+      topic: 'app/A1/AF0201/device/system/post',
+      payload: '{"code":0}',
+    })
+    expect(replies).to.have.lengthOf(1)
+  })
+
+  it('skips a rule whose payload is not JSON', () => {
+    const replies = planAutoReplies([rule('a', 'code == `0`')], {
+      topic: 'app/A1/AF0201/device/system/post',
+      payload: '{oops}',
+    })
+    expect(replies).to.have.lengthOf(0)
+  })
+})

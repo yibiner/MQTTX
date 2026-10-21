@@ -36,10 +36,30 @@ const getStore = (): any | null => {
   return persistentStore
 }
 
+/**
+ * Every list of this module, cached per process.
+ *
+ * `electron-store` is backed by `conf`, whose `store` getter reads and JSON-parses `config.json`
+ * from disk on *every* `get()`. The profiles are read on hot paths (the global variables once per
+ * received message, see `getGlobalVariableMap`), so the file was re-read per message.
+ *
+ * A local write refreshes the entry (`writeList` is the only writer). The short TTL covers the rest:
+ * the app can open a second window, and its `config.json` writes are invisible to this process's
+ * store instance, so a purely write-invalidated cache would show stale presets in the other window.
+ */
+const LIST_CACHE_TTL = 1000
+const listCache = new Map<string, { value: any[]; readAt: number }>()
+
 const readList = <T>(key: string): T[] => {
+  const cached = listCache.get(key)
+  if (cached && Date.now() - cached.readAt < LIST_CACHE_TTL) {
+    return cached.value as T[]
+  }
   const store = getStore()
   const list = store ? store.get(key) : memoryFallback[key]
-  return Array.isArray(list) ? list : []
+  const value = Array.isArray(list) ? list : []
+  listCache.set(key, { value, readAt: Date.now() })
+  return value
 }
 
 const writeList = <T>(key: string, list: T[]): void => {
@@ -49,6 +69,8 @@ const writeList = <T>(key: string, list: T[]): void => {
   } else {
     memoryFallback[key] = list
   }
+  // Write-through: keep the cached array (the same object the callers just edited) in place.
+  listCache.set(key, { value: list, readAt: Date.now() })
 }
 
 export const getServerProfiles = (): ServerProfileModel[] => readList(SERVER_PROFILES_KEY)
