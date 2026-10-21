@@ -316,3 +316,63 @@ describe('payloadVariables connection fields', () => {
     )
   })
 })
+
+/**
+ * Simple arithmetic inside a placeholder: "the current time, 34 seconds ago" is the common case, but
+ * the same engine covers counters, user variables and the fields of a received message.
+ */
+describe('payload variables: arithmetic', () => {
+  const now = new Date('2026-10-21T08:00:00.000Z')
+  const ts = now.getTime()
+
+  it('shifts the current time by an offset', () => {
+    expect(resolvePayloadVariables('{"ts":${ts-34000}}', { now }).text).to.equal(`{"ts":${ts - 34000}}`)
+    expect(resolvePayloadVariables('${timestamp+5000}', { now }).text).to.equal(String(ts + 5000))
+    expect(resolvePayloadVariables('${timestampSec-30}', { now }).text).to.equal(String(Math.floor(ts / 1000) - 30))
+  })
+
+  it('respects precedence, parentheses and unary minus', () => {
+    const variables = { base: '100' }
+    expect(resolvePayloadVariables('${base + 2 * 3}', { now, variables }).text).to.equal('106')
+    expect(resolvePayloadVariables('${(base + 2) * 3}', { now, variables }).text).to.equal('306')
+    expect(resolvePayloadVariables('${-base + 10}', { now, variables }).text).to.equal('-90')
+    expect(resolvePayloadVariables('${base / 4}', { now, variables }).text).to.equal('25')
+    expect(resolvePayloadVariables('${base % 7}', { now, variables }).text).to.equal('2')
+  })
+
+  it('keeps the JSON type of a quoted result', () => {
+    expect(resolvePayloadVariables('{"ts":"${ts-1}"}', { now }).text).to.equal(`{"ts":${ts - 1}}`)
+  })
+
+  it('resolves the received message fields of an automatic reply', () => {
+    const message = { ts: 1792486795034, data: { count: 3 } }
+    expect(resolvePayloadVariables('{"ts":${msg.ts - 34000}}', { now, message }).text).to.equal('{"ts":1792486761034}')
+    expect(resolvePayloadVariables('${msg.data.count * 2}', { now, message }).text).to.equal('6')
+  })
+
+  it('reports what it cannot do instead of publishing NaN', () => {
+    const unknownName = resolvePayloadVariables('${nope * 2}', { now })
+    expect(unknownName.text).to.equal('${nope * 2}')
+    expect(unknownName.unresolved).to.deep.equal(['nope'])
+
+    const text = resolvePayloadVariables('${base * 2}', { now, variables: { base: 'abc' } })
+    expect(text.text).to.equal('${base * 2}')
+    expect(text.unresolved).to.deep.equal(['base'])
+
+    const divideByZero = resolvePayloadVariables('${ts / 0}', { now })
+    expect(divideByZero.text).to.equal('${ts / 0}')
+    expect(divideByZero.unresolved).to.deep.equal(['ts / 0'])
+  })
+
+  it('reports a hyphenated token as arithmetic it cannot do, and keeps the text', () => {
+    // `${sensor-1}` reads as `sensor - 1`; `sensor` is not a variable, so the text stays and the name
+    // is reported (the publish dialog then lets the user send it verbatim if that was the intent).
+    const hyphen = resolvePayloadVariables('${sensor-1}', { now })
+    expect(hyphen.text).to.equal('${sensor-1}')
+    expect(hyphen.unresolved).to.deep.equal(['sensor'])
+  })
+
+  it('keeps the inline configs working', () => {
+    expect(resolvePayloadVariables('${rssi:-30..-60}', { now, rand: () => 0 }).text).to.equal('-60')
+  })
+})

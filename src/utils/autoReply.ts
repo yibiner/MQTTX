@@ -51,7 +51,9 @@ export interface AutoReplyTemplateScope {
   msg?: any
 }
 
-const FIELD_PLACEHOLDER = /\$\{(msg(?:[.[][^}]*)?|topic)\}/g
+const FIELD_PLACEHOLDER = /\$\{([^}]*)\}/g
+/** A placeholder the message itself can answer: `${msg}`, `${msg.a.b}`, `${msg.list[0].id}`, `${topic}`. */
+const MESSAGE_REFERENCE = /^(msg(?:\.[^\s{}]+)?|topic)$/
 
 /** `setTimeout()` treats anything above 2^31-1 as 1ms, so a huge delay would fire immediately. */
 const normalizeDelay = (delayMs: unknown): number => {
@@ -81,14 +83,22 @@ export const renderReplyTemplate = (template: string, scope: AutoReplyTemplateSc
   if (!template) {
     return template
   }
-  const withMessage = template.replace(FIELD_PLACEHOLDER, (_match, path: string) => {
+  const withMessage = template.replace(FIELD_PLACEHOLDER, (match, body: string) => {
+    const path = body.trim()
+    // Anything else (an expression like `${msg.ts - 34000}`, a counter, a plain variable) belongs to
+    // the variable resolver below: leaving it untouched here is what lets both work on one text.
+    if (!MESSAGE_REFERENCE.test(path)) {
+      return match
+    }
     const value = readMessageField(scope, path)
     if (value === undefined || value === null) {
       return ''
     }
     return typeof value === 'object' ? JSON.stringify(value) : String(value)
   })
-  return resolvePayloadVariables(withMessage, { variables: scope.variables ?? {} }).text
+  // The message travels along so an expression can do arithmetic on a received field
+  // (`${msg.ts - 34000}`), not only print it.
+  return resolvePayloadVariables(withMessage, { variables: scope.variables ?? {}, message: scope.msg }).text
 }
 
 /**

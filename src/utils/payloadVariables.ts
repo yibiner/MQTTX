@@ -1,3 +1,4 @@
+import lodashGet from 'lodash/get'
 import { v4 as uuidv4 } from 'uuid'
 import time from './time'
 
@@ -13,6 +14,13 @@ import time from './time'
  * - `${date}` / `${time}`     — local "YYYY-MM-DD" / "HH:mm:ss"
  * - `${iso}`                  — UTC ISO 8601, e.g. 2026-10-14T12:00:03.643Z
  * - `${uuid}`                 — a fresh UUID v4 on every send
+ *
+ * Simple arithmetic is supported inside a placeholder, which is how a payload asks for
+ * "34 seconds ago": `${ts-34000}`, `${timestamp+5000}`, `${base * 2}`, `(${count:1} + 1) / 2`.
+ * An expression may use numbers, the built-in variables, user variables and - in an automatic reply -
+ * the fields of the received message (`${msg.ts - 34000}`), with `+ - * / %`, parentheses and the usual
+ * precedence. A token without an operator keeps its previous meaning, and a variable whose value is not
+ * numeric is reported as unresolved instead of silently producing `NaN`.
  *
  * User variables (`name` is chosen freely, e.g. rssi):
  * - `${count:3}`       — auto-increment counter: the first send uses 3, every following send +1.
@@ -202,6 +210,182 @@ interface Placeholder {
   name: string
   /** the part after ":", e.g. "3" in ${count:3} or "-30..-60" in ${rssi:-30..-60} */
   config?: string
+  /** the placeholder body when it is an arithmetic expression, e.g. "ts-34000" */
+  expression?: string
+}
+
+/**
+ * A small arithmetic expression, written inside a placeholder: `${ts-34000}`, `${base * 2}`,
+ * `${(count:1 + 1) * 10}` (the counter resolves like any other variable, see below).
+ *
+ * Grammar, the usual precedence:
+ *   expression := term (('+' | '-') term)*
+ *   term       := unary (('*' | '/' | '%') unary)*
+ *   unary      := ('+' | '-') unary | primary
+ *   primary    := number | identifier ('.' identifier)* | '(' expression ')'
+ *
+ * It is deliberately not a scripting language: no functions, no assignments, no strings. Every
+ * identifier is resolved through the same scopes as a plain `${name}` (built-in, user variable, and
+ * the received message for `${msg.x}`), and a value that is not numeric makes the expression
+ * unresolved so the payload is never published with a `NaN` in it.
+ */
+type ExpressionToken =
+  | { kind: 'number'; value: number }
+  | { kind: 'identifier'; value: string }
+  | { kind: 'operator'; value: string }
+
+const EXPRESSION_TOKEN = /\s*(?:(\d+(?:\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*)|([-+*/%()]))/y
+
+/** Cheap gate: a plain variable name never contains one of these, so the token is an expression. */
+const containsOperator = (text: string): boolean => /[+\-*/%()]/.test(text)
+
+const tokenizeExpression = (text: string): ExpressionToken[] | undefined => {
+  const tokens: ExpressionToken[] = []
+  let index = 0
+  while (index < text.length) {
+    if (text[index] === ' ') {
+      index += 1
+      continue
+    }
+    EXPRESSION_TOKEN.lastIndex = index
+    const match = EXPRESSION_TOKEN.exec(text)
+    if (!match) {
+      return undefined
+    }
+    if (match[1] !== undefined) {
+      tokens.push({ kind: 'number', value: Number(match[1]) })
+    } else if (match[2] !== undefined) {
+      tokens.push({ kind: 'identifier', value: match[2] })
+    } else {
+      tokens.push({ kind: 'operator', value: match[3] })
+    }
+    index = EXPRESSION_TOKEN.lastIndex
+  }
+  return tokens.length ? tokens : undefined
+}
+
+/** Rounds away the float noise of e.g. `0.1 + 0.2`, and keeps integers integer. */
+const formatExpressionNumber = (value: number): string => {
+  if (Number.isInteger(value)) {
+    return String(value)
+  }
+  return String(Number(value.toFixed(6)))
+}
+
+interface ExpressionParseResult {
+  value?: number
+  /** identifiers the expression needed but the scopes could not turn into a number */
+  unresolved?: string
+}
+
+const evaluateExpression = (text: string, lookup: (name: string) => number | undefined): ExpressionParseResult => {
+  const tokens = tokenizeExpression(text)
+  if (!tokens) {
+    return {}
+  }
+  let position = 0
+  let failure: string | undefined
+
+  const peek = (): ExpressionToken | undefined => tokens[position]
+  const eatOperator = (values: string[]): string | undefined => {
+    const token = peek()
+    if (token && token.kind === 'operator' && values.includes(token.value)) {
+      position += 1
+      return token.value
+    }
+    return undefined
+  }
+
+  const parsePrimary = (): number | undefined => {
+    const token = peek()
+    if (!token) {
+      return undefined
+    }
+    if (token.kind === 'number') {
+      position += 1
+      return token.value
+    }
+    if (token.kind === 'identifier') {
+      position += 1
+      const value = lookup(token.value)
+      if (value === undefined) {
+        failure = failure ?? token.value
+      }
+      return value
+    }
+    if (token.value === '(') {
+      position += 1
+      const value = parseExpression()
+      if (eatOperator([')']) === undefined) {
+        return undefined
+      }
+      return value
+    }
+    return undefined
+  }
+
+  const parseUnary = (): number | undefined => {
+    const sign = eatOperator(['+', '-'])
+    const value = parsePrimary()
+    if (value === undefined) {
+      return undefined
+    }
+    return sign === '-' ? -value : value
+  }
+
+  const parseTerm = (): number | undefined => {
+    let value = parseUnary()
+    if (value === undefined) {
+      return undefined
+    }
+    for (;;) {
+      const operator = eatOperator(['*', '/', '%'])
+      if (!operator) {
+        return value
+      }
+      const right = parseUnary()
+      if (right === undefined) {
+        return undefined
+      }
+      if (operator === '*') {
+        value *= right
+      } else if (operator === '/') {
+        if (right === 0) {
+          return undefined
+        }
+        value /= right
+      } else {
+        if (right === 0) {
+          return undefined
+        }
+        value %= right
+      }
+    }
+  }
+
+  const parseExpression = (): number | undefined => {
+    let value = parseTerm()
+    if (value === undefined) {
+      return undefined
+    }
+    for (;;) {
+      const operator = eatOperator(['+', '-'])
+      if (!operator) {
+        return value
+      }
+      const right = parseTerm()
+      if (right === undefined) {
+        return undefined
+      }
+      value = operator === '+' ? value + right : value - right
+    }
+  }
+
+  const value = parseExpression()
+  if (value === undefined || position !== tokens.length || !Number.isFinite(value)) {
+    return { unresolved: failure }
+  }
+  return { value }
 }
 
 const scanPlaceholders = (payload: string): Placeholder[] => {
@@ -218,10 +402,13 @@ const scanPlaceholders = (payload: string): Placeholder[] => {
     }
     const raw = payload.slice(start + VARIABLE_TOKEN_START.length, end)
     const separatorIndex = raw.indexOf(':')
-    const name = separatorIndex === -1 ? raw : raw.slice(0, separatorIndex)
+    const head = separatorIndex === -1 ? raw : raw.slice(0, separatorIndex)
     const config = separatorIndex === -1 ? undefined : raw.slice(separatorIndex + 1)
-    if (name && PAYLOAD_VARIABLE_NAME_PATTERN.test(name)) {
-      found.push({ start, end, name, config: config ? config : undefined })
+    if (PAYLOAD_VARIABLE_NAME_PATTERN.test(head)) {
+      found.push({ start, end, name: head, config: config ? config : undefined })
+    } else if (!config && head.trim() && containsOperator(head)) {
+      // Not a plain `${name}`: it is either arithmetic or nothing at all (a `${` in ordinary text).
+      found.push({ start, end, name: head.trim(), expression: head })
     }
     index = end + VARIABLE_TOKEN_END.length
   }
@@ -263,6 +450,11 @@ export interface PayloadVariableOptions {
   rand?: () => number
   /** Whether the counters used by this text are persisted (default true). */
   commitCounters?: boolean
+  /**
+   * The message this text answers, when there is one (an automatic reply): its fields are reachable
+   * as `msg.<path>`, both as a plain `${msg.ts}` and inside an expression.
+   */
+  message?: unknown
 }
 
 export interface PayloadVariableResult {
@@ -274,6 +466,7 @@ export interface PayloadVariableResult {
 
 interface ResolveContext {
   variables: { [name: string]: string }
+  message?: unknown
   now: Date
   rand: () => number
   /** resolved value per variable name, so every occurrence of a name stays consistent */
@@ -314,7 +507,80 @@ function expandText(text: string, context: ResolveContext, stack: string[], unre
   return result + text.slice(index)
 }
 
+/**
+ * Evaluates one arithmetic placeholder, e.g. `${ts-34000}` or `${msg.ts - 34000}`.
+ *
+ * Every identifier goes through the same scopes as a plain `${name}` (built-in, user variable, the
+ * fields of the received message), and only a numeric value can take part: a value that is not a
+ * number makes the placeholder unresolved, so nothing is ever published as `NaN`.
+ */
+function resolveExpressionValue(
+  placeholder: Placeholder,
+  context: ResolveContext,
+  unresolved: Set<string>,
+): string | number | undefined {
+  const expression = placeholder.expression as string
+  const cached = context.values.get(expression)
+  if (cached !== undefined) {
+    return cached
+  }
+  const result = evaluateExpression(expression, (name) => numericValueOf(name, context))
+  if (result.value === undefined) {
+    unresolved.add(result.unresolved ?? expression)
+    return undefined
+  }
+  const value = formatExpressionNumber(result.value)
+  const numeric = Number(value)
+  context.values.set(expression, numeric)
+  return numeric
+}
+
+/** A name resolved like `${name}`, used by the expression identifiers. */
+const scalarValueOf = (
+  name: string,
+  context: ResolveContext,
+  stack: string[],
+  unresolved: Set<string>,
+): string | number | undefined => resolveBaseValue({ start: 0, end: 0, name }, context, stack, unresolved)
+
+/** The numeric value of one identifier inside an expression, or undefined when it is not a number. */
+const numericValueOf = (name: string, context: ResolveContext, depth = 0): number | undefined => {
+  if (depth > MAX_VARIABLE_DEPTH) {
+    return undefined
+  }
+  // The received message of an automatic reply: `msg.ts`, `msg.data.id`, ...
+  if (name === 'msg' || name.startsWith('msg.')) {
+    const path = name === 'msg' ? '' : name.slice('msg.'.length)
+    const field = path ? lodashGet(context.message, path) : context.message
+    if (typeof field === 'number') {
+      return field
+    }
+    return typeof field === 'string' && /^-?\d+(?:\.\d+)?$/.test(field.trim()) ? Number(field) : undefined
+  }
+  const value = scalarValueOf(name, context, [], new Set())
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value === 'number') {
+    return value
+  }
+  const text = String(value).trim()
+  return /^-?\d+(?:\.\d+)?$/.test(text) ? Number(text) : undefined
+}
+
 function resolvePlaceholderValue(
+  placeholder: Placeholder,
+  context: ResolveContext,
+  stack: string[],
+  unresolved: Set<string>,
+): string | number | undefined {
+  if (placeholder.expression !== undefined) {
+    return resolveExpressionValue(placeholder, context, unresolved)
+  }
+  return resolveBaseValue(placeholder, context, stack, unresolved)
+}
+
+function resolveBaseValue(
   placeholder: Placeholder,
   context: ResolveContext,
   stack: string[],
@@ -405,6 +671,7 @@ export interface PayloadVariableResolver {
 export const createPayloadVariableResolver = (options: PayloadVariableOptions = {}): PayloadVariableResolver => {
   const context: ResolveContext = {
     variables: options.variables ?? {},
+    message: options.message,
     now: options.now ?? new Date(),
     rand: options.rand ?? Math.random,
     values: new Map(),

@@ -226,3 +226,46 @@ describe('planAutoReplies payload parsing', () => {
     expect(replies).to.have.lengthOf(0)
   })
 })
+
+describe('auto reply templates with arithmetic', () => {
+  const rule = (topic: string, payload: string): AutoReplyRuleModel => ({
+    id: 'arithmetic-rule',
+    name: 'arithmetic',
+    enabled: true,
+    matchTopic: 'app/+/+/device/ntp/sub',
+    matchCondition: '',
+    reply: { topic, mode: 'fixed', payload, qos: 0, retain: false, delayMs: 0 },
+  })
+  const received = '{"cmd":"NTP_SYNC","ts":1792486795034,"timezone":8}'
+
+  it('answers with a received timestamp shifted by the configured offset', () => {
+    const [reply] = planAutoReplies([rule('app/device/ntp/post', '{"ts":${msg.ts - 34000}}')], {
+      topic: 'app/ACME900/AF01/device/ntp/sub',
+      payload: received,
+    })
+    expect(reply.error).to.equal(undefined)
+    expect(reply.payload).to.equal('{"ts":1792486761034}')
+  })
+
+  it('can combine the received timezone and a received timestamp', () => {
+    const [reply] = planAutoReplies([rule('app/device/ntp/post', '{"h":${msg.timezone * 3600}}')], {
+      topic: 'app/ACME900/AF01/device/ntp/sub',
+      payload: received,
+    })
+    expect(reply.payload).to.equal('{"h":28800}')
+  })
+
+  it('still prints a received field without arithmetic, and keeps a hyphenated key intact', () => {
+    const [plain] = planAutoReplies([rule('app/device/ntp/post', '{"ts":${msg.ts}}')], {
+      topic: 'app/ACME900/AF01/device/ntp/sub',
+      payload: received,
+    })
+    expect(plain.payload).to.equal('{"ts":1792486795034}')
+
+    const [hyphen] = planAutoReplies([rule('app/device/ntp/post', '{"v":"${msg.sensor-1}"}')], {
+      topic: 'app/ACME900/AF01/device/ntp/sub',
+      payload: '{"sensor-1":"ok"}',
+    })
+    expect(hyphen.payload).to.equal('{"v":"ok"}')
+  })
+})
