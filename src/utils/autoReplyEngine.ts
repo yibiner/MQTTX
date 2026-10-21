@@ -50,6 +50,35 @@ const records = new Map<string, ConnectionModel>()
  */
 const attachedClients = new Map<MqttClient, { connectionId: string; handler: OnMessageCallback }>()
 
+/**
+ * Listeners told about every reply that went out, so the conversation view can render it.
+ *
+ * The engine publishes through the client directly, which the view cannot see: only the messages the
+ * client receives and the ones the user publishes in the panel reach `renderMessage()`. Without this,
+ * an automatic reply existed in the database but never appeared in the conversation, and with a delay
+ * the effect was the most obvious - the answer was sent long after the question it belongs to.
+ */
+type AutoReplyPublishedListener = (connectionId: string, message: MessageModel) => void
+const publishedListeners = new Set<AutoReplyPublishedListener>()
+
+/** Subscribes to the replies that were published; returns the unsubscribe function. */
+export const onAutoReplyPublished = (listener: AutoReplyPublishedListener): (() => void) => {
+  publishedListeners.add(listener)
+  return () => {
+    publishedListeners.delete(listener)
+  }
+}
+
+const notifyPublished = (connectionId: string, message: MessageModel) => {
+  publishedListeners.forEach((listener) => {
+    try {
+      listener(connectionId, message)
+    } catch (error) {
+      getLog().error(`Auto reply listener failed: ${(error as Error).toString()}`)
+    }
+  })
+}
+
 const getLog = () => log4js.getLogger()
 
 /**
@@ -247,12 +276,20 @@ const publishReply = async (info: IncomingMessageInfo, reply: PlannedAutoReply):
         error ? reject(error) : resolve()
       })
     })
-    await savePublishedMessageHistory(info.connectionId, message, reply.payload, 'JSON', reply.topic)
-    markReply(reply.topic, reply.payload)
-    getLog().info(
-      `Auto replied to ${info.topic} with ${reply.topic} (rule ${reply.ruleId}, connection ${info.connectionId})`,
-    )
   } catch (error) {
     getLog().error(`Auto reply ${reply.ruleId} could not be published: ${(error as Error).toString()}`)
+    return
+  }
+  // The reply is on the wire: show it in the conversation and arm the loop guard before touching
+  // storage, so a database problem cannot swallow a message the broker already has.
+  notifyPublished(info.connectionId, message)
+  markReply(reply.topic, reply.payload)
+  getLog().info(
+    `Auto replied to ${info.topic} with ${reply.topic} (rule ${reply.ruleId}, connection ${info.connectionId})`,
+  )
+  try {
+    await savePublishedMessageHistory(info.connectionId, message, reply.payload, 'JSON', reply.topic)
+  } catch (error) {
+    getLog().error(`Auto reply ${reply.ruleId} could not be saved: ${(error as Error).toString()}`)
   }
 }

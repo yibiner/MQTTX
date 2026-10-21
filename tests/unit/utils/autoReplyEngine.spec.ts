@@ -1,7 +1,13 @@
 import { expect } from 'chai'
 import { EventEmitter } from 'events'
 import type { MqttClient } from 'mqtt'
-import { attachAutoReply, detachAutoReply, registerAutoReply, unregisterAutoReply } from '@/utils/autoReplyEngine'
+import {
+  attachAutoReply,
+  detachAutoReply,
+  onAutoReplyPublished,
+  registerAutoReply,
+  unregisterAutoReply,
+} from '@/utils/autoReplyEngine'
 
 /** The engine only needs the EventEmitter surface of the client. */
 const createClient = () => new EventEmitter() as unknown as MqttClient
@@ -93,5 +99,91 @@ describe('autoReplyEngine answers through the client, not through a page', () =>
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(published).to.deep.equal([{ topic: 'app/device/system/reply', payload: '{"code":0}' }])
+  })
+})
+
+describe('autoReplyEngine tells the view about the replies it published', () => {
+  const rule = (id: string, delayMs: number): AutoReplyRuleModel => ({
+    id,
+    name: id,
+    enabled: true,
+    matchTopic: 'app/+/+/device/system/post',
+    matchCondition: "cmd == 'PING'",
+    reply: {
+      topic: 'app/device/system/reply',
+      mode: 'fixed',
+      payload: '{"code":0}',
+      qos: 0,
+      retain: false,
+      delayMs,
+    },
+  })
+
+  const createPublishingClient = () => {
+    const client = Object.assign(new EventEmitter(), {
+      connected: true,
+      publish: (topic: string, payload: string, _options: unknown, callback: (error?: Error) => void) => {
+        published.push({ topic, payload })
+        callback()
+      },
+    })
+    return client as unknown as MqttClient
+  }
+  let published: Array<{ topic: string; payload: string }> = []
+
+  beforeEach(() => {
+    published = []
+  })
+
+  afterEach(() => {
+    unregisterAutoReply('conn-published')
+  })
+
+  it('notifies with the connection and the outgoing message, so the conversation can render it', async () => {
+    const notified: Array<{ connectionId: string; message: MessageModel }> = []
+    const unsubscribe = onAutoReplyPublished((connectionId, message) => notified.push({ connectionId, message }))
+    try {
+      registerAutoReply('conn-published', {
+        id: 'conn-published',
+        autoReplies: [rule('immediate', 0)],
+      } as ConnectionModel)
+      const client = createPublishingClient()
+      attachAutoReply(client, 'conn-published')
+
+      client.emit('message', 'app/A1/AF0201/device/system/post', Buffer.from('{"cmd":"PING"}'), { messageId: 7 })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(notified).to.have.lengthOf(1)
+      expect(notified[0].connectionId).to.equal('conn-published')
+      expect(notified[0].message.out).to.equal(true)
+      expect(notified[0].message.topic).to.equal('app/device/system/reply')
+      expect(notified[0].message.payload).to.equal('{"code":0}')
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('notifies a delayed reply only when the delay has passed', async () => {
+    const notified: MessageModel[] = []
+    const unsubscribe = onAutoReplyPublished((_connectionId, message) => notified.push(message))
+    try {
+      registerAutoReply('conn-published', {
+        id: 'conn-published',
+        autoReplies: [rule('delayed', 120)],
+      } as ConnectionModel)
+      const client = createPublishingClient()
+      attachAutoReply(client, 'conn-published')
+
+      client.emit('message', 'app/A1/AF0201/device/system/post', Buffer.from('{"cmd":"PING"}'), { messageId: 8 })
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      expect(notified).to.have.lengthOf(0)
+      expect(published).to.have.lengthOf(0)
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      expect(published).to.have.lengthOf(1)
+      expect(notified).to.have.lengthOf(1)
+    } finally {
+      unsubscribe()
+    }
   })
 })

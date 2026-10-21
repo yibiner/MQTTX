@@ -388,7 +388,7 @@ import {
   onConnectSubscribed,
   updateConnectSubscriptions,
 } from '@/utils/connectSubscriptions'
-import { attachAutoReply, registerAutoReply, unregisterAutoReply } from '@/utils/autoReplyEngine'
+import { attachAutoReply, onAutoReplyPublished, registerAutoReply, unregisterAutoReply } from '@/utils/autoReplyEngine'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import useServices from '@/database/useServices'
 import { getMessageId, getSubscriptionId } from '@/utils/idGenerator'
@@ -521,6 +521,8 @@ export default class ConnectionsDetail extends Vue {
    * replies, which are attached to the client and must survive a page change.
    */
   private messageListenerSubscriptions: Map<string, Subscription[]> = new Map()
+  /** Tells this view about the replies the engine published, so they show up in the conversation. */
+  private unsubAutoReplyPublished: (() => void) | null = null
   private sendTimedMessageCount = 0
   private receivedMsgType: PayloadType = this.getReceivedMsgType()
   private msgType: MessageType = 'all'
@@ -2572,6 +2574,11 @@ export default class ConnectionsDetail extends Vue {
   }
 
   private mounted() {
+    // An automatic reply is published by the engine, not by this panel, so the conversation only sees
+    // it through this hook: rendered like a message the user sent (the engine already stored it).
+    this.unsubAutoReplyPublished = onAutoReplyPublished((connectionId, message) => {
+      this.renderMessage(connectionId, message, 'publish')
+    })
     this.setMessageListHeight()
     window.addEventListener('resize', () => {
       this.setMessageListHeight()
@@ -2583,6 +2590,10 @@ export default class ConnectionsDetail extends Vue {
 
   private beforeDestroy() {
     ipcRenderer.removeAllListeners('searchContent')
+    if (this.unsubAutoReplyPublished) {
+      this.unsubAutoReplyPublished()
+      this.unsubAutoReplyPublished = null
+    }
     this.removeClinetsMessageListener()
     // Timed messages keep running across connection switches; only stop routing their ticks
     // through this (now destroyed) view. Tasks that need this view (publish script / data
