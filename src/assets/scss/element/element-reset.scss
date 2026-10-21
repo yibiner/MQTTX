@@ -406,6 +406,80 @@
   }
 }
 
+/* Table */
+// Element hard-codes the light palette for tables (white rows and header, #EBEEF5 rules), so in the
+// dark and night themes a table renders as one bright block. Rows sit on --color-bg-normal, the same
+// surface the inputs inside them use; hover and the stripes step to --color-bg-item so the layers
+// stay distinguishable. The `div` prefix is deliberate: element-ui's table.css uses class-only
+// selectors, and these rules have to win regardless of which stylesheet the bundler emits last.
+div.el-table {
+  color: var(--color-text-default);
+  background-color: var(--color-bg-normal);
+
+  // Element draws the bottom rule with a bare `.el-table::before`; keep the extra class on ours so
+  // it wins on specificity instead of on load order.
+  &::before,
+  &.el-table--border::after,
+  &.el-table--group::after {
+    background-color: var(--color-border-default);
+  }
+
+  th,
+  tr {
+    background-color: var(--color-bg-normal);
+  }
+
+  thead {
+    color: var(--color-text-light);
+
+    th {
+      color: var(--color-text-light);
+    }
+
+    &.is-group th {
+      background-color: var(--color-bg-item);
+    }
+  }
+
+  // `th.is-leaf` is how Element targets header cells for the bottom rule, so match it as well.
+  th,
+  th.is-leaf,
+  tr > td,
+  td.el-table__expanded-cell {
+    border-bottom: 1px solid var(--color-border-default);
+  }
+
+  td.el-table__expanded-cell {
+    background-color: var(--color-bg-normal);
+  }
+
+  // The `border` variant draws its own frame and column rules.
+  &.el-table--border,
+  &.el-table--group {
+    border-color: var(--color-border-default);
+  }
+
+  &.el-table--border td,
+  &.el-table--border th {
+    border-right-color: var(--color-border-default);
+  }
+
+  // Row hover (both the class Element toggles on the row and its `:hover` fallback) and the
+  // striped rows.
+  &.el-table--enable-row-hover .el-table__body tr:hover > td,
+  .el-table__body tr.hover-row > td {
+    background-color: var(--color-bg-item);
+  }
+
+  &.el-table--striped .el-table__body tr.el-table__row--striped > td {
+    background-color: var(--color-bg-item);
+  }
+
+  .el-table__empty-text {
+    color: var(--color-text-light);
+  }
+}
+
 /* Date-picker */
 .el-range-editor {
   &.el-input__inner {

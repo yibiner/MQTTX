@@ -223,7 +223,7 @@ export default class AutomationDialog extends Vue {
     gap: 8px 10px;
     align-items: center;
     label {
-      color: #606266;
+      color: var(--color-text-default);
       line-height: 28px;
       white-space: nowrap;
     }
@@ -237,7 +237,7 @@ export default class AutomationDialog extends Vue {
     margin-top: 10px;
     .automation-preview-line {
       margin: 0 0 4px;
-      color: #606266;
+      color: var(--color-text-default);
     }
     .automation-preview-rule {
       color: var(--color-main-green);
@@ -252,7 +252,7 @@ export default class AutomationDialog extends Vue {
     }
     .automation-preview-error {
       margin: 0;
-      color: #f56c6c;
+      color: var(--color-minor-red);
     }
     .automation-preview-payload {
       margin: 0;

@@ -1168,12 +1168,12 @@ export default {
     ko: 'JMESPath 식에 구문 오류가 있습니다',
   },
   autoReplyMode: {
-    zh: '回复内容',
-    en: 'Reply body',
-    tr: 'Yanıt gövdesi',
-    ja: '応答内容',
-    hu: 'Válasz tartalma',
-    ko: '응답 내용',
+    zh: '回复方式',
+    en: 'Reply mode',
+    tr: 'Yanıt modu',
+    ja: '応答モード',
+    hu: 'Válasz módja',
+    ko: '응답 방식',
   },
   autoReplyModeEcho: {
     zh: '回显消息',

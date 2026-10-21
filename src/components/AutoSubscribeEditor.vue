@@ -227,9 +227,9 @@ export default class AutoSubscribeEditor extends Vue {
   .auto-subscribe-group {
     padding: 10px 12px 4px;
     margin-bottom: 10px;
-    border: 1px solid #ebeef5;
+    border: 1px solid var(--color-border-default);
     border-radius: 4px;
-    background: #fafbfc;
+    background: var(--color-bg-card-normal);
   }
 
   .group-header {
@@ -246,14 +246,14 @@ export default class AutoSubscribeEditor extends Vue {
     align-items: center;
     .field-label {
       margin-right: 6px;
-      color: #606266;
+      color: var(--color-text-default);
     }
     .delay-input {
       width: 76px;
     }
     .field-unit {
       margin: 0 8px 0 4px;
-      color: #909399;
+      color: var(--color-text-light);
     }
   }
 
@@ -280,7 +280,7 @@ export default class AutoSubscribeEditor extends Vue {
       margin-right: 0;
     }
     .group-delete {
-      color: #f56c6c;
+      color: var(--color-minor-red);
     }
   }
 
@@ -297,7 +297,7 @@ export default class AutoSubscribeEditor extends Vue {
       flex: none;
     }
     .topic-delete {
-      color: #f56c6c;
+      color: var(--color-minor-red);
       flex: none;
     }
   }

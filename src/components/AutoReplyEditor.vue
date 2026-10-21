@@ -285,9 +285,9 @@ export default class AutoReplyEditor extends Vue {
   .reply-rule {
     padding: 10px 12px;
     margin-bottom: 10px;
-    border: 1px solid #ebeef5;
+    border: 1px solid var(--color-border-default);
     border-radius: 4px;
-    background: #fafbfc;
+    background: var(--color-bg-card-normal);
   }
 
   .rule-header {
@@ -304,7 +304,7 @@ export default class AutoReplyEditor extends Vue {
       gap: 10px;
       margin-left: 12px;
       .rule-delete {
-        color: #f56c6c;
+        color: var(--color-minor-red);
       }
     }
   }
@@ -339,7 +339,7 @@ export default class AutoReplyEditor extends Vue {
     gap: 8px 10px;
     align-items: center;
     label {
-      color: #606266;
+      color: var(--color-text-default);
       line-height: 28px;
       white-space: nowrap;
     }
@@ -361,7 +361,7 @@ export default class AutoReplyEditor extends Vue {
 
   .cell-error {
     margin: 2px 0 0;
-    color: #f56c6c;
+    color: var(--color-minor-red);
     font-size: 12px;
   }
 
@@ -381,7 +381,7 @@ export default class AutoReplyEditor extends Vue {
       width: 76px;
     }
     .unit {
-      color: #909399;
+      color: var(--color-text-light);
     }
     .quick-delay {
       padding: 0 5px;
