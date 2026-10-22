@@ -40,15 +40,22 @@ export const parseJsonKeepingBigIntegers = (text: string): any => {
   if (!UNSAFE_INTEGER_LITERAL.test(text)) {
     return JSON.parse(text)
   }
-  let json = ''
+  // Slices of the original text, joined once. One string per character would retain a second copy
+  // of a large payload; appending with `+=` copied the whole text on every character.
+  const parts: string[] = []
   let index = 0
+  let plainStart = 0
   let inString = false
+  const flushPlain = (end: number) => {
+    if (end > plainStart) {
+      parts.push(text.slice(plainStart, end))
+    }
+    plainStart = end
+  }
   while (index < text.length) {
     const char = text[index]
     if (inString) {
-      json += char
       if (char === '\\') {
-        json += text[index + 1] ?? ''
         index += 2
         continue
       }
@@ -60,7 +67,6 @@ export const parseJsonKeepingBigIntegers = (text: string): any => {
     }
     if (char === '"') {
       inString = true
-      json += char
       index += 1
       continue
     }
@@ -71,21 +77,22 @@ export const parseJsonKeepingBigIntegers = (text: string): any => {
       const literal = NUMBER_LITERAL.exec(text)
       if (literal) {
         const token = literal[0]
-        // Only integer literals are rewritten: `1.5` and `1e3` are still numbers.
         const isInteger = INTEGER_LITERAL.test(token)
         if (isInteger && !Number.isSafeInteger(Number(token))) {
-          json += `"${token}"`
-        } else {
-          json += token
+          flushPlain(index)
+          parts.push(`"${token}"`)
+          index = NUMBER_LITERAL.lastIndex
+          plainStart = index
+          continue
         }
         index = NUMBER_LITERAL.lastIndex
         continue
       }
     }
-    json += char
     index += 1
   }
-  return JSON.parse(json)
+  flushPlain(text.length)
+  return JSON.parse(parts.join(''))
 }
 
 /**
@@ -139,40 +146,64 @@ export const formatJsonText = (text: string): string => {
     return text
   }
 
+  // Built in pieces. Trimming the whole string with a regex on every closing bracket copied the
+  // text so far, which froze the preview of a large payload.
+  const parts: string[] = []
   let depth = 0
-  let out = ''
-  tokens.forEach((token, position) => {
+  const trimTrailingWhitespace = () => {
+    while (parts.length) {
+      const last = parts[parts.length - 1]
+      const trimmed = last.replace(/\s+$/, '')
+      if (trimmed === last) {
+        return
+      }
+      if (!trimmed) {
+        parts.pop()
+        continue
+      }
+      parts[parts.length - 1] = trimmed
+      return
+    }
+  }
+  const endsWith = (suffix: string): boolean => {
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const part = parts[i]
+      if (!part) {
+        continue
+      }
+      return part.endsWith(suffix)
+    }
+    return false
+  }
+  tokens.forEach((token) => {
     if (token === '{' || token === '[') {
-      out += token
+      parts.push(token)
       depth += 1
-      out += '\n' + '  '.repeat(depth)
+      parts.push('\n' + '  '.repeat(depth))
       return
     }
     if (token === '}' || token === ']') {
       depth = Math.max(0, depth - 1)
-      out = out.replace(/\s+$/, '')
+      trimTrailingWhitespace()
       // An empty object/array stays on one line.
-      if (out.endsWith('{') || out.endsWith('[')) {
-        out += token
+      if (endsWith('{') || endsWith('[')) {
+        parts.push(token)
       } else {
-        out += '\n' + '  '.repeat(depth) + token
+        parts.push('\n' + '  '.repeat(depth) + token)
       }
       return
     }
     if (token === ',') {
-      out += ',\n' + '  '.repeat(depth)
+      parts.push(',\n' + '  '.repeat(depth))
       return
     }
     if (token === ':') {
-      out += ': '
+      parts.push(': ')
       return
     }
-    out += token
-    if (tokens[position + 1] === '{' || tokens[position + 1] === '[') {
-      // keep the bracket handling above to add the newline
-    }
+    parts.push(token)
   })
-  return out
+  return parts.join('')
 }
 
 export const parseJsonPayload = (payload: string | Buffer | undefined | null): { value?: any; error?: string } => {

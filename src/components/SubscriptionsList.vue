@@ -1012,9 +1012,9 @@ export default class SubscriptionsList extends Vue {
         font-size: 10px;
         font-weight: normal;
         line-height: 14px;
-        color: #409eff;
-        background: #eaf3ff;
-        border: 1px solid #c6e0ff;
+        color: var(--color-main-green);
+        background: var(--color-light-green);
+        border: 1px solid var(--color-main-green);
         border-radius: 7px;
         pointer-events: none;
       }

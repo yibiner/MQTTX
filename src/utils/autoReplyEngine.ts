@@ -3,7 +3,7 @@ import type { IPublishPacket, MqttClient, OnMessageCallback } from 'mqtt'
 import { getGlobalVariablesRevision } from '@/utils/configProfiles'
 import { connectionVariableOptions } from '@/utils/payloadVariables'
 import { applyAutoReplyVariableActions, markManualDisconnect, onConnectionClosed } from '@/utils/payloadVariables'
-import { planAutoReplies, PlannedAutoReply } from '@/utils/autoReply'
+import { mightMatchIncomingTopic, planAutoReplies, PlannedAutoReply } from '@/utils/autoReply'
 import { savePublishedMessageHistory } from '@/utils/historyRecordUtils'
 import { getMessageId } from '@/utils/idGenerator'
 import time from '@/utils/time'
@@ -27,13 +27,33 @@ export interface IncomingMessageInfo {
   packetId?: number | null
 }
 
-/** Loop guard: a reply that comes back to us must not trigger the rules again. */
+/**
+ * Loop guard: a reply that comes back to us must not trigger the rules again.
+ *
+ * The topic is checked first, so an incoming message on any other topic does not hash its payload.
+ * The payload itself is stored as a hash: keeping the raw text made every reply retain a second
+ * copy of a potentially large body for the whole TTL.
+ */
+const recentReplyTopics = new Map<string, number>()
 const recentReplies = new Map<string, number>()
 const RECENT_REPLY_TTL = 5000
+let recentPruneAt = 0
 
 /** Answers already sent for one received packet, keyed by `connectionId|topic|packetId|ruleId`. */
 const answered = new Map<string, number>()
 const ANSWERED_TTL = 60000
+let answeredPruneAt = 0
+
+/**
+ * Delayed replies waiting to be published, per connection.
+ *
+ * A matching rule with a delay used to schedule a timer per message with no ceiling. A topic that
+ * matches faster than the delay elapses piled those timers up, each one holding the payload, until
+ * the renderer stalled. The cap drops the overflow; deleting or manually disconnecting the
+ * connection cancels what is still waiting.
+ */
+const MAX_PENDING_DELAYED_REPLIES = 100
+const pendingDelayed = new Map<string, Set<ReturnType<typeof setTimeout>>>()
 
 /** Per connection rate limit, so a rule with a bad filter cannot flood the broker. */
 const MAX_REPLIES_PER_SECOND = 20
@@ -169,6 +189,7 @@ export const unregisterAutoReply = (connectionId: string): void => {
 /** The user disconnected on purpose: the next connect starts a new session, not a reconnect. */
 export const markConnectionDisconnectedManually = (connectionId: string): void => {
   markManualDisconnect(connectionId)
+  clearPendingDelayed(connectionId)
 }
 
 /**
@@ -184,8 +205,13 @@ export const attachAutoReply = (client: MqttClient, connectionId: string): void 
     return
   }
   const handler: OnMessageCallback = (topic: string, payload: Buffer, packet: IPublishPacket) => {
+    // Read the id from the map: a second attach refreshes it, and the closure would keep the first one.
+    const currentId = attachedClients.get(client)?.connectionId
+    if (!currentId) {
+      return
+    }
     processIncomingMessage({
-      connectionId,
+      connectionId: currentId,
       client,
       topic,
       payload,
@@ -218,6 +244,7 @@ export const detachAutoReply = (client: MqttClient): void => {
     return
   }
   attachedClients.delete(client)
+  clearPendingDelayed(attached.connectionId)
   client.removeListener('message', attached.handler)
   const onClose = (attached as { onClose?: () => void }).onClose
   if (onClose) {
@@ -234,7 +261,15 @@ export const detachAutoReplyByConnection = (connectionId: string): void => {
   })
 }
 
-const keyOf = (topic: string, payload: string): string => `${topic}\u0000${payload}`
+/** FNV-1a plus the length, so the loop guard does not retain the payload text. */
+const payloadKey = (topic: string, payload: string): string => {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < payload.length; i++) {
+    hash ^= payload.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `${topic}\u0000${payload.length}\u0000${hash >>> 0}`
+}
 
 const pruneMap = (map: Map<string, number>, ttl: number) => {
   const now = Date.now()
@@ -245,13 +280,60 @@ const pruneMap = (map: Map<string, number>, ttl: number) => {
   })
 }
 
-const isRecentReply = (topic: string, payload: string): boolean => {
+const pruneRecentReplies = () => {
+  const now = Date.now()
+  if (now - recentPruneAt < 1000) {
+    return
+  }
+  recentPruneAt = now
   pruneMap(recentReplies, RECENT_REPLY_TTL)
-  return recentReplies.has(keyOf(topic, payload))
+  pruneMap(recentReplyTopics, RECENT_REPLY_TTL)
+}
+
+const isRecentReply = (topic: string, payload: string): boolean => {
+  const stamp = recentReplyTopics.get(topic)
+  if (stamp === undefined || Date.now() - stamp > RECENT_REPLY_TTL) {
+    return false
+  }
+  pruneRecentReplies()
+  return recentReplies.has(payloadKey(topic, payload))
 }
 
 const markReply = (topic: string, payload: string) => {
-  recentReplies.set(keyOf(topic, payload), Date.now())
+  const now = Date.now()
+  recentReplyTopics.set(topic, now)
+  recentReplies.set(payloadKey(topic, payload), now)
+}
+
+const clearPendingDelayed = (connectionId: string) => {
+  const timers = pendingDelayed.get(connectionId)
+  if (!timers) {
+    return
+  }
+  timers.forEach((timer) => clearTimeout(timer))
+  pendingDelayed.delete(connectionId)
+}
+
+/** `false` when this connection already has too many replies waiting on their delay. */
+const scheduleDelayedReply = (connectionId: string, delayMs: number, run: () => void): boolean => {
+  let timers = pendingDelayed.get(connectionId)
+  if (!timers) {
+    timers = new Set()
+    pendingDelayed.set(connectionId, timers)
+  }
+  if (timers.size >= MAX_PENDING_DELAYED_REPLIES) {
+    return false
+  }
+  const timer = setTimeout(() => {
+    const current = pendingDelayed.get(connectionId)
+    current?.delete(timer)
+    if (current && current.size === 0) {
+      pendingDelayed.delete(connectionId)
+    }
+    run()
+  }, delayMs)
+  timers.add(timer)
+  return true
 }
 
 const takeReplyBudget = (connectionId: string): boolean => {
@@ -267,13 +349,18 @@ const takeReplyBudget = (connectionId: string): boolean => {
 }
 
 const alreadyAnswered = (key: string): boolean => {
-  pruneMap(answered, ANSWERED_TTL)
+  const now = Date.now()
+  if (now - answeredPruneAt >= 1000) {
+    answeredPruneAt = now
+    pruneMap(answered, ANSWERED_TTL)
+  }
   return answered.has(key)
 }
 
 /** Drops every bit of state of a connection, e.g. when it is deleted or disconnected. */
 const resetAutoReplyState = (connectionId: string): void => {
   clearReportedPlanErrors(connectionId)
+  clearPendingDelayed(connectionId)
   replyTimestamps.delete(connectionId)
   answered.forEach((_stamp, key) => {
     if (key.startsWith(`${connectionId}|`)) {
@@ -295,12 +382,20 @@ export const processIncomingMessage = async (info: IncomingMessageInfo): Promise
     if (!record || !Array.isArray(rules) || !rules.length) {
       return
     }
+    const variableOptions = variableOptionsFor(record)
+    if (
+      !mightMatchIncomingTopic(rules, info.topic, {
+        ...variableOptions,
+        topic: info.topic,
+      })
+    ) {
+      return
+    }
     const payloadText = typeof info.payload === 'string' ? info.payload : info.payload.toString()
     if (isRecentReply(info.topic, payloadText)) {
       // Our own reply came back: answering it would start a loop.
       return
     }
-    const variableOptions = variableOptionsFor(record)
     const replies = planAutoReplies(rules, {
       topic: info.topic,
       payload: payloadText,
@@ -325,11 +420,17 @@ export const processIncomingMessage = async (info: IncomingMessageInfo): Promise
       // A matched rule may reset variables or capture fields of the message for later messages.
       applyAutoReplyVariableActions(record, reply.actions)
       if (reply.delayMs > 0) {
-        setTimeout(() => {
+        const scheduled = scheduleDelayedReply(info.connectionId, reply.delayMs, () => {
           publishReply(info, reply).catch((error) =>
             getLog().error(`Auto reply failed: ${(error as Error).toString()}`),
           )
-        }, reply.delayMs)
+        })
+        if (!scheduled) {
+          getLog().warn(
+            `Auto reply ${reply.ruleId} skipped: too many delayed replies are waiting (connection ${info.connectionId})`,
+          )
+          continue
+        }
       } else {
         await publishReply(info, reply)
       }

@@ -484,11 +484,11 @@ export default class AutoReplyEditor extends Vue {
     }
     .quick-delay {
       padding: 0 5px;
-      color: #409eff;
+      color: var(--color-main-green);
       border-radius: 3px;
       &.active {
-        color: #fff;
-        background: #409eff;
+        color: var(--color-text-active);
+        background: var(--color-main-green);
       }
     }
     .reply-flags {

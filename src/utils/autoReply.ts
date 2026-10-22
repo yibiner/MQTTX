@@ -76,6 +76,28 @@ export interface AutoReplyTemplateScope {
 /** Whether a template has anything to resolve at all (the vast majority of filters do not). */
 const hasPlaceholder = (text: unknown): boolean => typeof text === 'string' && text.includes('${')
 
+/**
+ * One parse per received message, shared by every rule whose topic matched.
+ *
+ * Keyed by the context object `planAutoReplies` builds for that message. A rule whose topic does
+ * not match never asks for it. The parse still happens for every match: a user variable value may
+ * itself contain `${msg...}`, which the reply template does not show.
+ */
+const parsedPayloadCache = new WeakMap<AutoReplyContext, { value?: any; error?: string }>()
+
+const payloadOf = (context: AutoReplyContext): { value?: any; error?: string } => {
+  if (context.parsed) {
+    return context.parsed
+  }
+  const cached = parsedPayloadCache.get(context)
+  if (cached) {
+    return cached
+  }
+  const parsed = parseJsonPayload(context.payload)
+  parsedPayloadCache.set(context, parsed)
+  return parsed
+}
+
 /** A resolver for a reply whose templates are completely static: it resolves nothing and commits nothing. */
 const IDENTITY_RESOLVER: PayloadVariableResolver = {
   resolve: (text: string) => text,
@@ -211,8 +233,8 @@ export const matchesAutoReplyRule = (
   if (!matchTopicMethod(filter, context.topic)) {
     return { matched: false }
   }
-  const parsed = context.parsed ?? parseJsonPayload(context.payload)
   const condition = (rule.matchCondition ?? '').trim()
+  const parsed = payloadOf(context)
   if (!condition) {
     return { matched: true, received: parsed.value }
   }
@@ -226,6 +248,47 @@ export const matchesAutoReplyRule = (
   return { matched: result.matched, received: parsed.value }
 }
 
+/**
+ * Whether any enabled rule's topic filter covers this topic.
+ *
+ * This is the gate in front of payload handling: a connection that has reply rules still receives
+ * plenty of messages those rules do not cover, and those must not be copied to a string or parsed.
+ */
+export const mightMatchIncomingTopic = (
+  rules: AutoReplyRuleModel[] | null | undefined,
+  topic: string,
+  scope: AutoReplyTemplateScope = {},
+): boolean => {
+  if (!Array.isArray(rules) || !rules.length || !topic) {
+    return false
+  }
+  for (const rule of rules) {
+    if (!rule || rule.enabled === false) {
+      continue
+    }
+    let filter = rule.matchTopic ?? ''
+    if (hasPlaceholder(filter)) {
+      const filterResolver = createReplyResolver(
+        {
+          variables: scope.variables,
+          definitions: scope.definitions,
+          connectionId: scope.connectionId,
+          topic,
+        },
+        false,
+      )
+      filter = filterResolver.resolve(filter)
+      if (filterResolver.unresolved.length) {
+        continue
+      }
+    }
+    if (filter && matchTopicMethod(filter, topic)) {
+      return true
+    }
+  }
+  return false
+}
+
 /** All replies a received message triggers, in the order the rules are configured. */
 export const planAutoReplies = (
   rules: AutoReplyRuleModel[] | null | undefined,
@@ -234,11 +297,9 @@ export const planAutoReplies = (
   if (!Array.isArray(rules) || !rules.length) {
     return []
   }
-  // All rules match the same message, so its payload is parsed once here instead of once per rule:
-  // rules usually share the topic filter and differ only in their condition.
-  const sharedContext: AutoReplyContext = context.parsed
-    ? context
-    : { ...context, parsed: parseJsonPayload(context.payload) }
+  // A fresh object so the lazy payload cache belongs to this message, not to a context the caller
+  // reuses with a different payload. The payload is parsed by the first rule whose topic matches.
+  const sharedContext: AutoReplyContext = { ...context }
   const replies: PlannedAutoReply[] = []
   rules.forEach((rule) => {
     const result = matchesAutoReplyRule(rule, sharedContext)

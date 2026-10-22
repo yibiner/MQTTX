@@ -50,6 +50,40 @@ describe('autoReplyEngine client lifecycle', () => {
     expect(client.listenerCount('message')).to.equal(1)
     detachAutoReply(client)
   })
+
+  it('uses the connection id from the latest attach, not the first one', async () => {
+    const published: Array<{ topic: string; payload: string }> = []
+    const client = Object.assign(new EventEmitter(), {
+      connected: true,
+      publish: (topic: string, payload: string, _options: unknown, callback: (error?: Error) => void) => {
+        published.push({ topic, payload })
+        callback()
+      },
+    }) as unknown as MqttClient
+    registerAutoReply('conn-refreshed', {
+      id: 'conn-refreshed',
+      autoReplies: [
+        {
+          id: 'refreshed-rule',
+          name: 'refreshed',
+          enabled: true,
+          matchTopic: 'sensors/temp',
+          matchCondition: '',
+          reply: { topic: 'sensors/ack', mode: 'fixed', payload: 'ok', qos: 0, retain: false, delayMs: 0 },
+        },
+      ],
+    } as ConnectionModel)
+    attachAutoReply(client, 'conn-stale')
+    attachAutoReply(client, 'conn-refreshed')
+
+    client.emit('message', 'sensors/temp', Buffer.from('1'), { messageId: 4 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(published).to.deep.equal([{ topic: 'sensors/ack', payload: 'ok' }])
+    detachAutoReply(client)
+    unregisterAutoReply('conn-refreshed')
+    unregisterAutoReply('conn-stale')
+  })
 })
 
 describe('autoReplyEngine answers through the client, not through a page', () => {
@@ -251,5 +285,20 @@ describe('autoReplyEngine tells the view about the replies it published', () => 
     } finally {
       unsubscribe()
     }
+  })
+
+  it('cancels a delayed reply when the connection is removed', async () => {
+    registerAutoReply('conn-published', {
+      id: 'conn-published',
+      autoReplies: [rule('delayed-cancel', 80)],
+    } as ConnectionModel)
+    const client = createPublishingClient()
+    attachAutoReply(client, 'conn-published')
+
+    client.emit('message', 'app/A1/AF0201/device/system/post', Buffer.from('{"cmd":"PING"}'), { messageId: 9 })
+    unregisterAutoReply('conn-published')
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    expect(published).to.have.lengthOf(0)
   })
 })

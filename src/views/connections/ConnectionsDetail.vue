@@ -1818,20 +1818,19 @@ export default class ConnectionsDetail extends Vue {
     const messageBuffer$ = new Subject<MessageModel>()
     let isBufferEnabled = false
 
-    // Add close event handler
-    if (client.listenerCount('close') <= 1) {
-      const closeSubscription = fromEvent(client, 'close').subscribe(() => {
-        unsubscribe$.next()
-        unsubscribe$.complete()
-        // These streams are done for this connection: release them (this handler included) so a
-        // reconnect re-binds them instead of finding this view "already attached" - and so the
-        // `listenerCount('close')` guard above still sees a clean client next time.
-        subscriptions.forEach((subscription) => subscription.unsubscribe())
-        this.messageListenerSubscriptions.delete(id)
-        this.onClose()
-      })
-      subscriptions.push(closeSubscription)
-    }
+    // Own this view's close handler. Counting the client's `close` listeners used to decide whether
+    // it was already attached, but the automatic replies and the connect-time subscriptions listen
+    // for `close` too, so the count was already above the threshold and this view never subscribed.
+    // A reconnect then found the old streams still "attached" and did not bind new ones. The previous
+    // subscription list is released above, so this handler is added exactly once per bind.
+    const closeSubscription = fromEvent(client, 'close').subscribe(() => {
+      unsubscribe$.next()
+      unsubscribe$.complete()
+      subscriptions.forEach((subscription) => subscription.unsubscribe())
+      this.messageListenerSubscriptions.delete(id)
+      this.onClose()
+    })
+    subscriptions.push(closeSubscription)
 
     // Process message stream
     // (The automatic replies are NOT wired here any more: they belong to the client, see
@@ -2570,6 +2569,10 @@ export default class ConnectionsDetail extends Vue {
     this.$router.push({ path: `/recent_connections/${connectionId}` })
   }
 
+  private onWindowResize = () => {
+    this.setMessageListHeight()
+  }
+
   private created() {
     this.getConnectionValue(this.curConnectionId)
     ipcRenderer.on('searchContent', () => {
@@ -2584,9 +2587,7 @@ export default class ConnectionsDetail extends Vue {
       this.renderMessage(connectionId, message, 'publish')
     })
     this.setMessageListHeight()
-    window.addEventListener('resize', () => {
-      this.setMessageListHeight()
-    })
+    window.addEventListener('resize', this.onWindowResize)
     // Timed message wiring is done in syncTimedMessagesBinding() (called from
     // getConnectionValue in created()), because the reused view can switch connections
     // without being destroyed and the binding must follow the connection id.
@@ -2609,9 +2610,7 @@ export default class ConnectionsDetail extends Vue {
     }
     this.unbindAutomationBinding()
     this.forceStopToReconnect()
-    window.removeEventListener('resize', () => {
-      this.setMessageListHeight()
-    })
+    window.removeEventListener('resize', this.onWindowResize)
   }
 
   get activeSearchTerms() {

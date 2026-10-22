@@ -66,6 +66,17 @@ describe('autoReply utility', () => {
     expect(JSON.parse(replies[0].payload)).to.deep.equal({ a: 1, code: 0, msg: null })
   })
 
+  it('answers a non-JSON payload with a fixed reply that does not read the message', () => {
+    const rule = createRule({
+      matchCondition: '',
+      reply: { topic: 'out/raw', mode: 'fixed', payload: 'ack', qos: 0, retain: false, delayMs: 0 },
+    })
+    const replies = planAutoReplies([rule], { ...createContext('not json'), topic: 'app/A1/AF0201/device/system/post' })
+    expect(replies).to.have.lengthOf(1)
+    expect(replies[0].error).to.equal(undefined)
+    expect(replies[0].payload).to.equal('ack')
+  })
+
   it('reports a broken condition instead of answering', () => {
     const replies = planAutoReplies([createRule({ matchCondition: 'cmd ==' })], createContext('{"cmd":"x"}'))
     expect(replies).to.have.lengthOf(1)
