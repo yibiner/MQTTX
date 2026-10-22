@@ -3,9 +3,7 @@ import { planAutoReplies, renderReplyTemplate } from '@/utils/autoReply'
 import {
   normalizeVariableMap,
   readConnectionSession,
-  readPayloadCounter,
   resetAllVariableStates,
-  resetPayloadCounters,
   startConnectionSession,
 } from '@/utils/payloadVariables'
 
@@ -365,47 +363,6 @@ describe('auto reply match topic templates', () => {
   })
 })
 
-describe('auto reply counters', () => {
-  const counterRule = (): AutoReplyRuleModel =>
-    createRule({
-      matchCondition: '',
-      reply: {
-        topic: 'out/${count:1}',
-        mode: 'fixed',
-        payload: '{"n":${count:1}}',
-        qos: 0,
-        retain: false,
-        delayMs: 0,
-      },
-    })
-
-  beforeEach(() => {
-    resetPayloadCounters()
-  })
-
-  after(() => {
-    resetPayloadCounters()
-  })
-
-  it('advances a counter used by a reply exactly once per reply', () => {
-    const [first] = planAutoReplies([counterRule()], createContext('{"cmd":"x"}'))
-    expect(first.error).to.equal(undefined)
-    expect(first.topic).to.equal('out/1')
-    expect(JSON.parse(first.payload)).to.deep.equal({ n: 1 })
-    expect(readPayloadCounter('count')).to.equal(2)
-
-    const [second] = planAutoReplies([counterRule()], createContext('{"cmd":"x"}'))
-    expect(second.topic).to.equal('out/2')
-  })
-
-  it('does not advance a counter when the caller only previews the reply', () => {
-    const [reply] = planAutoReplies([counterRule()], { ...createContext('{"cmd":"x"}'), commitCounters: false })
-
-    expect(reply.topic).to.equal('out/1')
-    expect(readPayloadCounter('count')).to.equal(undefined)
-  })
-})
-
 describe('auto reply to a payload that is not JSON', () => {
   it('renders a message field as empty instead of failing the rule', () => {
     const rule = createRule({
@@ -480,12 +437,10 @@ describe('auto reply templates read the message through a user variable', () => 
 describe('auto reply static templates', () => {
   beforeEach(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
   })
 
   after(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
   })
 
   it('advances the session message counter although no resolver is built', () => {

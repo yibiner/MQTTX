@@ -885,7 +885,7 @@ export default class Settings extends Vue {
     this.actionToggleSaveHistoryMessage({ saveHistoryMessage: value })
   }
 
-  /** Clears the stored values of auto-increment payload counters (e.g. ${count:3}). */
+  /** Clears the stored current values of every stateful variable. */
   private handleResetPayloadVariables() {
     this.$confirm(this.$t('settings.resetPayloadVariablesConfirm') as string, {
       title: this.$t('settings.resetPayloadVariables') as string,

@@ -43,9 +43,9 @@ export interface AutoReplyContext {
    */
   parsed?: { value?: any; error?: string }
   /**
-   * Whether counters used by a reply template are persisted (`${count:1}` advances). The engine
-   * leaves this on; the automation dialog preview passes `false`, so looking at a preview never
-   * changes what the next real reply sends.
+   * Whether stateful variables used by a reply template advance. The engine leaves this on; the
+   * automation dialog preview passes `false`, so looking at a preview never changes what the next
+   * real reply sends.
    */
   commitCounters?: boolean
 }
@@ -112,7 +112,7 @@ const createReplyResolver = (scope: AutoReplyTemplateScope, commitCounters = tru
 
 /**
  * Renders a topic/payload template of a reply: the variables of the connection (`${clientId}`,
- * `${count:1}`, ...), the fields of the received message (`${msg.msgId}`, `${msg.data.list[0].id}`)
+ * `${wf116wight}`, ...), the fields of the received message (`${msg.msgId}`, `${msg.data.list[0].id}`)
  * and the received topic (`${topic}`), in one pass.
  */
 export const renderReplyTemplate = (template: string, scope: AutoReplyTemplateScope = {}): string => {
@@ -125,7 +125,7 @@ export const renderReplyTemplate = (template: string, scope: AutoReplyTemplateSc
   }
   const resolver = createReplyResolver(scope)
   const rendered = resolver.resolve(template)
-  // Standalone callers expect the counters they use to advance, like `${count:1}` anywhere else.
+  // Standalone callers expect the stateful variables they use to advance, like anywhere else.
   resolver.commit()
   return rendered
 }

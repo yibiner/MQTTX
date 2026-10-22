@@ -160,7 +160,7 @@ export default class AutomationDialog extends Vue {
       topic,
       payload: this.previewPayload,
       ...connectionVariableOptions(this.record),
-      // A preview only shows what would be sent: it must not advance `${count:1}`.
+      // A preview only shows what would be sent: it must not advance a stateful variable.
       commitCounters: false,
     })
     if (!replies.length) {

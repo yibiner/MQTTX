@@ -17,16 +17,13 @@ import {
   onConnectionVariablesChanged,
   peekDefinitionValue,
   readConnectionSession,
-  readPayloadCounter,
   readVariableState,
   resetAllVariableStates,
   resetLifecycleState,
-  resetPayloadCounters,
   resetVariable,
   resolvePayloadVariables,
   setVariableValue,
   startConnectionSession,
-  writePayloadCounter,
 } from '@/utils/payloadVariables'
 import type { ResolvedVariableDefinition } from '@/utils/payloadVariables'
 
@@ -69,7 +66,6 @@ const resolve = (
 describe('stateful variables: sequence', () => {
   beforeEach(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
     resetLifecycleState()
   })
 
@@ -168,7 +164,6 @@ describe('stateful variables: sequence', () => {
 describe('stateful variables: scopes', () => {
   beforeEach(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
     resetLifecycleState()
   })
 
@@ -239,7 +234,6 @@ describe('stateful variables: scopes', () => {
 describe('stateful variables: provider integration', () => {
   beforeEach(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
     resetLifecycleState()
   })
 
@@ -300,7 +294,6 @@ describe('stateful variables: provider integration', () => {
 describe('stateful variables: random kinds', () => {
   beforeEach(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
     resetLifecycleState()
   })
 
@@ -388,7 +381,6 @@ describe('stateful variables: random kinds', () => {
 describe('stateful variables: session clock', () => {
   beforeEach(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
     resetLifecycleState()
   })
 
@@ -500,7 +492,6 @@ describe('stateful variables: session clock', () => {
 describe('stateful variables: formatting', () => {
   beforeEach(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
   })
 
   it('zero-pads and rounds a value', () => {
@@ -533,7 +524,6 @@ describe('stateful variables: formatting', () => {
 describe('stateful variables: captured and automatic replies', () => {
   beforeEach(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
     resetLifecycleState()
   })
 
@@ -640,57 +630,16 @@ describe('stateful variables: captured and automatic replies', () => {
     expect(reply.topic).to.equal('out/10')
     expect(peekDefinitionValue(definitions.seq)).to.equal(10)
   })
-
-  it('advances a legacy ${count} once per reply', () => {
-    const rule = fixedRule({
-      reply: {
-        topic: 'out/${count:1}',
-        mode: 'fixed',
-        payload: '{"n":${count:1}}',
-        qos: 0,
-        retain: false,
-        delayMs: 0,
-      },
-    })
-
-    const [first] = planAutoReplies([rule], { topic: 'in/device', payload: '{}' })
-    expect(first.topic).to.equal('out/1')
-    expect(first.payload).to.equal('{"n":1}')
-    expect(readPayloadCounter('count')).to.equal(2)
-
-    const [second] = planAutoReplies([rule], { topic: 'in/device', payload: '{}' })
-    expect(second.topic).to.equal('out/2')
-  })
-
-  it('does not consume a counter of a reply that cannot be built', () => {
-    writePayloadCounter('count', 5)
-    const broken = fixedRule({
-      reply: {
-        topic: 'out/${count:1}/${nope}',
-        mode: 'fixed',
-        payload: '{}',
-        qos: 0,
-        retain: false,
-        delayMs: 0,
-      },
-    })
-
-    const [reply] = planAutoReplies([broken], { topic: 'in/device', payload: '{}' })
-    expect(reply.error).to.contain('unresolved variables')
-    expect(readPayloadCounter('count')).to.equal(5)
-  })
 })
 
 describe('variable reset triggers: app start and automatic reconnect', () => {
   beforeEach(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
     resetLifecycleState()
   })
 
   after(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
     resetLifecycleState()
   })
 
@@ -759,13 +708,11 @@ describe('variable reset triggers: app start and automatic reconnect', () => {
 describe('stateful variable regressions reported by the review', () => {
   beforeEach(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
     resetLifecycleState()
   })
 
   after(() => {
     resetAllVariableStates()
-    resetPayloadCounters()
     resetLifecycleState()
   })
 

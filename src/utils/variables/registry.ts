@@ -1,7 +1,6 @@
 import { PAYLOAD_VARIABLE_NAME_PATTERN } from './placeholders'
 import { builtinVariablesProvider, BUILTIN_VARIABLE_NAMES } from './providers/builtin'
 import { definitionsVariablesProvider } from './providers/definitions'
-import { inlineVariablesProvider } from './providers/inline'
 import { messageVariablesProvider } from './providers/message'
 import { sessionVariablesProvider } from './providers/session'
 import { userVariablesProvider } from './providers/user'
@@ -16,8 +15,7 @@ import type { VariableGuideEntry, VariableProvider } from './types'
  * reporting keep working for it.
  *
  * Order (see `types.ts`): built-in -> context (message/topic, session clocks) -> user-defined
- * variables (definitions, then the legacy string map) -> registered -> inline forms. The inline
- * forms are not part of this list; the resolver always appends them last.
+ * variables (definitions, then the legacy string map) -> registered extensions.
  */
 const providers: VariableProvider[] = [
   builtinVariablesProvider,
@@ -82,7 +80,7 @@ export const isBuiltinPayloadVariable = isReservedVariableName
  * connection fields, which are not a provider of this chain.
  */
 export const getProviderVariableGuide = (): VariableGuideEntry[] =>
-  [...providers, inlineVariablesProvider].flatMap((provider) => [...(provider.guide ?? [])])
+  providers.flatMap((provider) => [...(provider.guide ?? [])])
 
 /** A reserved name of the built-in variables, for the editors that talk about "内置变量". */
 export const builtinVariableNames = (): readonly string[] => BUILTIN_VARIABLE_NAMES

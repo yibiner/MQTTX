@@ -393,9 +393,11 @@ export default class VariableEditor extends Vue {
     margin-top: 6px;
     padding: 4px 6px;
     border-radius: 4px;
-    background: var(--color-bg-card-normal);
+    // Same light green the rest of the app uses for a highlighted/editable surface
+    // (`--color-light-green`), instead of the blue-grey card background.
+    background: var(--color-light-green);
     .variable-set-label {
-      color: var(--color-text-light);
+      color: var(--color-main-green);
       white-space: nowrap;
     }
     .variable-set-input {
@@ -405,7 +407,8 @@ export default class VariableEditor extends Vue {
       color: var(--color-main-green);
     }
     .variable-set-cancel {
-      color: var(--color-text-default);
+      color: var(--color-main-green);
+      opacity: 0.75;
     }
   }
   .variable-definition {

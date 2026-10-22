@@ -12,7 +12,6 @@
  *   2. context variables (`${msg.<path>}`, `${topic}`, `${connectedAt}`, `${sessionSentCount}`)
  *   3. user-defined variables (client variables, global variables, connection fields)
  *   4. registered extensions                                -- see `registerVariableProvider`
- *   5. inline forms (`${count:1}`, `${rssi:-30..-60}`)      -- legacy compatibility fallback
  *
  * A registered provider that is `reserved` is asked right after the built-in variables instead of
  * after the user-defined ones, and its names cannot be used for a user variable. See
@@ -43,12 +42,10 @@ export interface VariableStateSink {
   read(definition: ResolvedVariableDefinition): string | number | undefined
 }
 
-/** One placeholder, i.e. the `name` and the optional `config` of `${name:config}`. */
+/** One placeholder: the identifier of `${name}`. */
 export interface VariableRequest {
   /** the identifier, e.g. `ts`, `msg.data.id`, `clientId` */
   readonly name: string
-  /** the part after `:`, e.g. `3` in `${count:3}` or `-30..-60` in `${rssi:-30..-60}` */
-  readonly config?: string
 }
 
 /** Everything one message can tell the providers; shared by all placeholders of that message. */
@@ -70,22 +67,12 @@ export interface VariableContext {
   readonly messageContext?: boolean
   /** topic the text belongs to or was received on, reachable as `topic` */
   readonly topic?: string
-  /** counter persistence; only the inline form uses it */
-  readonly counters: VariableCounterSink
   /** the stateful user variables of this message, by name */
   readonly definitions?: Readonly<Record<string, ResolvedVariableDefinition>>
   /** reads/advances the runtime state of the stateful definitions */
   readonly variableState?: VariableStateSink
   /** session clock and sent-message counter, when the resolver knows the connection */
   readonly session?: VariableSession
-}
-
-/** Reads and stages counter values; the resolver commits the staged ones after a successful text. */
-export interface VariableCounterSink {
-  /** the stored value of the counter, or undefined when it was never used */
-  read(name: string): number | undefined
-  /** the value the next send must use; committed by the resolver, not written here */
-  stage(name: string, nextValue: number): void
 }
 
 /**

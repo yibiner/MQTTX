@@ -10,8 +10,7 @@
  *   variables/providers/*.ts      the sources: built-in, message/topic, user variables, inline forms
  *   variables/resolver.ts         the one resolution pipeline (recursion, counters, unresolved)
  *   variables/registry.ts         the provider chain, name validation and the variable guide
- *   variables/counters.ts         persistence of `${count:3}`
- *
+ * *
  * `connectionVariables.ts` builds the scopes of one connection from the model (client variables ->
  * global variables -> connection fields). Every feature of the app should use `connectionVariableMap`
  * instead of spelling that order out again.
@@ -45,25 +44,6 @@ export {
 } from './variables/placeholders'
 export type { Placeholder } from './variables/placeholders'
 export {
-  flushPayloadCounters,
-  readPayloadCounter,
-  resetPayloadCounters,
-  writePayloadCounter,
-} from './variables/counters'
-export {
-  applyLegacyInlineMigration,
-  migrateLegacyInlineVariables,
-  scanLegacyInlineVariables,
-} from './variables/migration'
-export type {
-  LegacyInlineConflict,
-  LegacyInlineDefinition,
-  LegacyMigrationApplyDependencies,
-  LegacyMigrationPlan,
-  LegacyMigrationResult,
-  LegacyMigrationSources,
-} from './variables/migration'
-export {
   builtinVariableNames,
   getReservedVariableNames,
   getVariableProviders,
@@ -80,7 +60,6 @@ export type {
   PayloadVariableResolver,
   PayloadVariableResult,
   VariableContext,
-  VariableCounterSink,
   VariableGuideEntry,
   VariableGuideGroup,
   VariableProvider,
@@ -100,7 +79,6 @@ export {
 export type { ConnectionVariableSet, ConnectionVariableSource } from './connectionVariables'
 export {
   applyAutoReplyVariableActions,
-  adoptLegacyCounterState,
   applyConnectionVariableTrigger,
   applyVariableResetTrigger,
   clearConnectionSession,

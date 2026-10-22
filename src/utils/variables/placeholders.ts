@@ -30,8 +30,6 @@ export interface Placeholder {
    * for an expression, its trimmed body (`base * 2`).
    */
   name: string
-  /** the part after ":", e.g. "3" in ${count:3} or "-30..-60" in ${rssi:-30..-60} */
-  config?: string
   /**
    * The arithmetic expression to evaluate when no provider defines `name`. Set for every body that
    * contains an operator, because `${msg.sensor-1}` is a field name while `${ts-34000}` is
@@ -52,29 +50,22 @@ export const scanPlaceholders = (text: string): Placeholder[] => {
     if (end === -1) {
       break
     }
-    const raw = text.slice(start + VARIABLE_TOKEN_START.length, end)
-    const separatorIndex = raw.indexOf(':')
-    if (separatorIndex !== -1) {
-      // ${name:config} - the config is part of the inline fallback, so the name stays a plain name.
-      const name = raw.slice(0, separatorIndex).trim()
-      const config = raw.slice(separatorIndex + 1).trim()
-      if (PAYLOAD_VARIABLE_NAME_PATTERN.test(name)) {
-        found.push({ start, end, name, config: config || undefined })
-      }
-    } else {
-      const body = raw.trim()
-      if (PAYLOAD_VARIABLE_NAME_PATTERN.test(body)) {
-        found.push({ start, end, name: body })
-      } else if (NAMESPACED_NAME_PATTERN.test(body)) {
-        // A provider owns it (msg.<path>, env.<name>, ...); a hyphenated path is looked up exactly
-        // first, so `${msg.sensor-1}` keeps meaning "the field named sensor-1".
-        found.push({ start, end, name: body, expression: containsOperator(body) ? body : undefined })
-      } else if (body && containsOperator(body)) {
-        found.push({ start, end, name: body, expression: body })
-      }
-      // Anything else (a `${` in ordinary text, `${name:...}` without a valid name) is not a
-      // variable and is left alone.
+    const body = text.slice(start + VARIABLE_TOKEN_START.length, end).trim()
+    // An old template may still carry the removed inline syntax (`${count:1}`, `${rssi:-30..-60}`).
+    // The config after ":" has no meaning any more, but the name is still a normal variable: with a
+    // definition of that name (the migration created one) the template keeps working unchanged.
+    const separator = body.indexOf(':')
+    const candidate = separator === -1 ? body : body.slice(0, separator).trim()
+    if (PAYLOAD_VARIABLE_NAME_PATTERN.test(candidate)) {
+      found.push({ start, end, name: candidate })
+    } else if (separator === -1 && NAMESPACED_NAME_PATTERN.test(body)) {
+      // A provider owns it (msg.<path>, env.<name>, ...); a hyphenated path is looked up exactly
+      // first, so `${msg.sensor-1}` keeps meaning "the field named sensor-1".
+      found.push({ start, end, name: body, expression: containsOperator(body) ? body : undefined })
+    } else if (separator === -1 && body && containsOperator(body)) {
+      found.push({ start, end, name: body, expression: body })
     }
+    // Anything else (a `${` in ordinary text) is not a variable and is left alone.
     index = end + VARIABLE_TOKEN_END.length
   }
   return found

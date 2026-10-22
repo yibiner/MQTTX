@@ -26,16 +26,6 @@ export {
   scanPlaceholders,
 } from './placeholders'
 export type { Placeholder } from './placeholders'
-export { flushPayloadCounters, readPayloadCounter, resetPayloadCounters, writePayloadCounter } from './counters'
-export { applyLegacyInlineMigration, migrateLegacyInlineVariables, scanLegacyInlineVariables } from './migration'
-export type {
-  LegacyInlineConflict,
-  LegacyInlineDefinition,
-  LegacyMigrationApplyDependencies,
-  LegacyMigrationPlan,
-  LegacyMigrationResult,
-  LegacyMigrationSources,
-} from './migration'
 export {
   applyPayloadVariables,
   collectUnresolvedVariables,
@@ -75,7 +65,6 @@ export type {
   VariableScope,
 } from './definitions'
 export {
-  adoptLegacyCounterState,
   applyConnectionVariableTrigger,
   applyVariableResetTrigger,
   clearConnectionSession,
@@ -117,7 +106,6 @@ export { APP_STARTED_AT, sessionVariablesProvider } from './providers/session'
 export { builtinVariablesProvider } from './providers/builtin'
 export { messageVariablesProvider } from './providers/message'
 export { userVariablesProvider } from './providers/user'
-export { inlineVariablesProvider } from './providers/inline'
 
 /**
  * Replaces every known placeholder in the payload with its current value. Kept for compatibility

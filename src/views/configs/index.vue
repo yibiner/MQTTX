@@ -11,17 +11,6 @@
     </div>
     <div class="configs-view-header">
       <VariablesHelp v-if="activeTab === 'variable'" class="configs-view-help" />
-      <el-button
-        v-if="activeTab === 'variable'"
-        class="variable-migrate-btn"
-        type="primary"
-        size="mini"
-        plain
-        icon="el-icon-refresh"
-        @click="handleMigrateLegacy"
-      >
-        {{ $t('configs.variableMigrateLegacy') }}
-      </el-button>
       <el-button class="profile-add-btn" type="primary" size="mini" icon="el-icon-plus" @click="handleAdd">
         {{ addBtnText }}
       </el-button>
@@ -398,8 +387,6 @@ import {
   validateVariableName,
 } from '@/utils/payloadVariables'
 import type { ResolvedVariableDefinition } from '@/utils/payloadVariables'
-import { applyLegacyInlineMigration, scanLegacyInlineVariables } from '@/utils/variables/migration'
-import { MessageBox } from 'element-ui'
 import isJsonPayload from '@/utils/payloadLanguage'
 import validFormatJson from '@/utils/validFormatJson'
 
@@ -751,48 +738,6 @@ export default class Configs extends Vue {
   }
 
   /**
-   * Moves the legacy inline forms (`${count:3}`, `${rssi:-30..-90}`) of the global variables into
-   * variable definitions. The scanner lives in the variable module; the templates are left
-   * untouched, the new definition simply takes precedence over the inline fallback.
-   */
-  private async handleMigrateLegacy() {
-    try {
-      const plan = await scanLegacyInlineVariables()
-      if (!plan.scanned || (!plan.definitions.length && !plan.conflicts.length)) {
-        this.$message.info(this.$t('configs.variableMigrateNone') as string)
-        return
-      }
-      const summary = this.$t('configs.variableMigrateSummary', {
-        scanned: plan.scanned,
-        created: plan.definitions.length,
-        conflicts: plan.conflicts.length,
-      }) as string
-      const conflicts = plan.conflicts.map((item) => item.name).join(', ')
-      const message = conflicts
-        ? `${summary}\n${this.$t('configs.variableMigrateConflicts', { names: conflicts })}`
-        : summary
-      try {
-        await this.$confirm(message, this.$t('configs.variableMigrateLegacy') as string, { type: 'warning' })
-      } catch (error) {
-        return
-      }
-      const result = applyLegacyInlineMigration(plan)
-      await MessageBox.alert(
-        this.$t('configs.variableMigrateResult', {
-          created: result.created.length,
-          migrated: result.migratedState.length,
-          skipped: result.skipped.length,
-        }) as string,
-        this.$t('configs.variableMigrateLegacy') as string,
-        { type: 'success' },
-      )
-      this.loadData()
-    } catch (error) {
-      this.$message.error(this.$t('configs.variableMigrateFailed', { error: String(error) }) as string)
-    }
-  }
-
-  /**
    * The preset editor lives in a dialog, which has no size until it is done opening, so lay the
    * editor out once the dialog is fully visible. Later resizes are handled by the editor itself.
    */
@@ -1009,9 +954,6 @@ export default class Configs extends Vue {
   .configs-view-help {
     margin-right: 12px;
     font-size: 12px;
-  }
-  .variable-migrate-btn {
-    margin-right: 8px;
   }
   .variable-kind {
     display: inline-block;

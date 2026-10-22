@@ -1,8 +1,6 @@
 import { evaluateArithmeticExpression, formatExpressionNumber } from './expression'
 import { Placeholder, scanPlaceholders, VARIABLE_TOKEN_END } from './placeholders'
-import { readPayloadCounter, writePayloadCounter } from './counters'
 import { getVariableProviders } from './registry'
-import { inlineVariablesProvider } from './providers/inline'
 import { APP_STARTED_AT } from './providers/session'
 import { computeDefinitionValue, readConnectionSession, writeSessionSentCount, writeVariableState } from './state'
 import type { ResolvedVariableDefinition } from './definitions'
@@ -11,7 +9,6 @@ import type {
   PayloadVariableResolver,
   PayloadVariableResult,
   VariableContext,
-  VariableCounterSink,
   VariableProvider,
   VariableRequest,
   VariableSession,
@@ -42,8 +39,6 @@ interface ResolveContext {
   session?: VariableSession
   /** resolved value per name, so every occurrence of a name stays consistent */
   values: Map<string, string | number>
-  /** counters to persist once the text was built: name -> next value */
-  usedCounters: Map<string, number>
   /** runtime values of stateful variables to persist once the text was built */
   stagedStates: Map<string, { value: number | string; counter?: number }>
 }
@@ -75,7 +70,6 @@ export const createPayloadVariableResolver = (options: PayloadVariableOptions = 
     definitions: options.definitions ?? {},
     connectionId: options.connectionId,
     values: new Map(),
-    usedCounters: new Map(),
     stagedStates: new Map(),
   }
   if (options.connectionId) {
@@ -86,10 +80,6 @@ export const createPayloadVariableResolver = (options: PayloadVariableOptions = 
       // The message being built is the next one of the session.
       sentCount: (stored?.sentCount ?? 0) + 1,
     }
-  }
-  const counterSink: VariableCounterSink = {
-    read: readPayloadCounter,
-    stage: (name: string, nextValue: number) => context.usedCounters.set(name, nextValue),
   }
   const stateSink: VariableStateSink = {
     read: (definition) => {
@@ -118,18 +108,11 @@ export const createPayloadVariableResolver = (options: PayloadVariableOptions = 
     message: context.message,
     messageContext: options.messageContext ?? options.message !== undefined,
     topic: context.topic,
-    counters: counterSink,
     definitions: context.definitions,
     variableState: stateSink,
     session: context.session,
   }
-  // The inline forms are always last: they are a fallback when nothing defines a name, and a value
-  // an extension provides must never be shadowed by `${name:...}` of a text.
-  const providers: VariableProvider[] = [
-    ...getVariableProviders(),
-    ...(options.providers ?? []),
-    inlineVariablesProvider,
-  ]
+  const providers: VariableProvider[] = [...getVariableProviders(), ...(options.providers ?? [])]
 
   const unresolved = new Set<string>()
 
@@ -226,7 +209,7 @@ export const createPayloadVariableResolver = (options: PayloadVariableOptions = 
       }
       return resolveExpression(placeholder, stack)
     }
-    const value = resolveRequest({ name: placeholder.name, config: placeholder.config }, stack)
+    const value = resolveRequest({ name: placeholder.name }, stack)
     if (value === undefined) {
       unresolved.add(placeholder.name)
     }
@@ -272,9 +255,7 @@ export const createPayloadVariableResolver = (options: PayloadVariableOptions = 
         return
       }
       // Persist everything the resolved texts advanced, only once they were built successfully:
-      // legacy counters, the stateful variables and the session message counter.
-      context.usedCounters.forEach((value, name) => writePayloadCounter(name, value))
-      context.usedCounters.clear()
+      // the stateful variables and the session message counter.
       context.stagedStates.forEach((state, stateKey) =>
         writeVariableState(stateKey, state.value, { counter: state.counter }),
       )
@@ -301,8 +282,8 @@ export const resolvePayloadVariables = (text: string, options: PayloadVariableOp
 /**
  * Replaces every known placeholder in the payload with its current value.
  *
- * All variables of one payload share the same `now`, and a counter that appears several times
- * in one message is incremented only once per send, so every occurrence stays consistent.
+ * All variables of one payload share the same `now`, and a stateful variable that appears several
+ * times in one message advances only once per send, so every occurrence stays consistent.
  * Unknown placeholders are left untouched.
  *
  * @deprecated use `resolvePayloadVariables` when the caller also needs the list of placeholders

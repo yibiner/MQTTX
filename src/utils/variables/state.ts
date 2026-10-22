@@ -1,5 +1,4 @@
 import { v4 as uuidv4 } from 'uuid'
-import { deletePayloadCounter, readPayloadCounter } from './counters'
 import { connectionStateKey, globalStateKey, sessionStateKey } from './definitions'
 import type { ResolvedVariableDefinition } from './definitions'
 
@@ -666,20 +665,6 @@ export const applyConnectionVariableTrigger = (
   // Global definitions: their value is shared, so the reset is applied once and reported too.
   const globalReset = applyVariableResetTrigger(trigger, targets.global, options)
   return Array.from(new Set([...reset, ...globalReset]))
-}
-
-/** Copies a legacy `${count:3}` counter value into the state key of a migrated definition. */
-export const adoptLegacyCounterState = (legacyName: string, definition: ResolvedVariableDefinition): boolean => {
-  if (!definition.stateKey) {
-    return false
-  }
-  const value = readPayloadCounter(legacyName)
-  if (value === undefined) {
-    return false
-  }
-  writeVariableState(definition.stateKey, value)
-  deletePayloadCounter(legacyName)
-  return true
 }
 
 export { connectionStateKey, globalStateKey, sessionStateKey }

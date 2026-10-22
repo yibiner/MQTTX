@@ -21,7 +21,6 @@ import {
   normalizeVariableMap,
   readVariableState,
   resetAllVariableStates,
-  scanLegacyInlineVariables,
   writeVariableState,
 } from '@/utils/payloadVariables'
 import YAML from 'js-yaml'
@@ -263,45 +262,6 @@ describe('Desktop connection backup (native SQLite)', () => {
     configureServices(target)
     const restored = await services.connectionService.get('legacyAndStateful')
     expect(restored.variables).to.deep.equal(variables)
-  })
-
-  it('scans the legacy inline forms of the stored connections for the one-click migration', async () => {
-    await seed(source, {
-      ...connection('scanned'),
-      variables: { device: 'PLC-${count:1}' },
-      autoSubscriptions: [
-        {
-          id: 'group',
-          delayMs: 0,
-          merge: false,
-          enabled: true,
-          topics: [{ topic: 't/${rssi:-30..-60}', qos: 0 }],
-        },
-      ],
-      autoReplies: [
-        {
-          id: 'rule',
-          name: 'reply',
-          enabled: true,
-          matchTopic: 'in/#',
-          matchCondition: '',
-          reply: {
-            topic: 'out/${count:1}',
-            mode: 'fixed',
-            payload: '{}',
-            qos: 0,
-            retain: false,
-            delayMs: 0,
-          },
-        },
-      ],
-    })
-    configureServices(source)
-
-    const plan = await scanLegacyInlineVariables()
-    expect(plan.definitions.map((definition) => definition.name)).to.have.members(['count', 'rssi'])
-    expect(plan.conflicts).to.deep.equal([])
-    expect(plan.scanned).to.be.at.least(4)
   })
 
   it('exports a database containing only an empty group', async () => {

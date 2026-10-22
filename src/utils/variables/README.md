@@ -4,7 +4,7 @@ Every place a message is built from a template - the topic and payload of a publ
 message, an automatic subscription topic, an automatic reply - goes through one variable system:
 
 ```
-text ──scan──▶ ${name} | ${name:config} | ${body with an operator}
+text ──scan──▶ ${name} | ${body with an operator}
                     │
                     ▼
         provider chain (closest definition first)
@@ -14,7 +14,6 @@ text ──scan──▶ ${name} | ${name:config} | ${body with an operator}
           3. variable definitions        definitions constants + stateful variables (see below)
           4. legacy string map           user        only for callers that pass `variables`
           5. registered extensions       custom      see "Extending"; a `reserved` one joins row 1
-          6. inline forms                inline      ${count:1} · ${rssi:-30..-60} (compatibility)
                     │
                     ▼
       unresolved names (nothing above answered)
@@ -32,23 +31,18 @@ text ──scan──▶ ${name} | ${name:config} | ${body with an operator}
 | `variables/providers/user.ts`        | the legacy merged string map (kept for compatibility)                                                |
 | `variables/providers/definitions.ts` | constants and stateful variable definitions                                                          |
 | `variables/providers/session.ts`     | `${connectedAt}`, `${connectedAtSec}`, `${appStartedAt}`, `${sessionSentCount}`                      |
-| `variables/providers/inline.ts`      | the legacy counters / random ranges                                                                  |
 | `variables/resolver.ts`              | the one pipeline: recursion guard, arithmetic fallback, JSON quotes, unresolved list                 |
 | `variables/registry.ts`              | the chain, reserved names, name validation, the variable guide                                       |
-| `variables/counters.ts`              | persistence of the legacy `${count:3}`                                                               |
 | `variables/definitions.ts`           | the definition model + normalization of the stored forms                                             |
 | `variables/state.ts`                 | the per-scope runtime state, bounds, formatting, reset triggers                                      |
 | `variables/lifecycle.ts`             | connect / disconnect / app-start / manual reset wiring                                               |
-| `variables/migration.ts`             | one-click migration of the legacy inline forms                                                       |
 | `../connectionVariables.ts`          | scope assembly of one connection + connection field variables                                        |
 
 ## Syntax
 
 | form                     | meaning                                                                           |
 | ------------------------ | --------------------------------------------------------------------------------- |
-| `${name}`                | a variable (built-in, message path, user variable or inline form)                 |
-| `${name:3}`              | **legacy** counter: first send uses 3, then +1 (compatibility only, migrate it)   |
-| `${name:-30..-60}`       | **legacy** random integer from the range, drawn fresh on every send               |
+| `${name}`                | a variable (built-in, message path or user-defined definition)                    |
 | `${ts-34000}`            | arithmetic: `+ - * / %`, parentheses, unary minus; every operand must be a number |
 | `${msg.ts - 34000}`      | arithmetic on a field of the received message                                     |
 | `${msg.sensor-1}`        | the field **named** `sensor-1` (a path without whitespace is a field path)        |
@@ -93,12 +87,9 @@ Formatting: `format.pad` zero-pads (`000123`) and `format.precision` fixes the d
 in expressions turns the value into a JavaScript number, so a 64-bit integer field loses precision
 only when used in an expression, not when injected as text.
 
-### Legacy inline forms
-
-`${count:3}` and `${rssi:-30..-60}` keep working, but they are no longer the way to define a
-variable: they cannot express scope, step, bounds or reset. The help dialog marks them as
-compatibility syntax, and "迁移旧内联写法" (global variables tab) scans the known templates, creates
-the matching variable definitions (migrating the persisted counter value) and is idempotent.
+An old template may still contain `${count:1}` or `${rssi:-30..-60}`: the part after `:` has no
+meaning any more, but the name is read as a normal variable, so a template keeps working once a
+definition of that name exists. There is no implicit counter/random syntax any more.
 
 ## Adding a variable source
 
@@ -114,8 +105,8 @@ const environmentVariables: VariableProvider = {
   // (`${env.MY-VAR}`) be tried as a name before it is read as arithmetic. Declare `names` for exact
   // names - a reserved provider's names cannot be used as a user variable.
   prefixes: ['env'],
-  // The guide dialog has four fixed group headings (builtin/context/connection/inline); a provider
-  // has to file under one of them.
+  // The guide dialog has three fixed group headings (builtin/context/connection); a provider has
+  // to file under one of them.
   guide: [{ name: '${env.NAME}', group: 'context' }],
   resolve: (request) => {
     if (!request.name.startsWith('env.')) {
@@ -154,8 +145,7 @@ pre-pass did) instead of making the rule fail. Without a message context (a plai
 `${msg...}` falls through to the user variables, so a variable named `msg` keeps working.
 
 The automation dialog preview passes `commitCounters: false`, so looking at a preview never
-consumes a sequence number of a `${count:1}` reply; the engine commits once, after the reply was
-built successfully.
+advances a stateful variable; the engine commits once, after the reply was built successfully.
 
 ## Notes
 
@@ -167,8 +157,8 @@ built successfully.
 - A namespaced placeholder (`${a.b}`, `${msg.x}`) is a variable, not literal text: in the publish
   path it is reported by the unresolved check instead of being published silently. Send it verbatim
   through the confirmation dialog if that was intended.
-- Counters are committed after a text was built successfully. The write is coalesced (500 ms), so
-  two windows can briefly read the same value - exactness across windows is best-effort.
+- Variable state is committed after a text was built successfully. The write is coalesced (500 ms),
+  so two windows can briefly read the same value - exactness across windows is best-effort.
 
 ## Scope assembly
 
@@ -180,11 +170,11 @@ definitions / plain values of one connection; the scope order is written down on
 3. the fields of the connection (`${clientId}`, `${username}`, `${name}`, `${host}`, `${port}`;
    the password is deliberately not exposed)
 
-An empty value counts as "not defined" and falls through to the next scope / inline form.
+An empty value counts as "not defined" and falls through to the next scope.
 
-## Counters
+## Runtime state
 
-`${count:3}` stages its next value in the resolver and is written to `electron-store` on
+A stateful variable stages its next value in the resolver and writes it to `variable-state.json` on
 `commit()`. A probe (`commitCounters: false`, see `collectUnresolvedVariables`) therefore does not
-advance a counter, and a counter used in both the topic and the payload of one message advances
-once. `resetPayloadCounters()` is the "Reset payload variables" action in the settings.
+advance it, and a variable used in both the topic and the payload of one message advances once.
+"重置可变变量" in the settings is the reset-all action.

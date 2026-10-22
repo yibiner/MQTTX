@@ -34,10 +34,6 @@ export const messageVariablesProvider: VariableProvider = {
     { name: '${topic}', group: 'context' },
   ],
   resolve: (request, context) => {
-    // `${msg:1}` / `${topic:1}` are inline forms (a counter named `msg`/`topic`), not message refs.
-    if (request.config !== undefined) {
-      return undefined
-    }
     if (request.name === 'topic') {
       // No topic in this context (a plain publish): let a user variable named `topic` answer.
       return context.topic

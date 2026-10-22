@@ -36,9 +36,6 @@
         <p>{{ $t('configs.variablesHelpReset') }}</p>
         <h4>{{ $t('configs.variablesHelpFormatTitle') }}</h4>
         <p>{{ $t('configs.variablesHelpFormat') }}</p>
-        <h4>{{ $t('configs.variablesHelpLegacyTitle') }}</h4>
-        <p>{{ $t('configs.variablesHelpLegacy') }}</p>
-        <p class="variables-help-note">{{ $t('configs.variablesHelpMigration') }}</p>
         <h4>{{ $t('configs.variablesHelpRulesTitle') }}</h4>
         <p>{{ $t('configs.variablesHelpRules') }}</p>
         <h4>{{ $t('configs.variablesHelpExampleTitle') }}</h4>
@@ -63,7 +60,6 @@ const GUIDE_GROUPS: ReadonlyArray<{ group: VariableGuideGroup; titleKey: string 
   { group: 'builtin', titleKey: 'configs.variablesGuideGroupBuiltin' },
   { group: 'context', titleKey: 'configs.variablesGuideGroupContext' },
   { group: 'connection', titleKey: 'configs.variablesGuideGroupConnection' },
-  { group: 'inline', titleKey: 'configs.variablesGuideGroupInline' },
 ]
 
 interface GuideSection {
@@ -161,14 +157,16 @@ export default class VariablesHelp extends Vue {
 .variables-help-note {
   padding: 6px 8px;
   margin-top: 6px !important;
-  background: var(--color-bg-code);
+  // The app accent for highlighted surfaces (same light green as the rest of the UI).
+  background: var(--color-light-green);
+  color: var(--color-main-green);
   border-radius: 4px;
 }
 
 .variables-guide-entry {
   padding: 1px 6px;
-  color: var(--color-text-default);
-  background-color: var(--color-bg-code);
+  color: var(--color-main-green);
+  background-color: var(--color-light-green);
   border-radius: 3px;
   font-family: Menlo, Monaco, Consolas, monospace;
   font-size: 12px;

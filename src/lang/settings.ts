@@ -136,12 +136,12 @@ export default {
     ko: '변수 값 초기화',
   },
   resetPayloadVariablesDesc: {
-    zh: '有状态变量（如每次递减 20 的水量、自增序号、随机游走、会话变量）会把当前值保存到本地。重置后，下次发送从各自的初始值重新开始；旧写法的内联计数器（如 count:1）也一并重置。时间与 UUID 等无状态内置变量不受影响。',
-    en: 'Stateful variables (a water weight counting down by 20, a sequence, a random walk, a session value) store their current value locally. After a reset, the next send starts again from the initial value; the legacy inline counters (e.g. count:1) are reset as well. Stateless built-ins such as time and uuid are not affected.',
-    tr: 'Durumlu değişkenler (her seferinde 20 azalan su ağırlığı, sıra numarası, rastgele yürüyüş, oturum değeri) geçerli değeri yerel olarak saklar. Sıfırlamadan sonra bir sonraki gönderim başlangıç değerinden başlar; eski satır içi sayaçlar (örn. count:1) da sıfırlanır. Zaman ve uuid gibi durumsuz yerleşikler etkilenmez.',
-    ja: '状態を持つ変数（20 ずつ減る水量、連番、ランダムウォーク、セッション値）は現在値をローカルに保存します。リセットすると次の送信から初期値で再開し、旧インラインカウンター（例: count:1）もリセットされます。時刻や uuid などの状態を持たない組み込み変数は影響を受けません。',
-    hu: 'Az állapotot tartó változók (20-szal csökkenő vízmennyiség, sorszám, véletlen bolyongás, munkamenet-érték) a helyi értéket tárolják. Visszaállítás után a következő küldés a kezdőértéktől indul; a régi beágyazott számlálók (pl. count:1) is visszaállnak. Az idő és az uuid állapot nélküli beépített változók nem érintettek.',
-    ko: '상태가 있는 변수(20씩 줄어드는 물의 양, 순번, 랜덤 워크, 세션 값)는 현재 값을 로컬에 저장합니다. 초기화하면 다음 전송부터 초기값으로 다시 시작하며 기존 인라인 카운터(예: count:1)도 함께 초기화됩니다. 시간과 uuid 같은 상태 없는 내장 변수는 영향을 받지 않습니다.',
+    zh: '有状态变量（如每次递减 20 的水量、自增序号、随机游走、会话变量）会把当前值保存到本地。重置后，下次发送从各自的初始值重新开始；时间与 UUID 等无状态内置变量不受影响。',
+    en: 'Stateful variables (a water weight counting down by 20, a sequence, a random walk, a session value) store their current value locally. After a reset, the next send starts again from the initial value. Stateless built-ins such as time and uuid are not affected.',
+    tr: 'Durumlu değişkenler (her seferinde 20 azalan su ağırlığı, sıra numarası, rastgele yürüyüş, oturum değeri) geçerli değeri yerel olarak saklar. Sıfırlamadan sonra bir sonraki gönderim başlangıç değerinden başlar. Zaman ve uuid gibi durumsuz yerleşikler etkilenmez.',
+    ja: '状態を持つ変数（20 ずつ減る水量、連番、ランダムウォーク、セッション値）は現在値をローカルに保存します。リセットすると次の送信から初期値で再開します。時刻や uuid などの状態を持たない組み込み変数は影響を受けません。',
+    hu: 'Az állapotot tartó változók (20-szal csökkenő vízmennyiség, sorszám, véletlen bolyongás, munkamenet-érték) a helyi értéket tárolják. Visszaállítás után a következő küldés a kezdőértéktől indul. Az idő és az uuid állapot nélküli beépített változók nem érintettek.',
+    ko: '상태가 있는 변수(20씩 줄어드는 물의 양, 순번, 랜덤 워크, 세션 값)는 현재 값을 로컬에 저장합니다. 초기화하면 다음 전송부터 초기값으로 다시 시작합니다. 시간과 uuid 같은 상태 없는 내장 변수는 영향을 받지 않습니다.',
   },
   resetPayloadVariablesConfirm: {
     zh: '确定要重置全部可变变量吗？下次发送将从各自的初始值重新开始。',

@@ -1,6 +1,5 @@
 import { connectionVariableDefinitions, globalVariableDefinitions } from '@/utils/connectionVariables'
 import type { ConnectionVariableSource } from '@/utils/connectionVariables'
-import { resetPayloadCounters } from './counters'
 import type { ResolvedVariableDefinition } from './definitions'
 import {
   applyConnectionVariableTrigger,
@@ -145,10 +144,9 @@ export const resetConnectionVariables = (record: ConnectionVariableSource | null
   resetGlobalVariableStates()
 }
 
-/** "Reset all variable values" of the settings page (stateful variables and legacy counters). */
+/** "Reset all variable values" of the settings page. */
 export const resetAllVariables = (): void => {
   resetAllVariableStates()
-  resetPayloadCounters()
 }
 
 /** Sets the current value of one variable manually (debugging a device state). */

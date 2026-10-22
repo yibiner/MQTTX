@@ -6,9 +6,7 @@ import {
   getVariableProviders,
   isBuiltinPayloadVariable,
   isReservedVariableName,
-  readPayloadCounter,
   registerVariableProvider,
-  resetPayloadCounters,
   resolvePayloadVariables,
   validateVariableName,
 } from '@/utils/payloadVariables'
@@ -85,9 +83,7 @@ describe('variables: provider registry', () => {
     return unregister
   }
 
-  beforeEach(() => {
-    resetPayloadCounters()
-  })
+  beforeEach(() => {})
 
   afterEach(() => {
     let cleanup = cleanups.pop()
@@ -95,7 +91,6 @@ describe('variables: provider registry', () => {
       cleanup()
       cleanup = cleanups.pop()
     }
-    resetPayloadCounters()
   })
 
   it('keeps the chain order: built-in, message, session, definitions, user variables', () => {
@@ -138,7 +133,7 @@ describe('variables: provider registry', () => {
       const guide = getVariableGuide()
       expect(guide.some((entry) => entry.name === '${env.NAME}')).to.equal(true)
       const groups = Array.from(new Set(guide.map((entry) => entry.group)))
-      expect(groups).to.have.members(['builtin', 'context', 'connection', 'inline'])
+      expect(groups).to.have.members(['builtin', 'context', 'connection'])
     } finally {
       unregister()
     }
@@ -213,14 +208,6 @@ describe('variables: provider registry', () => {
     expect(result.unresolved).to.deep.equal([])
   })
 
-  it('asks the user variables before the inline forms', () => {
-    const result = resolvePayloadVariables('${count:1}', { variables: { count: '7' } })
-
-    expect(result.text).to.equal('7')
-    // The user variable answered, so the counter of the inline form never ran.
-    expect(readPayloadCounter('count')).to.equal(undefined)
-  })
-
   it('does not let a provider or a user variable shadow a built-in', () => {
     const unregister = registerVariableProvider(
       createProvider({
@@ -238,44 +225,12 @@ describe('variables: provider registry', () => {
       unregister()
     }
   })
-
-  it('supports providers of one resolver only, between the user variables and the inline forms', () => {
-    const provider = createProvider({
-      id: 'test-resolver-only',
-      resolve: (request) => {
-        if (request.name === 'onlyHere') {
-          return 'here'
-        }
-        return request.name === 'count' ? 'provider-count' : undefined
-      },
-    })
-
-    const withUserVariables = createPayloadVariableResolver({
-      variables: { onlyHere: 'user', count: 'user-count' },
-      providers: [provider],
-      commitCounters: false,
-    })
-    expect(withUserVariables.resolve('${onlyHere}/${count:5}')).to.equal('user/user-count')
-    expect(readPayloadCounter('count')).to.equal(undefined)
-
-    const providerOnly = createPayloadVariableResolver({ providers: [provider], commitCounters: false })
-    expect(providerOnly.resolve('${onlyHere}/${count:5}')).to.equal('here/provider-count')
-    // The provider answered `count`, so the inline counter never ran.
-    expect(readPayloadCounter('count')).to.equal(undefined)
-
-    // The provider was not registered: the next resolver does not see it.
-    expect(resolvePayloadVariables('${onlyHere}').unresolved).to.deep.equal(['onlyHere'])
-  })
 })
 
 describe('variables: resolution details', () => {
-  beforeEach(() => {
-    resetPayloadCounters()
-  })
+  beforeEach(() => {})
 
-  afterEach(() => {
-    resetPayloadCounters()
-  })
+  afterEach(() => {})
 
   it('trims the name inside the braces', () => {
     expect(resolvePayloadVariables('${ ts }', { now }).text).to.equal(String(ts))
