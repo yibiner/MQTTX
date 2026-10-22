@@ -320,7 +320,8 @@
         <el-card shadow="never" class="info-body item-card">
           <el-row :gutter="10">
             <el-col :span="24">
-              <VariableEditor v-model="record.variables" />
+              <!-- The connection id unlocks the current value / reset actions of stateful variables. -->
+              <VariableEditor v-model="record.variables" :connection-id="record.id" />
             </el-col>
           </el-row>
         </el-card>
@@ -342,7 +343,7 @@
         <el-card shadow="never" class="info-body item-card">
           <el-row :gutter="10">
             <el-col :span="24">
-              <AutoReplyEditor v-model="record.autoReplies" />
+              <AutoReplyEditor v-model="record.autoReplies" :variable-names="autoReplyVariableNames" />
             </el-col>
           </el-row>
         </el-card>
@@ -721,8 +722,9 @@ import useServices from '@/database/useServices'
 import { emptyToNull } from '@/utils/handleString'
 import { getClientId } from '@/utils/idGenerator'
 import { getMQTTProtocol, getDefaultRecord } from '@/utils/mqttUtils'
-import { getClientProfiles, getServerProfiles } from '@/utils/configProfiles'
+import { getClientProfiles, getGlobalVariables, getServerProfiles } from '@/utils/configProfiles'
 import VariableEditor from '@/components/VariableEditor.vue'
+import { onConnectionVariablesChanged, validateStoredVariables } from '@/utils/payloadVariables'
 import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
 import VariablesHelp from '@/components/VariablesHelp.vue'
@@ -877,6 +879,14 @@ export default class ConnectionForm extends Vue {
     if (!valid) {
       return
     }
+    const invalidVariables = validateStoredVariables(this.record.variables ?? {}, {
+      scope: 'connection',
+      connectionId: this.record.id,
+    })
+    if (invalidVariables.length) {
+      this.$message.error(this.$t('configs.variableDefinitionInvalid') as string)
+      return
+    }
 
     const res = await this.saveData()
     // Save failed
@@ -887,6 +897,12 @@ export default class ConnectionForm extends Vue {
       return
     }
 
+    const variablesChanged = JSON.stringify(this.record.variables ?? {}) !== this.variablesSnapshot
+    if (variablesChanged) {
+      // A changed definition starts from its default value again (E8).
+      onConnectionVariablesChanged(res.id)
+      this.variablesSnapshot = JSON.stringify(this.record.variables ?? {})
+    }
     if (type === 'save') {
       const { id } = this.$route.params
       this.$emit('refresh')
@@ -1074,8 +1090,23 @@ export default class ConnectionForm extends Vue {
     }
   }
 
+  /** JSON snapshot of the variables, so a save can tell whether the definitions changed. */
+  private variablesSnapshot = ''
+
+  /** Variable names the automatic reply actions can target (client and global variables). */
+  private get autoReplyVariableNames(): string[] {
+    const names = Object.keys(this.record.variables ?? {})
+    getGlobalVariables().forEach((variable) => {
+      if (variable.name && !names.includes(variable.name)) {
+        names.push(variable.name)
+      }
+    })
+    return names
+  }
+
   private async created() {
     await this.initRecord()
+    this.variablesSnapshot = JSON.stringify(this.record.variables ?? {})
     await this.loadCollectionOptions()
     await this.loadSuggestConnections()
     this.advancedVisible = this.getterAdvancedVisible

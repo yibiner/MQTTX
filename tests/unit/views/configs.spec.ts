@@ -1,9 +1,12 @@
+// jsdom needs the few browser APIs the payload editor (monaco) touches at import time.
+import '../mocks/browserStorage'
 import { expect } from 'chai'
 import Vue from 'vue'
 import ElementUI from 'element-ui'
 import { createLocalVue, mount, shallowMount, Wrapper } from '@vue/test-utils'
 import Configs from '@/views/configs/index.vue'
 import MessagePreview from '@/components/MessagePreview.vue'
+import VariableDefinitionEditor from '@/components/VariableDefinitionEditor.vue'
 import {
   saveMessagePreset,
   deleteMessagePreset,
@@ -12,6 +15,7 @@ import {
   saveClientProfile,
   deleteClientProfile,
 } from '@/utils/configProfiles'
+import { normalizeGlobalVariables, writeVariableState } from '@/utils/payloadVariables'
 
 const localVue = createLocalVue()
 localVue.use(ElementUI)
@@ -49,6 +53,39 @@ describe('configs view', () => {
 
   it('registers the single line message preview used by the message column', () => {
     expect((Configs as any).options.components.MessagePreview).to.equal(MessagePreview)
+  })
+
+  it('registers the definition editor used by the global variable dialog', () => {
+    expect((Configs as any).options.components.VariableDefinitionEditor).to.equal(VariableDefinitionEditor)
+  })
+
+  it('shows the kind, the default and the current value of a stateful global variable', async () => {
+    const wrapper = createWrapper()
+    const vm = wrapper.vm as any
+    vm.activeTab = 'variable'
+    await wrapper.vm.$nextTick()
+
+    const saved = saveGlobalVariable({
+      name: 'weight',
+      value: '200',
+      definition: { kind: 'sequence', initial: 200, step: -20 },
+    })
+    createdVariableIds.push(saved.id)
+    vm.loadData()
+
+    const row = () => vm.variableRows().find((item: any) => item.name === 'weight')
+    expect(row().kindKey).to.equal('configs.variableKindSequence')
+    expect(row().stateful).to.equal(true)
+    expect(row().defaultValue).to.equal('200')
+    expect(row().currentValue).to.equal('200')
+
+    // The current value comes from the runtime state, not from the definition.
+    const definition = normalizeGlobalVariables([saved]).weight
+    writeVariableState(definition.stateKey as string, 160)
+    expect(row().currentValue).to.equal('160')
+
+    vm.handleResetVariable(row())
+    expect(row().currentValue).to.equal('200')
   })
 
   it('reloads the message presets when the message tab is opened', async () => {

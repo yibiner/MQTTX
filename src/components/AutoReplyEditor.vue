@@ -140,15 +140,75 @@
           </span>
         </div>
       </div>
+
+      <!-- Variable actions of the rule: reset some definitions and/or write received fields into
+           them, so a later message of the same conversation carries the captured state. -->
+      <div class="rule-actions">
+        <div class="actions-head">
+          <span class="actions-title">{{ $t('connections.autoReplyActions') }}</span>
+          <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
+            <div slot="content" class="automation-tip">
+              <p>{{ $t('connections.autoReplyActionsHint') }}</p>
+            </div>
+            <a href="javascript:;" class="field-help">
+              <i class="el-icon-warning-outline"></i>
+            </a>
+          </el-tooltip>
+        </div>
+        <div class="actions-grid">
+          <label>{{ $t('connections.autoReplyResetVariables') }}</label>
+          <el-select
+            v-model="rule.actions.resetVariables"
+            size="mini"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            class="reset-variables"
+            :placeholder="$t('connections.autoReplyResetVariablesPlaceholder')"
+            @change="emitChange"
+          >
+            <el-option v-for="name in variableNames" :key="name" :label="name" :value="name"></el-option>
+          </el-select>
+
+          <label>{{ $t('connections.autoReplySetVariables') }}</label>
+          <div class="set-variables">
+            <div v-for="(item, setIndex) in rule.actions.setVariables" :key="setIndex" class="set-variable-row">
+              <el-input
+                v-model="item.name"
+                size="mini"
+                class="set-variable-name"
+                :placeholder="$t('connections.autoReplySetVariableName')"
+                @input="emitChange"
+              ></el-input>
+              <el-input
+                v-model="item.value"
+                size="mini"
+                class="set-variable-value"
+                :placeholder="$t('connections.autoReplySetVariableValue')"
+                @input="emitChange"
+              ></el-input>
+              <a href="javascript:;" class="set-variable-delete" @click="removeSetVariable(rule, setIndex)">
+                <i class="el-icon-delete"></i>
+              </a>
+            </div>
+            <el-button type="text" icon="el-icon-plus" class="set-variable-add" @click="addSetVariable(rule)">
+              {{ $t('connections.autoReplyAddSetVariable') }}
+            </el-button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script lang="ts">
-import { Component, Model, Vue, Watch } from 'vue-property-decorator'
+import { Component, Model, Prop, Vue, Watch } from 'vue-property-decorator'
 import { isValidCondition } from '@/utils/jmesPathCondition'
 
 const createId = (): string => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+
+const createActions = (): AutoReplyActionsModel => ({ resetVariables: [], setVariables: [] })
 
 const createRule = (): AutoReplyRuleModel => ({
   id: createId(),
@@ -164,6 +224,7 @@ const createRule = (): AutoReplyRuleModel => ({
     retain: false,
     delayMs: 0,
   },
+  actions: createActions(),
 })
 
 /**
@@ -172,10 +233,16 @@ const createRule = (): AutoReplyRuleModel => ({
  * A rule answers a received message without a script: the topic filter and the JMESPath condition
  * decide what it answers, `echo` merges the configured fields into the received message, and
  * `${msg.path}` / `${variable}` make the reply topic and body refer to the request.
+ *
+ * A rule may also change the stateful variables: reset some of them to their initial value and/or
+ * write a field of the received message into one (`actions`), which is how a captured device state
+ * travels from one reply to the next.
  */
 @Component
 export default class AutoReplyEditor extends Vue {
   @Model('change', { type: Array }) private readonly value!: AutoReplyRuleModel[] | null | undefined
+  /** Known variable names, offered by the reset picker (free text is still accepted). */
+  @Prop({ required: false, default: () => [] }) private readonly variableNames!: string[]
 
   /** Rows being edited, incomplete ones included: they are drafts until the user types into them. */
   private rules: AutoReplyRuleModel[] = []
@@ -214,6 +281,10 @@ export default class AutoReplyEditor extends Vue {
       ...createRule(),
       ...rule,
       reply: { ...createRule().reply, ...(rule.reply ?? {}) },
+      actions: {
+        resetVariables: [...(rule.actions?.resetVariables ?? [])],
+        setVariables: (rule.actions?.setVariables ?? []).map((item) => ({ ...item })),
+      },
     }))
   }
 
@@ -225,14 +296,32 @@ export default class AutoReplyEditor extends Vue {
     return !isValidCondition(rule.matchCondition)
   }
 
+  /** The saved form of the variable actions: trimmed, de-duplicated and without empty drafts. */
+  private cleanActions(rule: AutoReplyRuleModel): AutoReplyActionsModel | undefined {
+    const resetVariables = (rule.actions?.resetVariables ?? [])
+      .map((name) => String(name ?? '').trim())
+      .filter((name, index, all) => name !== '' && all.indexOf(name) === index)
+    const setVariables = (rule.actions?.setVariables ?? [])
+      .map((item) => ({ name: String(item.name ?? '').trim(), value: item.value ?? '' }))
+      .filter((item) => item.name !== '')
+    if (!resetVariables.length && !setVariables.length) {
+      return undefined
+    }
+    return { resetVariables, setVariables }
+  }
+
   private emitChange() {
     // The stripped copy is only what is *saved*; the editor keeps incomplete drafts visible so the
     // user can finish typing them.
     const cleaned = this.rules
-      .map((rule) => ({
-        ...rule,
-        reply: { ...rule.reply, delayMs: Math.max(0, Number(rule.reply?.delayMs) || 0) },
-      }))
+      .map((rule) => {
+        const actions = this.cleanActions(rule)
+        return {
+          ...rule,
+          reply: { ...rule.reply, delayMs: Math.max(0, Number(rule.reply?.delayMs) || 0) },
+          ...(actions ? { actions } : { actions: undefined }),
+        }
+      })
       .filter((rule) => (rule.matchTopic ?? '').trim() !== '' || (rule.name ?? '').trim() !== '')
     this.lastEmitted = JSON.stringify(cleaned)
     this.$emit('change', cleaned)
@@ -250,6 +339,16 @@ export default class AutoReplyEditor extends Vue {
 
   private removeRule(index: number) {
     this.rules.splice(index, 1)
+    this.emitChange()
+  }
+
+  private addSetVariable(rule: AutoReplyRuleModel) {
+    rule.actions?.setVariables?.push({ name: '', value: '' })
+    this.emitChange()
+  }
+
+  private removeSetVariable(rule: AutoReplyRuleModel, index: number) {
+    rule.actions?.setVariables?.splice(index, 1)
     this.emitChange()
   }
 }
@@ -401,6 +500,77 @@ export default class AutoReplyEditor extends Vue {
         width: 84px;
       }
     }
+  }
+
+  // Variable actions of the rule, visually separated from the reply configuration.
+  .rule-actions {
+    padding-top: 10px;
+    margin-top: 10px;
+    border-top: 1px dashed var(--color-border-default);
+  }
+
+  .actions-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    .actions-title {
+      color: var(--color-text-default);
+      font-weight: 600;
+    }
+    .field-help {
+      color: var(--color-text-default);
+      cursor: help;
+      font-size: 13px;
+      line-height: 1;
+      &:hover {
+        color: var(--color-main-green);
+      }
+    }
+  }
+
+  .actions-grid {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 8px 10px;
+    align-items: start;
+    label {
+      color: var(--color-text-default);
+      line-height: 28px;
+      white-space: nowrap;
+    }
+  }
+
+  .reset-variables {
+    width: 100%;
+  }
+
+  .set-variables {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .set-variable-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    .set-variable-name {
+      width: 160px;
+    }
+    .set-variable-value {
+      flex: 1;
+    }
+    .set-variable-delete {
+      color: var(--color-minor-red);
+    }
+  }
+
+  .set-variable-add {
+    align-self: flex-start;
+    padding: 0;
+    color: var(--color-main-green);
+    font-size: 12px;
   }
 
   .rule-add {

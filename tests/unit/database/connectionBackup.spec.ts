@@ -17,6 +17,13 @@ import MessageService from '@/database/services/MessageService'
 import { StreamDataExporter } from '@/main/streamExportData'
 import { Container } from 'typedi'
 import { CollectionBackup } from '@/utils/connectionBackup'
+import {
+  normalizeVariableMap,
+  readVariableState,
+  resetAllVariableStates,
+  scanLegacyInlineVariables,
+  writeVariableState,
+} from '@/utils/payloadVariables'
 import YAML from 'js-yaml'
 import Excel from 'xlsx'
 
@@ -165,6 +172,7 @@ describe('Desktop connection backup (native SQLite)', () => {
     configureServices(source)
 
     expect(await services.connectionService.getVariableSource('withVariables')).to.deep.equal({
+      id: 'withVariables',
       variables: { productType: 'SN0106' },
       clientId: 'withVariables',
       username: 'yibin',
@@ -189,6 +197,111 @@ describe('Desktop connection backup (native SQLite)', () => {
     configureServices(target)
     const restored = await services.connectionService.get('withVariables')
     expect(restored.variables).to.deep.equal({ productType: 'SN0106', sn: 'AF020120F9CA37EX' })
+  })
+
+  it('round trips stateful variable definitions but never exports runtime state', async () => {
+    const variables: { [name: string]: StoredVariable } = {
+      productType: 'SN0106',
+      weight: { kind: 'sequence', initial: 200, step: -20, min: 0, max: 200, onBound: 'clamp' },
+      captured: { kind: 'captured', value: 'default' },
+    }
+    await seed(source, { ...connection('withStatefulVariables'), variables })
+
+    // A runtime value of a stateful variable lives in the state store, not in the record.
+    resetAllVariableStates()
+    writeVariableState('c:withStatefulVariables:weight', 111)
+    writeVariableState('g:global-preset', 222)
+
+    const backup = JSON.parse(await exportBackup())
+    expect(backup[0].variables).to.deep.equal(variables)
+    const serialized = JSON.stringify(backup)
+    expect(serialized, 'runtime values must not be part of the backup').to.not.contain('c:withStatefulVariables:weight')
+    expect(serialized).to.not.contain('g:global-preset')
+    expect(serialized).to.not.contain('variableStates')
+    expect(serialized).to.not.contain('variableSessions')
+
+    // Nothing of the sender's runtime state can travel through the backup: clear the local store
+    // first, then import and check that the state is still empty.
+    resetAllVariableStates()
+    expect(await targetService.import(backup)).to.equal('ok')
+    configureServices(target)
+    const restored = await services.connectionService.get('withStatefulVariables')
+    expect(restored.variables).to.deep.equal(variables)
+    // The definitions survived as definitions, not as their current value.
+    const definitions = normalizeVariableMap(restored.variables, { connectionId: restored.id })
+    expect(definitions.weight.kind).to.equal('sequence')
+    expect(definitions.weight.initial).to.equal(200)
+    expect(definitions.captured.kind).to.equal('captured')
+    // Importing a backup restores the definition, never the sender's runtime value.
+    expect(readVariableState('c:withStatefulVariables:weight')).to.equal(undefined)
+    resetAllVariableStates()
+  })
+
+  it('round trips stateful definitions through a YAML export as well', async () => {
+    const variables: { [name: string]: StoredVariable } = {
+      weight: { kind: 'sequence', initial: 5, step: 1, min: 0, max: 5, onBound: 'wrap' },
+    }
+    await seed(source, { ...connection('yamlStateful'), variables })
+
+    const records = YAML.load(await exportBackup('YAML')) as ConnectionModel[]
+    expect(records[0].variables).to.deep.equal(variables)
+    expect(await targetService.import(records)).to.equal('ok')
+    configureServices(target)
+    expect((await services.connectionService.get('yamlStateful')).variables).to.deep.equal(variables)
+  })
+
+  it('validates a backup whose client variables mix constants and stateful definitions', async () => {
+    const variables: { [name: string]: StoredVariable } = {
+      plain: 'A',
+      weight: { kind: 'sequence', initial: 1, step: 1 },
+    }
+    const legacy = [connection('legacyAndStateful')]
+    delete (legacy[0] as any).isCollection
+    legacy[0].variables = variables
+
+    expect(await targetService.import(legacy)).to.equal('ok')
+    configureServices(target)
+    const restored = await services.connectionService.get('legacyAndStateful')
+    expect(restored.variables).to.deep.equal(variables)
+  })
+
+  it('scans the legacy inline forms of the stored connections for the one-click migration', async () => {
+    await seed(source, {
+      ...connection('scanned'),
+      variables: { device: 'PLC-${count:1}' },
+      autoSubscriptions: [
+        {
+          id: 'group',
+          delayMs: 0,
+          merge: false,
+          enabled: true,
+          topics: [{ topic: 't/${rssi:-30..-60}', qos: 0 }],
+        },
+      ],
+      autoReplies: [
+        {
+          id: 'rule',
+          name: 'reply',
+          enabled: true,
+          matchTopic: 'in/#',
+          matchCondition: '',
+          reply: {
+            topic: 'out/${count:1}',
+            mode: 'fixed',
+            payload: '{}',
+            qos: 0,
+            retain: false,
+            delayMs: 0,
+          },
+        },
+      ],
+    })
+    configureServices(source)
+
+    const plan = await scanLegacyInlineVariables()
+    expect(plan.definitions.map((definition) => definition.name)).to.have.members(['count', 'rssi'])
+    expect(plan.conflicts).to.deep.equal([])
+    expect(plan.scanned).to.be.at.least(4)
   })
 
   it('exports a database containing only an empty group', async () => {

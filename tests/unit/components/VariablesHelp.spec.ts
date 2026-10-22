@@ -28,7 +28,7 @@ describe('VariablesHelp.vue', () => {
     expect(wrapper.find('.variables-help-body').exists()).to.equal(false)
   })
 
-  it('opens the reference with the scope, the built-ins, the rules and an example', async () => {
+  it('opens the reference with the scope, the variable guide, the definitions and the rules', async () => {
     wrapper = buildWrapper()
 
     wrapper.find('.variables-help-trigger').trigger('click')
@@ -38,8 +38,20 @@ describe('VariablesHelp.vue', () => {
     const text = document.body.textContent as string
     expect(text).to.contain('configs.variablesHelpScopeTitle')
     expect(text).to.contain('configs.variablesHelpScope')
-    expect(text).to.contain('configs.variablesHelpBuiltinsTitle')
+    expect(text).to.contain('configs.variablesGuideTitle')
+    expect(text).to.contain('configs.variablesGuideGroupBuiltin')
     expect(text).to.contain('configs.variablesHelpBuiltins')
+    expect(text).to.contain('configs.variablesHelpDefinitionsTitle')
+    expect(text).to.contain('configs.variablesHelpDefinitions')
+    expect(text).to.contain('configs.variablesHelpStateTitle')
+    expect(text).to.contain('configs.variablesHelpState')
+    expect(text).to.contain('configs.variablesHelpResetTitle')
+    expect(text).to.contain('configs.variablesHelpReset')
+    expect(text).to.contain('configs.variablesHelpFormatTitle')
+    expect(text).to.contain('configs.variablesHelpFormat')
+    expect(text).to.contain('configs.variablesHelpLegacyTitle')
+    expect(text).to.contain('configs.variablesHelpLegacy')
+    expect(text).to.contain('configs.variablesHelpMigration')
     expect(text).to.contain('configs.variablesHelpRulesTitle')
     expect(text).to.contain('configs.variablesHelpRules')
     expect(text).to.contain('configs.variablesHelpExampleTitle')

@@ -1,7 +1,9 @@
 import { expect } from 'chai'
+import { deleteGlobalVariable, saveGlobalVariable } from '@/utils/configProfiles'
 import applyPayloadVariables, {
   collectUnresolvedVariables,
   connectionFieldVariables,
+  connectionVariableMap,
   createPayloadVariableResolver,
   mergeVariables,
   readPayloadCounter,
@@ -318,6 +320,96 @@ describe('payloadVariables connection fields', () => {
 })
 
 /**
+ * The scopes of one connection: the client variables win over the global variables of the preset
+ * manager, which win over the fields of the connection itself.
+ */
+describe('payloadVariables connection scopes', () => {
+  let globalIds: string[] = []
+
+  const addGlobal = (name: string, value: string): void => {
+    const saved = saveGlobalVariable({ name, value })
+    globalIds.push(saved.id)
+  }
+
+  afterEach(() => {
+    globalIds.forEach((id) => deleteGlobalVariable(id))
+    globalIds = []
+  })
+
+  const connection = {
+    variables: { sn: 'CLIENT', clientId: 'client-override' },
+    clientId: 'sn0106',
+    username: 'yibin',
+    name: 'sn0106 设备',
+    host: 'broker.emqx.io',
+    port: 1883,
+  }
+
+  it('merges the client variables, the global variables and the connection fields, closest first', () => {
+    addGlobal('sn', 'GLOBAL')
+    addGlobal('prefix', 'app')
+
+    expect(connectionVariableMap(connection)).to.deep.equal({
+      sn: 'CLIENT',
+      clientId: 'client-override',
+      prefix: 'app',
+      username: 'yibin',
+      name: 'sn0106 设备',
+      host: 'broker.emqx.io',
+      port: '1883',
+    })
+  })
+
+  it('lets an empty client value fall through to the global variable', () => {
+    addGlobal('sn', 'GLOBAL')
+
+    expect(connectionVariableMap({ ...connection, variables: { sn: '  ' } }).sn).to.equal('GLOBAL')
+  })
+
+  it('lets an empty global value fall through to the connection field', () => {
+    addGlobal('username', '  ')
+
+    expect(connectionVariableMap(connection).username).to.equal('yibin')
+  })
+
+  it('exposes the field values of the connection itself', () => {
+    expect(
+      connectionVariableMap({
+        clientId: 'sn0106',
+        username: 'yibin',
+        name: 'sn0106 设备',
+        host: 'broker.emqx.io',
+        port: 1883,
+      }),
+    ).to.deep.equal({
+      clientId: 'sn0106',
+      username: 'yibin',
+      name: 'sn0106 设备',
+      host: 'broker.emqx.io',
+      port: '1883',
+    })
+  })
+
+  it('returns only the global variables for a missing connection', () => {
+    addGlobal('prefix', 'app')
+
+    expect(connectionVariableMap(undefined)).to.deep.equal({ prefix: 'app' })
+    expect(connectionVariableMap(null)).to.deep.equal({ prefix: 'app' })
+  })
+
+  it('resolves a topic and a payload from the merged scopes', () => {
+    addGlobal('prefix', 'app')
+    addGlobal('sn', 'GLOBAL')
+
+    const resolver = createPayloadVariableResolver({ variables: connectionVariableMap(connection) })
+    expect(resolver.resolve('${prefix}/${sn}/device/heart/post')).to.equal('app/CLIENT/device/heart/post')
+    expect(resolver.resolve('{"clientId":"${clientId}","port":${port}}')).to.equal(
+      '{"clientId":"client-override","port":1883}',
+    )
+  })
+})
+
+/**
  * Simple arithmetic inside a placeholder: "the current time, 34 seconds ago" is the common case, but
  * the same engine covers counters, user variables and the fields of a received message.
  */
@@ -374,5 +466,92 @@ describe('payload variables: arithmetic', () => {
 
   it('keeps the inline configs working', () => {
     expect(resolvePayloadVariables('${rssi:-30..-60}', { now, rand: () => 0 }).text).to.equal('-60')
+  })
+})
+
+/**
+ * The variables a received message answers: `${msg.<path>}` and `${topic}`. They come from the
+ * message provider of the one provider chain, not from a pre-pass over the template, so they also
+ * work inside a user variable value.
+ */
+describe('payload variables of a received message', () => {
+  const message = {
+    msgId: '1553953167238107136',
+    ts: 1792486795034,
+    'sensor-1': 'ok',
+    data: { list: [{ id: 21 }], nested: { flag: true } },
+    tag: { a: 1 },
+  }
+
+  it('resolves a field of the message and the received topic', () => {
+    const result = resolvePayloadVariables('{"id":"${msg.msgId}","topic":"${topic}"}', {
+      message,
+      topic: 'app/A1/AF0201/device/system/post',
+    })
+
+    expect(result.text).to.equal('{"id":"1553953167238107136","topic":"app/A1/AF0201/device/system/post"}')
+    expect(result.unresolved).to.deep.equal([])
+  })
+
+  it('reads a nested field and an array element', () => {
+    expect(resolvePayloadVariables('${msg.data.list[0].id}', { message }).text).to.equal('21')
+    expect(resolvePayloadVariables('${msg.data.nested.flag}', { message }).text).to.equal('true')
+  })
+
+  it('renders a missing field as an empty string instead of an unresolved variable', () => {
+    const result = resolvePayloadVariables('{"missing":"${msg.nope}","nested":"${msg.data.nope}"}', { message })
+
+    expect(result.text).to.equal('{"missing":"","nested":""}')
+    expect(result.unresolved).to.deep.equal([])
+  })
+
+  it('keeps a quoted numeric field a JSON string, like the old reply pre-pass', () => {
+    expect(resolvePayloadVariables('{"ts":"${msg.ts}"}', { message }).text).to.equal('{"ts":"1792486795034"}')
+    expect(resolvePayloadVariables('{"ts":${msg.ts}}', { message }).text).to.equal('{"ts":1792486795034}')
+  })
+
+  it('renders an object or array field as JSON', () => {
+    expect(resolvePayloadVariables('${msg.tag}', { message }).text).to.equal('{"a":1}')
+    expect(resolvePayloadVariables('${msg.data.list}', { message }).text).to.equal('[{"id":21}]')
+    expect(resolvePayloadVariables('${msg}', { message }).text).to.equal(JSON.stringify(message))
+  })
+
+  it('keeps a hyphenated field name a field path', () => {
+    expect(resolvePayloadVariables('${msg.sensor-1}', { message }).text).to.equal('ok')
+    expect(resolvePayloadVariables('{"v":"${msg.sensor-1}"}', { message }).text).to.equal('{"v":"ok"}')
+  })
+
+  it('evaluates arithmetic on a message path even without spaces, and reports a missing one', () => {
+    expect(resolvePayloadVariables('${msg.data.list[0].id*2}', { message }).text).to.equal('42')
+
+    // A path that only looks like an expression is evaluated as one; a miss is reported instead of
+    // silently rendering an empty string (the old pre-pass could not tell the two apart).
+    const missing = resolvePayloadVariables('${msg.nope*2}', { message })
+    expect(missing.text).to.equal('${msg.nope*2}')
+    expect(missing.unresolved).to.deep.equal(['msg.nope'])
+  })
+
+  it('resolves a message field used inside a user variable value', () => {
+    const result = resolvePayloadVariables('{"ack":"${ack}"}', {
+      message,
+      variables: { ack: 'id-${msg.msgId}' },
+    })
+
+    expect(result.text).to.equal('{"ack":"id-1553953167238107136"}')
+    expect(result.unresolved).to.deep.equal([])
+  })
+
+  it('keeps an inline config on the msg/topic name working as the old inline form', () => {
+    // `${msg:1}` is a counter named `msg`, not a reference to the received message.
+    expect(resolvePayloadVariables('${msg:5}', { message }).text).to.equal('5')
+    expect(resolvePayloadVariables('${topic:7}', { topic: 'a/b' }).text).to.equal('7')
+    resetPayloadCounters()
+  })
+
+  it('leaves ${topic} unresolved when the context has no topic', () => {
+    const result = resolvePayloadVariables('${topic}', { message })
+
+    expect(result.text).to.equal('${topic}')
+    expect(result.unresolved).to.deep.equal(['topic'])
   })
 })

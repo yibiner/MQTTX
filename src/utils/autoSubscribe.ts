@@ -1,4 +1,20 @@
-import { resolvePayloadVariables } from '@/utils/payloadVariables'
+import { resolvePayloadVariables, ResolvedVariableDefinition } from '@/utils/payloadVariables'
+
+interface AutoSubscribeVariableOptions {
+  definitions?: { [name: string]: ResolvedVariableDefinition }
+  connectionId?: string
+}
+
+/**
+ * A subscription topic is not a published message: the current value of a stateful variable is
+ * used, but subscribing does not advance it (`commitCounters: false`).
+ */
+const resolveTopicTemplate = (
+  template: string,
+  variables: { [name: string]: string },
+  options: AutoSubscribeVariableOptions,
+): { text: string; unresolved: string[] } =>
+  resolvePayloadVariables(template, { variables, ...options, commitCounters: false })
 
 /**
  * Turns the configured automatic subscriptions of a connection into the batches that are sent to
@@ -40,6 +56,7 @@ const normalizeDelay = (delayMs: number): number => {
 export const planAutoSubscribe = (
   groups: AutoSubscribeGroupModel[] | null | undefined,
   variables: { [name: string]: string } = {},
+  options: AutoSubscribeVariableOptions = {},
 ): AutoSubscribePlan => {
   const plan: AutoSubscribePlan = { batches: [], unresolved: [] }
   if (!Array.isArray(groups)) {
@@ -59,7 +76,7 @@ export const planAutoSubscribe = (
         // panel is not undone by the next connect.
         return
       }
-      const { text, unresolved } = resolvePayloadVariables(template, { variables })
+      const { text, unresolved } = resolveTopicTemplate(template, variables, options)
       unresolved.forEach((name) => {
         if (!plan.unresolved.includes(name)) {
           plan.unresolved.push(name)
@@ -111,6 +128,7 @@ export const reconcileAutoSubscriptions = (
   rows: Array<{ topic: string; disabled?: boolean }>,
   previousRows: Array<{ topic: string; disabled?: boolean }>,
   variables: { [name: string]: string } = {},
+  options: AutoSubscribeVariableOptions = {},
 ): { groups: AutoSubscribeGroupModel[]; changed: boolean } => {
   if (!Array.isArray(groups) || !groups.length) {
     return { groups: [], changed: false }
@@ -132,7 +150,7 @@ export const reconcileAutoSubscriptions = (
       if (!template) {
         continue
       }
-      const { text, unresolved } = resolvePayloadVariables(template, { variables })
+      const { text, unresolved } = resolveTopicTemplate(template, variables, options)
       if (unresolved.length) {
         // Cannot be compared with a row, and it is not subscribed either: leave it configured.
         topics.push(item)
@@ -219,14 +237,16 @@ export const planConnectSubscriptions = (
     rows?: SubscriptionModel[] | null
     groups?: AutoSubscribeGroupModel[] | null
     variables?: { [name: string]: string }
+    definitions?: { [name: string]: ResolvedVariableDefinition }
+    connectionId?: string
     /** whether the saved rows are restored after connecting (the "auto resubscribe" setting) */
     restoreManual?: boolean
   } = {},
 ): ConnectSubscriptionPlan => {
-  const { rows, groups, variables = {}, restoreManual = true } = options
+  const { rows, groups, variables = {}, definitions, connectionId, restoreManual = true } = options
   const plan: ConnectSubscriptionPlan = { batches: [], unresolved: [] }
 
-  const auto = planAutoSubscribe(groups, variables)
+  const auto = planAutoSubscribe(groups, variables, { definitions, connectionId })
   auto.unresolved.forEach((name) => {
     if (!plan.unresolved.includes(name)) {
       plan.unresolved.push(name)

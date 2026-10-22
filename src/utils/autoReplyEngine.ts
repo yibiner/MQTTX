@@ -1,7 +1,8 @@
 import log4js from 'log4js'
 import type { IPublishPacket, MqttClient, OnMessageCallback } from 'mqtt'
-import { getGlobalVariableMap } from '@/utils/configProfiles'
-import { connectionFieldVariables, mergeVariables } from '@/utils/payloadVariables'
+import { getGlobalVariablesRevision } from '@/utils/configProfiles'
+import { connectionVariableOptions } from '@/utils/payloadVariables'
+import { applyAutoReplyVariableActions, markManualDisconnect, onConnectionClosed } from '@/utils/payloadVariables'
 import { planAutoReplies, PlannedAutoReply } from '@/utils/autoReply'
 import { savePublishedMessageHistory } from '@/utils/historyRecordUtils'
 import { getMessageId } from '@/utils/idGenerator'
@@ -39,6 +40,73 @@ const MAX_REPLIES_PER_SECOND = 20
 const replyTimestamps = new Map<string, number[]>()
 
 const records = new Map<string, ConnectionModel>()
+
+/**
+ * Normalized variable definitions per connection, cached for the hot path.
+ *
+ * A busy connection with reply rules normalizes its client + global variables on every received
+ * message. The cache is keyed by the connection record object and validated against the global
+ * variable revision (so editing a preset invalidates it) and the fields that feed the definitions;
+ * it holds no state of its own, only the immutable definition objects.
+ */
+interface CachedVariableOptions {
+  revision: number
+  variablesRef: ConnectionModel['variables']
+  clientId: string
+  username: string
+  name: string
+  host: string
+  port: number
+  options: ReturnType<typeof connectionVariableOptions>
+}
+const variableOptionsCache = new WeakMap<ConnectionModel, CachedVariableOptions>()
+
+const variableOptionsFor = (record: ConnectionModel): ReturnType<typeof connectionVariableOptions> => {
+  const revision = getGlobalVariablesRevision()
+  const cached = variableOptionsCache.get(record)
+  if (
+    cached &&
+    cached.revision === revision &&
+    cached.variablesRef === record.variables &&
+    cached.clientId === record.clientId &&
+    cached.username === record.username &&
+    cached.name === record.name &&
+    cached.host === record.host &&
+    cached.port === record.port
+  ) {
+    return cached.options
+  }
+  const options = connectionVariableOptions(record)
+  variableOptionsCache.set(record, {
+    revision,
+    variablesRef: record.variables,
+    clientId: record.clientId,
+    username: record.username,
+    name: record.name,
+    host: record.host,
+    port: record.port,
+    options,
+  })
+  return options
+}
+
+/**
+ * Planning errors already logged, keyed by connection, rule and message.
+ *
+ * A broken rule (an unresolved variable in its topic/payload, an invalid echo JSON) fails on every
+ * received message, so logging it per message would flood the log of a busy topic. It is reported
+ * once and reported again after the rule was edited (`registerAutoReply` clears its keys).
+ */
+const reportedPlanErrors = new Set<string>()
+
+const clearReportedPlanErrors = (connectionId: string): void => {
+  const prefix = `${connectionId}|`
+  reportedPlanErrors.forEach((key) => {
+    if (key.startsWith(prefix)) {
+      reportedPlanErrors.delete(key)
+    }
+  })
+}
 
 /**
  * The `'message'` handler this module keeps on each client, keyed by the client instance.
@@ -87,6 +155,8 @@ const getLog = () => log4js.getLogger()
  */
 export const registerAutoReply = (connectionId: string, record: ConnectionModel): void => {
   records.set(connectionId, record)
+  // The rules may have changed: a previously reported error is worth reporting again.
+  clearReportedPlanErrors(connectionId)
 }
 
 /** Forgets a connection, e.g. when it is deleted. */
@@ -94,6 +164,11 @@ export const unregisterAutoReply = (connectionId: string): void => {
   records.delete(connectionId)
   resetAutoReplyState(connectionId)
   detachAutoReplyByConnection(connectionId)
+}
+
+/** The user disconnected on purpose: the next connect starts a new session, not a reconnect. */
+export const markConnectionDisconnectedManually = (connectionId: string): void => {
+  markManualDisconnect(connectionId)
 }
 
 /**
@@ -118,6 +193,18 @@ export const attachAutoReply = (client: MqttClient, connectionId: string): void 
     }).catch((error) => getLog().error(`Auto reply failed: ${(error as Error).toString()}`))
   }
   attachedClients.set(client, { connectionId, handler })
+  // The disconnect trigger of the stateful variables, next to the client so it also runs while no
+  // connection page is open. The `connect` side (session clock, connect resets) runs in the
+  // subscription runner, which is registered first so topics can already use the session.
+  const onClose = () => {
+    const current = attachedClients.get(client)?.connectionId
+    const record = current ? records.get(current) : undefined
+    if (record) {
+      onConnectionClosed(record)
+    }
+  }
+  client.on('close', onClose)
+  ;(attachedClients.get(client) as { onClose?: () => void }).onClose = onClose
   client.on('message', handler)
   // `end` is the final teardown of a client. A `close` is not: mqtt.js reconnects the same instance
   // afterwards and the replies must keep working across those reconnects.
@@ -132,6 +219,10 @@ export const detachAutoReply = (client: MqttClient): void => {
   }
   attachedClients.delete(client)
   client.removeListener('message', attached.handler)
+  const onClose = (attached as { onClose?: () => void }).onClose
+  if (onClose) {
+    client.removeListener('close', onClose)
+  }
 }
 
 /** Removes the handler of every client attached for this connection, e.g. when it is deleted. */
@@ -182,6 +273,7 @@ const alreadyAnswered = (key: string): boolean => {
 
 /** Drops every bit of state of a connection, e.g. when it is deleted or disconnected. */
 const resetAutoReplyState = (connectionId: string): void => {
+  clearReportedPlanErrors(connectionId)
   replyTimestamps.delete(connectionId)
   answered.forEach((_stamp, key) => {
     if (key.startsWith(`${connectionId}|`)) {
@@ -200,7 +292,7 @@ export const processIncomingMessage = async (info: IncomingMessageInfo): Promise
   try {
     const record = records.get(info.connectionId)
     const rules = record?.autoReplies
-    if (!Array.isArray(rules) || !rules.length) {
+    if (!record || !Array.isArray(rules) || !rules.length) {
       return
     }
     const payloadText = typeof info.payload === 'string' ? info.payload : info.payload.toString()
@@ -208,20 +300,30 @@ export const processIncomingMessage = async (info: IncomingMessageInfo): Promise
       // Our own reply came back: answering it would start a loop.
       return
     }
-    const variables = mergeVariables(record?.variables, getGlobalVariableMap(), connectionFieldVariables(record))
-    const replies = planAutoReplies(rules, { topic: info.topic, payload: payloadText, variables })
+    const variableOptions = variableOptionsFor(record)
+    const replies = planAutoReplies(rules, {
+      topic: info.topic,
+      payload: payloadText,
+      ...variableOptions,
+    })
     if (!replies.length) {
       return
     }
     for (const reply of replies) {
       if (reply.error) {
-        getLog().warn(`Auto reply rule ${reply.ruleId} skipped: ${reply.error} (connection ${info.connectionId})`)
+        const errorKey = `${info.connectionId}|${reply.ruleId}|${reply.error}`
+        if (!reportedPlanErrors.has(errorKey)) {
+          reportedPlanErrors.add(errorKey)
+          getLog().warn(`Auto reply rule ${reply.ruleId} skipped: ${reply.error} (connection ${info.connectionId})`)
+        }
         continue
       }
       const answeredKey = `${info.connectionId}|${info.topic}|${info.packetId ?? ''}|${reply.ruleId}`
       if (info.packetId !== undefined && info.packetId !== null && alreadyAnswered(answeredKey)) {
         continue
       }
+      // A matched rule may reset variables or capture fields of the message for later messages.
+      applyAutoReplyVariableActions(record, reply.actions)
       if (reply.delayMs > 0) {
         setTimeout(() => {
           publishReply(info, reply).catch((error) =>

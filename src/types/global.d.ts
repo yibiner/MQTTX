@@ -255,7 +255,7 @@ declare global {
     reconnectPeriod?: number
     clean?: boolean
     /** Variables of the client itself, copied into its "客户端变量" when the preset is applied. */
-    variables?: { [name: string]: string } | null
+    variables?: { [name: string]: StoredVariable } | null
     /** Subscriptions the preset starts after connecting, copied into the connection. */
     autoSubscriptions?: AutoSubscribeGroupModel[] | null
     /** Automatic replies of the preset, copied into the connection. */
@@ -272,14 +272,64 @@ declare global {
 
   /**
    * A user-defined payload variable. Every message can reference it as `${name}` in its topic and
-   * its payload; the value may itself contain placeholders (built-in ones, counters, or other
-   * variables).
+   * its payload; the value may itself contain placeholders (built-in ones, other variables, or a
+   * message field in an automatic reply).
+   *
+   * A variable is either a plain constant or one of the stateful kinds (`sequence`, `random`,
+   * `randomWalk`, `choice`, `session`, `captured`), configured by `definition`.
    */
   interface GlobalVariableModel {
     id: string
     name: string
+    /** the constant template, or the initial value of a stateful variable (legacy: always present) */
     value: string
+    /** stateful configuration; absent means a plain constant */
+    definition?: VariableDefinitionConfig
   }
+
+  /** How a stateful variable produces its value. */
+  type VariableKind = 'constant' | 'sequence' | 'random' | 'randomWalk' | 'choice' | 'session' | 'captured'
+
+  /** Lifecycle events that may reset a stateful variable to its initial value. */
+  type VariableResetTrigger = 'connect' | 'disconnect' | 'appStart' | 'manual' | 'bound'
+
+  /** What happens when a sequence leaves its [min, max] range. */
+  type VariableBoundStrategy = 'clamp' | 'wrap' | 'reset' | 'keep'
+
+  /**
+   * The persisted configuration of one variable. The bare-string form (`StoredVariable`) is the
+   * original constant variable, so every older connection/preset/backup keeps working unchanged.
+   */
+  interface VariableDefinitionConfig {
+    kind?: VariableKind
+    /** constant template, or the initial/default value of a stateful variable */
+    value?: string
+    /** sequence / randomWalk: first value when no stored state exists */
+    initial?: number
+    /** sequence: how much each send adds (a negative value counts down, e.g. -20) */
+    step?: number
+    min?: number
+    max?: number
+    onBound?: VariableBoundStrategy
+    resetOn?: VariableResetTrigger[]
+    /** whether an automatic reconnect also fires the `connect` reset (default true) */
+    resetOnReconnect?: boolean
+    /** reset lazily once this many seconds passed since the last reset/use */
+    resetEverySec?: number
+    /** randomWalk: maximum distance from the previous value per send */
+    range?: number
+    /** choice: weighted possible values */
+    options?: Array<{ value: string; weight: number }>
+    /** random / randomWalk / choice: reproducible pseudo random stream */
+    seed?: number
+    /** session: how the value of one connection session is generated */
+    generator?: 'uuid' | 'template'
+    /** output formatting: zero padding and/or decimal places */
+    format?: { pad?: number; precision?: number }
+  }
+
+  /** One variable of a `{ name: value }` map: a constant string or a definition. */
+  type StoredVariable = string | VariableDefinitionConfig
 
   interface HistoryMessagePayloadModel {
     connectionId?: string
@@ -349,9 +399,9 @@ declare global {
     /**
      * Variables of this client ("客户端变量"), e.g. the product type it talks to. They are
      * referenced as `${name}` in a topic and in a payload and win over the global variables of
-     * the preset manager.
+     * the preset manager. A value is a constant string or a stateful definition.
      */
-    variables?: { [name: string]: string } | null
+    variables?: { [name: string]: StoredVariable } | null
     /** Topics subscribed automatically once the connection is established. */
     autoSubscriptions?: AutoSubscribeGroupModel[] | null
     /** Rules that answer a received message automatically on this connection. */
@@ -405,6 +455,19 @@ declare global {
     matchTopic: string
     matchCondition: string
     reply: AutoReplyReplyModel
+    /**
+     * What the rule does to stateful variables when it matches: reset some to their initial value
+     * and/or capture fields of the received message for later messages.
+     */
+    actions?: AutoReplyActionsModel
+  }
+
+  /** Variable actions of an automatic reply rule, applied when the rule matched (E7 / C4). */
+  interface AutoReplyActionsModel {
+    /** names of variables reset to their initial value after the match */
+    resetVariables?: string[]
+    /** `{ name, value }` where value is a template resolved against the received message */
+    setVariables?: Array<{ name: string; value: string }>
   }
 
   // MQTT 5 feature

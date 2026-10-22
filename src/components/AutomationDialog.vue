@@ -16,7 +16,7 @@
           <p class="automation-dialog-note">{{ $t('connections.automationSubscribeNote') }}</p>
         </el-tab-pane>
         <el-tab-pane :label="$t('connections.autoReply')" name="reply">
-          <AutoReplyEditor v-model="draft.autoReplies" />
+          <AutoReplyEditor v-model="draft.autoReplies" :variable-names="variableNames" />
 
           <!-- Debug panel: feed a message the connection would receive and look at what the rules
                answer, without publishing anything. -->
@@ -73,8 +73,8 @@ import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
 import { planAutoReplies } from '@/utils/autoReply'
 import { formatJsonText } from '@/utils/jmesPathCondition'
-import { connectionFieldVariables, mergeVariables } from '@/utils/payloadVariables'
-import { getGlobalVariableMap } from '@/utils/configProfiles'
+import { getGlobalVariables } from '@/utils/configProfiles'
+import { connectionVariableOptions } from '@/utils/payloadVariables'
 
 interface AutomationDraft {
   autoSubscriptions: AutoSubscribeGroupModel[]
@@ -126,6 +126,17 @@ export default class AutomationDialog extends Vue {
     }
   }
 
+  /** Variable names the reply actions can target: the connection's own and the global ones. */
+  private get variableNames(): string[] {
+    const names = Object.keys(this.record?.variables ?? {})
+    getGlobalVariables().forEach((variable) => {
+      if (variable.name && !names.includes(variable.name)) {
+        names.push(variable.name)
+      }
+    })
+    return names
+  }
+
   private handleOpen() {
     this.draft = clone({
       autoSubscriptions: this.record?.autoSubscriptions ?? [],
@@ -145,21 +156,19 @@ export default class AutomationDialog extends Vue {
       this.previewResult = { kind: 'error', message: this.$t('connections.autoReplyPreviewTopicRequired') as string }
       return
     }
-    const variables = mergeVariables(
-      this.record?.variables,
-      getGlobalVariableMap(),
-      connectionFieldVariables(this.record),
-    )
     const replies = planAutoReplies(this.draft.autoReplies, {
       topic,
       payload: this.previewPayload,
-      variables,
+      ...connectionVariableOptions(this.record),
+      // A preview only shows what would be sent: it must not advance `${count:1}`.
+      commitCounters: false,
     })
     if (!replies.length) {
       this.previewResult = { kind: 'none' }
       return
     }
-    const [reply] = replies
+    // A rule that failed earlier in the list must not hide the reply the user is previewing.
+    const reply = replies.find((item) => !item.error) ?? replies[0]
     const ruleName = this.draft.autoReplies.find((rule) => rule.id === reply.ruleId)?.name || reply.ruleId
     if (reply.error) {
       this.previewResult = {

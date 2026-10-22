@@ -398,12 +398,13 @@ import { jsonStringify } from '@/utils/jsonUtils'
 import { LeftValues, BodyTopValues, MsgTopValues, DetailLeftValues } from '@/utils/styles'
 import getErrorReason from '@/utils/mqttErrorReason'
 import { isLargeData } from '@/utils/data'
-import { getGlobalVariableMap } from '@/utils/configProfiles'
 import {
   collectUnresolvedVariables,
-  connectionFieldVariables,
+  connectionVariableOptions,
   createPayloadVariableResolver,
-  mergeVariables,
+  markManualDisconnect,
+  onConnectionDeleted,
+  payloadTypeSupportsVariables,
 } from '@/utils/payloadVariables'
 import { serializeAvroToBuffer, deserializeBufferToAvro } from '@/utils/avro'
 import { globalEventBus } from '@/utils/globalEventBus'
@@ -762,7 +763,8 @@ export default class ConnectionsDetail extends Vue {
             this.$message.success(this.$tc('common.deleteSuccess'))
             if (connection.id) {
               // The device behaviour of a deleted connection has no owner left: cancel the groups
-              // that are still waiting for their delay and forget its reply rules.
+              // that are still waiting for their delay, forget its reply rules and its variable state.
+              onConnectionDeleted(connection.id)
               detachConnectSubscriptions(connection.id)
               unregisterAutoReply(connection.id)
               this.removeActiveConnection({ id: connection.id })
@@ -1369,6 +1371,8 @@ export default class ConnectionsDetail extends Vue {
       return false
     }
     this.stopTimedSend()
+    // A manual disconnect ends the session: the next connect is not an "automatic reconnect".
+    markManualDisconnect(this.curConnectionId)
     this.disconnectLoding = true
     this.client.end!(false, () => {
       this.disconnectLoding = false
@@ -2006,8 +2010,8 @@ export default class ConnectionsDetail extends Vue {
      * send. The check must not advance counters -- the message that really goes on the wire is
      * resolved a second time, so a counter used by it advances exactly once.
      */
-    const variables = this.findMessageVariables()
-    const unresolved = this.findUnresolvedVariables(variables, topic, payload, type)
+    const variableOptions = this.findMessageVariables()
+    const unresolved = this.findUnresolvedVariables(variableOptions, topic, payload, type)
     if (unresolved.length) {
       if (options.quiet) {
         // A timed tick has nobody to ask: skip it instead of publishing the raw template.
@@ -2023,7 +2027,7 @@ export default class ConnectionsDetail extends Vue {
     }
     // One resolver for the topic and the payload: both get the same value for a variable, and a
     // counter used in both advances once per message.
-    const resolver = createPayloadVariableResolver({ variables })
+    const resolver = createPayloadVariableResolver(variableOptions)
     const publishTopic = resolver.resolve(topic)
 
     const { isNewPayload, recordId } = await this.insertHistory(
@@ -2036,8 +2040,7 @@ export default class ConnectionsDetail extends Vue {
      * publish history keeps the raw template (every re-send gets a fresh value) while the
      * message that goes on the wire carries the real data.
      */
-    const filledPayload =
-      payload && ['JSON', 'Plaintext'].includes(type) ? resolver.resolve(payload as string) : payload
+    const filledPayload = payload && payloadTypeSupportsVariables(type) ? resolver.resolve(payload as string) : payload
     resolver.commit()
 
     let convertedPayload = ''
@@ -2089,12 +2092,13 @@ export default class ConnectionsDetail extends Vue {
   }
 
   /**
-   * Every variable a message of this connection can use, closest scope first: the "客户端变量" of
-   * the connection, then the global ones, then the fields of the connection itself (so
-   * `${clientId}` works out of the box), then the inline `${name:config}` of the message.
+   * Every variable a message of this connection can use: the scopes assembled by
+   * `connectionVariableMap` (see `connectionVariables.ts`: the "客户端变量" of the connection, then
+   * the global ones, then the fields of the connection itself, so `${clientId}` works out of the
+   * box), plus the inline `${name:config}` of the message.
    */
-  private findMessageVariables(): { [name: string]: string } {
-    return mergeVariables(this.record.variables, getGlobalVariableMap(), connectionFieldVariables(this.record))
+  private findMessageVariables(): ReturnType<typeof connectionVariableOptions> {
+    return connectionVariableOptions(this.record)
   }
 
   /**
@@ -2104,13 +2108,13 @@ export default class ConnectionsDetail extends Vue {
    * in the publish pipeline itself).
    */
   private findUnresolvedVariables(
-    variables: { [name: string]: string },
+    variableOptions: ReturnType<typeof connectionVariableOptions>,
     topic: string,
     payload?: string | Buffer,
     type?: PayloadType,
   ): string[] {
-    const texts = ['Plaintext', 'JSON'].includes(type as string) ? [topic, payload as string] : [topic]
-    return collectUnresolvedVariables(variables, texts)
+    const texts = payloadTypeSupportsVariables(type) ? [topic, payload as string] : [topic]
+    return collectUnresolvedVariables({}, texts, variableOptions)
   }
 
   /**

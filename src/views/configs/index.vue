@@ -11,6 +11,17 @@
     </div>
     <div class="configs-view-header">
       <VariablesHelp v-if="activeTab === 'variable'" class="configs-view-help" />
+      <el-button
+        v-if="activeTab === 'variable'"
+        class="variable-migrate-btn"
+        type="primary"
+        size="mini"
+        plain
+        icon="el-icon-refresh"
+        @click="handleMigrateLegacy"
+      >
+        {{ $t('configs.variableMigrateLegacy') }}
+      </el-button>
       <el-button class="profile-add-btn" type="primary" size="mini" icon="el-icon-plus" @click="handleAdd">
         {{ addBtnText }}
       </el-button>
@@ -98,26 +109,43 @@
       <template v-else-if="activeTab === 'variable'">
         <el-table
           key="variable"
-          :data="globalVariables"
+          :data="variableRows()"
           size="mini"
           :empty-text="$t('configs.variablesEmpty')"
-          row-key="id"
+          row-key="raw.id"
         >
           <el-table-column
             :label="$t('configs.variableName')"
             prop="name"
-            min-width="200"
+            min-width="160"
             show-overflow-tooltip
           ></el-table-column>
-          <el-table-column :label="$t('configs.variableValue')" min-width="260" show-overflow-tooltip>
-            <template slot-scope="{ row }">{{ row.value }}</template>
-          </el-table-column>
-          <el-table-column :label="$t('common.oper')" width="110" align="center">
+          <el-table-column :label="$t('configs.variableType')" width="120" align="center">
             <template slot-scope="{ row }">
-              <a href="javascript:;" class="profile-oper" @click="handleEdit(row)">
+              <span :class="['variable-kind', row.stateful ? 'stateful' : 'constant']">{{ $t(row.kindKey) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('configs.variableDefault')" min-width="180" show-overflow-tooltip>
+            <template slot-scope="{ row }">
+              <code class="variable-cell">{{ row.defaultValue }}</code>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('configs.variableCurrentValue')" min-width="160" show-overflow-tooltip>
+            <template slot-scope="{ row }">
+              <code class="variable-cell current">{{ row.currentValue }}</code>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('common.oper')" width="150" align="center">
+            <template slot-scope="{ row }">
+              <a href="javascript:;" class="profile-oper" @click="handleEdit(row.raw)">
                 <i class="iconfont icon-edit"></i>
               </a>
-              <a href="javascript:;" class="profile-oper danger" @click="handleDelete(row)">
+              <el-tooltip v-if="row.stateful" :content="$t('configs.variableReset')" placement="top">
+                <a href="javascript:;" class="profile-oper" @click="handleResetVariable(row)">
+                  <i class="el-icon-refresh"></i>
+                </a>
+              </el-tooltip>
+              <a href="javascript:;" class="profile-oper danger" @click="handleDelete(row.raw)">
                 <i class="iconfont icon-delete"></i>
               </a>
             </template>
@@ -250,17 +278,11 @@
           <el-form-item :label="$t('configs.variableName')" prop="name">
             <el-input v-model.trim="profileForm.name" clearable placeholder="deviceId"></el-input>
           </el-form-item>
-          <el-form-item prop="value">
-            <template slot="label">
-              {{ $t('configs.variableValue') }}
-              <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
-                <div slot="content">{{ $t('configs.variableValueTip') }}</div>
-                <a href="javascript:;" class="preset-help">
-                  <i class="el-icon-warning-outline"></i>
-                </a>
-              </el-tooltip>
-            </template>
-            <el-input v-model="profileForm.value" clearable :placeholder="`${'${timestamp}'} / 26.5 / A1`"></el-input>
+          <el-form-item
+            :label="variableDefinitionStateful ? $t('configs.variableDefinition') : $t('configs.variableValue')"
+            :prop="variableDefinitionStateful ? '' : 'value'"
+          >
+            <VariableDefinitionEditor :value="variableStored" @change="handleVariableStoredChange" />
           </el-form-item>
         </template>
 
@@ -330,7 +352,7 @@
             <AutoSubscribeEditor v-model="profileForm.autoSubscriptions" />
           </el-form-item>
           <el-form-item :label="$t('connections.autoReply')">
-            <AutoReplyEditor v-model="profileForm.autoReplies" />
+            <AutoReplyEditor v-model="profileForm.autoReplies" :variable-names="clientProfileVariableNames" />
           </el-form-item>
         </template>
       </el-form>
@@ -360,9 +382,24 @@ import {
 import VariablesHelp from '@/components/VariablesHelp.vue'
 import Editor from '@/components/Editor.vue'
 import VariableEditor from '@/components/VariableEditor.vue'
+import VariableDefinitionEditor from '@/components/VariableDefinitionEditor.vue'
 import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
-import { PAYLOAD_VARIABLE_NAME_PATTERN, isBuiltinPayloadVariable } from '@/utils/payloadVariables'
+import {
+  normalizeGlobalVariables,
+  normalizeVariableDefinition,
+  onGlobalVariableChanged,
+  onGlobalVariableDeleted,
+  peekDefinitionValue,
+  resetVariable,
+  toStoredVariable,
+  validateStoredVariables,
+  validateVariableDefinition,
+  validateVariableName,
+} from '@/utils/payloadVariables'
+import type { ResolvedVariableDefinition } from '@/utils/payloadVariables'
+import { applyLegacyInlineMigration, scanLegacyInlineVariables } from '@/utils/variables/migration'
+import { MessageBox } from 'element-ui'
 import isJsonPayload from '@/utils/payloadLanguage'
 import validFormatJson from '@/utils/validFormatJson'
 
@@ -389,7 +426,7 @@ interface ClientProfileForm {
   reconnect: boolean
   reconnectPeriod: number
   clean: boolean
-  variables: { [name: string]: string }
+  variables: { [name: string]: StoredVariable }
   autoSubscriptions: AutoSubscribeGroupModel[]
   autoReplies: AutoReplyRuleModel[]
 }
@@ -422,7 +459,26 @@ interface VariableForm {
   id?: string
   name: string
   value: string
+  definition?: VariableDefinitionConfig
 }
+
+/** One row of the global variables table: the stored variable plus what the columns display. */
+interface GlobalVariableRow {
+  raw: GlobalVariableModel
+  name: string
+  kindKey: string
+  stateful: boolean
+  defaultValue: string
+  currentValue: string
+}
+
+/** The kind of a stored variable: a bare string is the original constant form. */
+const storedVariableKind = (stored: StoredVariable | undefined): VariableKind =>
+  typeof stored === 'string' ? 'constant' : stored?.kind ?? 'constant'
+
+/** The i18n key of a kind label, e.g. `randomWalk` -> `configs.variableKindRandomWalk`. */
+const kindLabelKey = (kind: VariableKind): string =>
+  'configs.variableKind' + kind.charAt(0).toUpperCase() + kind.slice(1)
 
 @Component({
   components: {
@@ -431,6 +487,7 @@ interface VariableForm {
     VariablesHelp,
     Editor,
     VariableEditor,
+    VariableDefinitionEditor,
     AutoSubscribeEditor,
     AutoReplyEditor,
   },
@@ -468,6 +525,49 @@ export default class Configs extends Vue {
     return theme && theme !== 'light' ? 'light' : 'dark'
   }
 
+  /** The variable dialog edits one stored variable: a constant string or a stateful definition. */
+  private get variableStored(): StoredVariable {
+    const form = this.profileForm as VariableForm
+    return form.definition ?? form.value ?? ''
+  }
+
+  private get variableDefinitionStateful(): boolean {
+    return storedVariableKind(this.variableStored) !== 'constant'
+  }
+
+  /** Variable names the automatic reply actions of a client preset can target. */
+  private get clientProfileVariableNames(): string[] {
+    const form = this.profileForm as ClientProfileForm
+    const names = Object.keys(form.variables ?? {})
+    this.globalVariables.forEach((variable) => {
+      if (variable.name && !names.includes(variable.name)) {
+        names.push(variable.name)
+      }
+    })
+    return names
+  }
+
+  /**
+   * The definition editor emits one stored variable, while the model keeps the legacy `value` field
+   * next to it: persisting both means an older build (and the migration reader) still sees a value.
+   */
+  private handleVariableStoredChange(stored: StoredVariable) {
+    const form = this.profileForm as VariableForm
+    if (typeof stored === 'string') {
+      this.$set(form, 'value', stored)
+      this.$set(form, 'definition', undefined)
+      return
+    }
+    if ((stored.kind ?? 'constant') === 'constant') {
+      this.$set(form, 'value', stored.value ?? '')
+      this.$set(form, 'definition', undefined)
+      return
+    }
+    // The definition key may not exist on a freshly opened dialog, so add it reactively.
+    this.$set(form, 'definition', stored)
+    this.$set(form, 'value', stored.initial !== undefined ? String(stored.initial) : '')
+  }
+
   get profileRules() {
     return {
       alias: [{ required: true, message: this.$t('configs.requiredField'), trigger: 'blur' }],
@@ -494,8 +594,14 @@ export default class Configs extends Vue {
       ],
       value: [
         {
-          // An empty value resolves to nothing, which is the same as an undefined variable.
+          // An empty constant resolves to nothing, which is the same as an undefined variable.
+          // A stateful definition has no template value: its default comes from the definition, so
+          // the legacy value field stays empty and must not block saving.
           validator: (rule: unknown, value: string, callback: (error?: Error) => void) => {
+            if (this.dialogType === 'variable' && this.variableDefinitionStateful) {
+              callback()
+              return
+            }
             if (typeof value !== 'string' || value.trim() === '') {
               callback(new Error(this.$t('configs.requiredField') as string))
               return
@@ -518,17 +624,17 @@ export default class Configs extends Vue {
       callback()
       return
     }
-    const name = (value ?? '').trim()
-    if (!PAYLOAD_VARIABLE_NAME_PATTERN.test(name)) {
+    const takenNames = this.globalVariables.filter((variable) => variable.id !== this.editingId).map(({ name }) => name)
+    const issue = validateVariableName(value ?? '', takenNames)
+    if (issue === 'invalid') {
       callback(new Error(this.$t('configs.variableNameInvalid') as string))
       return
     }
-    if (isBuiltinPayloadVariable(name)) {
+    if (issue === 'reserved') {
       callback(new Error(this.$t('configs.variableNameReserved') as string))
       return
     }
-    const duplicate = this.globalVariables.some((variable) => variable.name === name && variable.id !== this.editingId)
-    if (duplicate) {
+    if (issue === 'duplicate') {
       callback(new Error(this.$t('configs.variableNameDuplicate') as string))
       return
     }
@@ -579,11 +685,111 @@ export default class Configs extends Vue {
   }
 
   /** One line summary of the variables of a client preset, for the table. */
-  private describeVariables(variables: { [name: string]: string } | null | undefined): string {
+  private describeVariables(variables: { [name: string]: StoredVariable } | null | undefined): string {
     const pairs = Object.keys(variables ?? {})
       .filter((name) => name.trim())
-      .map((name) => `${name}=${variables?.[name] ?? ''}`)
+      .map((name) => {
+        const stored = variables?.[name]
+        if (typeof stored === 'string') {
+          return `${name}=${stored}`
+        }
+        const kind = stored?.kind ?? 'constant'
+        return kind === 'constant' ? `${name}=${stored?.value ?? ''}` : `${name}(${kind})`
+      })
     return pairs.length ? pairs.join(', ') : '-'
+  }
+
+  /**
+   * The rows of the global variables table. The current values come from the runtime state store,
+   * which is not reactive, so the value is read on every render (a reset calls `$forceUpdate`).
+   */
+  private variableRows(): GlobalVariableRow[] {
+    return this.globalVariables.map((variable) => {
+      const definition = normalizeGlobalVariables([variable])[variable.name.trim()]
+      const current = definition ? peekDefinitionValue(definition) : undefined
+      return {
+        raw: variable,
+        name: variable.name,
+        kindKey: kindLabelKey(definition?.kind ?? storedVariableKind(variable.definition ?? variable.value)),
+        stateful: (definition?.kind ?? 'constant') !== 'constant',
+        defaultValue: definition ? this.describeVariableDefault(definition) : '-',
+        currentValue: current === undefined || String(current) === '' ? '-' : String(current),
+      }
+    })
+  }
+
+  /** The default (initial) value of a definition, for the "默认值" column. */
+  private describeVariableDefault(definition: ResolvedVariableDefinition): string {
+    switch (definition.kind) {
+      case 'constant':
+        return definition.value ?? ''
+      case 'sequence':
+      case 'randomWalk':
+        return String(definition.initial ?? 0)
+      case 'random':
+        return `${definition.min ?? 0}..${definition.max ?? 100}`
+      case 'choice': {
+        const options = (definition.options ?? []).map((option) => option.value).filter((value) => value !== '')
+        return options.length ? options.join(' / ') : '-'
+      }
+      case 'session':
+        return definition.generator === 'template' ? definition.value ?? '' : 'UUID'
+      case 'captured':
+        return definition.value || '-'
+      default:
+        return '-'
+    }
+  }
+
+  /** Resets the shared current value of a global variable to its default. */
+  private handleResetVariable(row: GlobalVariableRow) {
+    const definition = normalizeGlobalVariables([row.raw])[row.name.trim()]
+    if (definition && resetVariable(definition)) {
+      this.$message.success(this.$t('configs.variableResetDone', { name: row.name }) as string)
+    }
+    this.$forceUpdate()
+  }
+
+  /**
+   * Moves the legacy inline forms (`${count:3}`, `${rssi:-30..-90}`) of the global variables into
+   * variable definitions. The scanner lives in the variable module; the templates are left
+   * untouched, the new definition simply takes precedence over the inline fallback.
+   */
+  private async handleMigrateLegacy() {
+    try {
+      const plan = await scanLegacyInlineVariables()
+      if (!plan.scanned || (!plan.definitions.length && !plan.conflicts.length)) {
+        this.$message.info(this.$t('configs.variableMigrateNone') as string)
+        return
+      }
+      const summary = this.$t('configs.variableMigrateSummary', {
+        scanned: plan.scanned,
+        created: plan.definitions.length,
+        conflicts: plan.conflicts.length,
+      }) as string
+      const conflicts = plan.conflicts.map((item) => item.name).join(', ')
+      const message = conflicts
+        ? `${summary}\n${this.$t('configs.variableMigrateConflicts', { names: conflicts })}`
+        : summary
+      try {
+        await this.$confirm(message, this.$t('configs.variableMigrateLegacy') as string, { type: 'warning' })
+      } catch (error) {
+        return
+      }
+      const result = applyLegacyInlineMigration(plan)
+      await MessageBox.alert(
+        this.$t('configs.variableMigrateResult', {
+          created: result.created.length,
+          migrated: result.migratedState.length,
+          skipped: result.skipped.length,
+        }) as string,
+        this.$t('configs.variableMigrateLegacy') as string,
+        { type: 'success' },
+      )
+      this.loadData()
+    } catch (error) {
+      this.$message.error(this.$t('configs.variableMigrateFailed', { error: String(error) }) as string)
+    }
   }
 
   /**
@@ -642,7 +848,12 @@ export default class Configs extends Vue {
     this.editingId = row.id
     if (this.activeTab === 'variable') {
       const variable = row as GlobalVariableModel
-      this.profileForm = { id: variable.id, name: variable.name, value: variable.value }
+      this.profileForm = {
+        id: variable.id,
+        name: variable.name,
+        value: variable.value,
+        ...(variable.definition ? { definition: { ...variable.definition } } : {}),
+      }
     } else if (this.activeTab === 'server') {
       const server = row as ServerProfileModel
       this.profileForm = {
@@ -697,6 +908,7 @@ export default class Configs extends Vue {
         } else if (this.activeTab === 'message') {
           deleteMessagePreset(row.id)
         } else if (this.activeTab === 'variable') {
+          onGlobalVariableDeleted(row.id)
           deleteGlobalVariable(row.id)
         } else {
           deleteClientProfile(row.id)
@@ -723,11 +935,27 @@ export default class Configs extends Vue {
           path: ['ws', 'wss'].includes(this.profileForm.protocol) ? this.profileForm.path || '/mqtt' : undefined,
         })
       } else if (this.dialogType === 'variable') {
-        saveGlobalVariable({
-          id: this.editingId ?? undefined,
-          name: this.profileForm.name,
-          value: this.profileForm.value,
+        const resolved = normalizeVariableDefinition(this.profileForm.name, this.variableStored, {
+          scope: 'global',
+          globalId: this.editingId ?? 'pending',
         })
+        if (validateVariableDefinition(resolved).length) {
+          // A definition that cannot work (e.g. min > max or no choice options) must not be stored.
+          this.$message.error(this.$t('configs.variableDefinitionInvalid') as string)
+          return
+        }
+        const storedDefinition = resolved.kind === 'constant' ? undefined : toStoredVariable(resolved)
+        const definition = typeof storedDefinition === 'string' ? undefined : storedDefinition
+        const saved = saveGlobalVariable({
+          id: this.editingId ?? undefined,
+          name: this.profileForm.name.trim(),
+          // A constant keeps its template; a stateful variable keeps its initial value here for
+          // readers of the legacy field (the definition holds the real rule).
+          value: resolved.kind === 'constant' ? resolved.value ?? '' : String(resolved.initial ?? ''),
+          ...(definition ? { definition } : {}),
+        })
+        // The definition changed: its shared value starts from the new default.
+        onGlobalVariableChanged(saved.id)
       } else if (this.dialogType === 'message') {
         saveMessagePreset({
           id: this.editingId ?? undefined,
@@ -736,6 +964,11 @@ export default class Configs extends Vue {
           payload: this.profileForm.payload,
         })
       } else {
+        const invalidVariables = validateStoredVariables(this.profileForm.variables, { scope: 'connection' })
+        if (invalidVariables.length) {
+          this.$message.error(this.$t('configs.variableDefinitionInvalid') as string)
+          return
+        }
         saveClientProfile({
           id: this.editingId ?? undefined,
           alias: this.profileForm.alias,
@@ -776,6 +1009,31 @@ export default class Configs extends Vue {
   .configs-view-help {
     margin-right: 12px;
     font-size: 12px;
+  }
+  .variable-migrate-btn {
+    margin-right: 8px;
+  }
+  .variable-kind {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 3px;
+    background: var(--color-bg-code);
+    font-size: 12px;
+    line-height: 20px;
+    &.stateful {
+      color: var(--color-main-green);
+    }
+    &.constant {
+      color: var(--color-text-light);
+    }
+  }
+  .variable-cell {
+    color: var(--color-text-default);
+    font-family: Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    &.current {
+      color: var(--color-main-green);
+    }
   }
   .profile-oper {
     margin: 0 6px;

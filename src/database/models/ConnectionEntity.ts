@@ -99,7 +99,7 @@ export default class ConnectionEntity {
 
   // Payload variables of this client, see ConnectionModel['variables']
   @Column({ type: 'simple-json', nullable: true, default: null })
-  variables?: { [name: string]: string } | null
+  variables?: { [name: string]: StoredVariable } | null
 
   // Topics subscribed right after connecting, see ConnectionModel['autoSubscriptions']
   @Column({ type: 'simple-json', nullable: true, default: null })

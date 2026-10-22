@@ -630,7 +630,7 @@ import {
   normalizeHistoryMaxCount,
 } from '@/utils/data'
 import { formatBytes } from '@/utils/formatter'
-import { resetPayloadCounters } from '@/utils/payloadVariables'
+import { resetAllVariables } from '@/utils/payloadVariables'
 import MCPSettings from '@/components/ai/MCPSettings.vue'
 import PayloadSizeControl from '@/components/PayloadSizeControl.vue'
 import VariablesHelp from '@/components/VariablesHelp.vue'
@@ -896,7 +896,7 @@ export default class Settings extends Vue {
       type: 'warning',
     })
       .then(() => {
-        resetPayloadCounters()
+        resetAllVariables()
         this.$message.success(this.$t('settings.resetPayloadVariablesSuccess') as string)
       })
       .catch(() => undefined)

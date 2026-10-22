@@ -1,5 +1,13 @@
 import { expect } from 'chai'
 import { planAutoReplies, renderReplyTemplate } from '@/utils/autoReply'
+import {
+  normalizeVariableMap,
+  readConnectionSession,
+  readPayloadCounter,
+  resetAllVariableStates,
+  resetPayloadCounters,
+  startConnectionSession,
+} from '@/utils/payloadVariables'
 
 /** The rule of the WIFI re-connect scenario: answer a command with the same message plus a code. */
 const createRule = (overrides: Partial<AutoReplyRuleModel> = {}): AutoReplyRuleModel => ({
@@ -117,6 +125,25 @@ describe('autoReply utility', () => {
  * The NTP scenario: the device message carries a 20 digit `msgId`, and the reply echoes it with
  * `${msg.msgId}`. The digits have to survive the round trip.
  */
+describe('auto reply match topic with variables', () => {
+  it('resolves a client/global variable of the filter from the definitions', () => {
+    const rule = createRule({
+      matchTopic: 'app/${productType}/+/device/system/post',
+      matchCondition: '',
+    })
+    const replies = planAutoReplies([rule], {
+      topic: 'app/A1/AF0201/device/system/post',
+      payload: '{"cmd":"X"}',
+      definitions: normalizeVariableMap({ productType: 'A1' }),
+      connectionId: 'connection-filter',
+    })
+
+    expect(replies).to.have.lengthOf(1)
+    expect(replies[0].error).to.equal(undefined)
+    expect(replies[0].topic).to.equal('app/A1/+/device/system/reply')
+  })
+})
+
 describe('auto reply with a big integer field', () => {
   const received = '{"cmd":"NTP_SYNC","ts":1792486795034,"msgId":16541683218561123115,"timezone":8}'
   const rule = (overrides: Partial<AutoReplyRuleModel> = {}): AutoReplyRuleModel => ({
@@ -267,5 +294,229 @@ describe('auto reply templates with arithmetic', () => {
       payload: '{"sensor-1":"ok"}',
     })
     expect(hyphen.payload).to.equal('{"v":"ok"}')
+  })
+})
+
+/**
+ * A reply template that still contains a placeholder is meaningless: there is no user to ask, so the
+ * rule is skipped and the reason is reported instead of publishing `${nope}` literally.
+ */
+describe('auto reply templates with an unresolved variable', () => {
+  const rule = (topic: string, payload: string): AutoReplyRuleModel => ({
+    id: 'unresolved-rule',
+    name: 'unresolved',
+    enabled: true,
+    matchTopic: 'app/+/+/device/system/post',
+    matchCondition: '',
+    reply: { topic, mode: 'fixed', payload, qos: 0, retain: false, delayMs: 0 },
+  })
+
+  it('skips a rule whose reply still contains an unknown variable', () => {
+    const replies = planAutoReplies([rule('app/${nope}/reply', '{"value":"${nope}"}')], {
+      topic: 'app/A1/AF0201/device/system/post',
+      payload: '{"cmd":"PING"}',
+    })
+
+    expect(replies).to.have.lengthOf(1)
+    expect(replies[0].topic).to.equal('')
+    expect(replies[0].payload).to.equal('')
+    expect(replies[0].error).to.be.a('string')
+    expect(replies[0].error).to.contain('unresolved variables')
+    expect(replies[0].error).to.contain('nope')
+  })
+
+  it('reports an unknown variable that only appears in the reply payload', () => {
+    const replies = planAutoReplies([rule('app/device/system/reply', '{"value":"${nope}"}')], {
+      topic: 'app/A1/AF0201/device/system/post',
+      payload: '{"cmd":"PING"}',
+    })
+
+    expect(replies).to.have.lengthOf(1)
+    expect(replies[0].topic).to.equal('')
+    expect(replies[0].payload).to.equal('')
+    expect(replies[0].error).to.contain('unresolved variables')
+  })
+
+  it('skips only the rule with the unknown variable, not the other rules of the message', () => {
+    const broken: AutoReplyRuleModel = {
+      ...rule('app/device/system/reply', '{"value":"${nope}"}'),
+      id: 'broken-rule',
+    }
+    const good = createRule({ matchCondition: '' })
+
+    const replies = planAutoReplies([broken, good], createContext('{"cmd":"WIFI_RECONNECT_SERVICE"}'))
+
+    expect(replies).to.have.lengthOf(2)
+    expect(replies[0].error).to.contain('unresolved variables')
+    expect(replies[0].topic).to.equal('')
+    expect(replies[1].error).to.equal(undefined)
+    expect(replies[1].topic).to.equal('app/A1/+/device/system/reply')
+  })
+})
+
+describe('auto reply match topic templates', () => {
+  it('reports an unresolved variable in the match topic instead of silently never matching', () => {
+    const rule = createRule({ matchTopic: 'app/${nope}/#', matchCondition: '' })
+    const replies = planAutoReplies([rule], createContext('{"cmd":"x"}'))
+
+    expect(replies).to.have.lengthOf(1)
+    expect(replies[0].error).to.contain('unresolved variables in match topic')
+    expect(replies[0].topic).to.equal('')
+  })
+})
+
+describe('auto reply counters', () => {
+  const counterRule = (): AutoReplyRuleModel =>
+    createRule({
+      matchCondition: '',
+      reply: {
+        topic: 'out/${count:1}',
+        mode: 'fixed',
+        payload: '{"n":${count:1}}',
+        qos: 0,
+        retain: false,
+        delayMs: 0,
+      },
+    })
+
+  beforeEach(() => {
+    resetPayloadCounters()
+  })
+
+  after(() => {
+    resetPayloadCounters()
+  })
+
+  it('advances a counter used by a reply exactly once per reply', () => {
+    const [first] = planAutoReplies([counterRule()], createContext('{"cmd":"x"}'))
+    expect(first.error).to.equal(undefined)
+    expect(first.topic).to.equal('out/1')
+    expect(JSON.parse(first.payload)).to.deep.equal({ n: 1 })
+    expect(readPayloadCounter('count')).to.equal(2)
+
+    const [second] = planAutoReplies([counterRule()], createContext('{"cmd":"x"}'))
+    expect(second.topic).to.equal('out/2')
+  })
+
+  it('does not advance a counter when the caller only previews the reply', () => {
+    const [reply] = planAutoReplies([counterRule()], { ...createContext('{"cmd":"x"}'), commitCounters: false })
+
+    expect(reply.topic).to.equal('out/1')
+    expect(readPayloadCounter('count')).to.equal(undefined)
+  })
+})
+
+describe('auto reply to a payload that is not JSON', () => {
+  it('renders a message field as empty instead of failing the rule', () => {
+    const rule = createRule({
+      matchCondition: '',
+      reply: {
+        topic: 'out/x',
+        mode: 'fixed',
+        payload: '{"v":"${msg.x}","t":"${topic}"}',
+        qos: 0,
+        retain: false,
+        delayMs: 0,
+      },
+    })
+    const [reply] = planAutoReplies([rule], createContext('PING'))
+
+    expect(reply.error).to.equal(undefined)
+    expect(reply.payload).to.equal('{"v":"","t":"app/A1/AF0201/device/system/post"}')
+  })
+})
+
+/**
+ * The new capability of the one-pass resolver: a user variable value may reference a field of the
+ * received message, because the message provider is part of the same chain.
+ */
+describe('auto reply templates read the message through a user variable', () => {
+  const fixedRule = createRule({
+    matchCondition: '',
+    reply: {
+      topic: 'app/${productType}/device/system/reply',
+      mode: 'fixed',
+      payload: '{"ack":"${ack}","topic":"${topic}"}',
+      qos: 0,
+      retain: false,
+      delayMs: 0,
+    },
+  })
+
+  it('resolves a message field and the topic inside a user variable', () => {
+    const [reply] = planAutoReplies([fixedRule], {
+      topic: 'app/A1/AF0201/device/system/post',
+      payload: '{"msgId":"42"}',
+      variables: { productType: 'A1', ack: 'id-${msg.msgId}' },
+    })
+
+    expect(reply.error).to.equal(undefined)
+    expect(reply.payload).to.equal('{"ack":"id-42","topic":"app/A1/AF0201/device/system/post"}')
+  })
+
+  it('resolves a message field inside a user variable of an echo reply', () => {
+    const echoRule = createRule({
+      matchCondition: '',
+      reply: {
+        topic: 'app/${productType}/device/system/reply',
+        mode: 'echo',
+        payload: '{"ack":"${ack}"}',
+        qos: 0,
+        retain: false,
+        delayMs: 0,
+      },
+    })
+    const [reply] = planAutoReplies([echoRule], {
+      topic: 'app/A1/AF0201/device/system/post',
+      payload: '{"cmd":"PING","msgId":"42"}',
+      variables: { productType: 'A1', ack: 'id-${msg.msgId}' },
+    })
+
+    expect(reply.error).to.equal(undefined)
+    expect(JSON.parse(reply.payload)).to.deep.equal({ cmd: 'PING', msgId: '42', ack: 'id-42' })
+  })
+})
+
+describe('auto reply static templates', () => {
+  beforeEach(() => {
+    resetAllVariableStates()
+    resetPayloadCounters()
+  })
+
+  after(() => {
+    resetAllVariableStates()
+    resetPayloadCounters()
+  })
+
+  it('advances the session message counter although no resolver is built', () => {
+    startConnectionSession('conn-static', 1000)
+    const rule = createRule({
+      matchCondition: '',
+      reply: { topic: 'out/static', mode: 'fixed', payload: '{"ok":true}', qos: 0, retain: false, delayMs: 0 },
+    })
+    const replies = planAutoReplies([rule], {
+      topic: 'app/A1/AF0201/device/system/post',
+      payload: '{"cmd":"X"}',
+      connectionId: 'conn-static',
+    })
+
+    expect(replies).to.have.lengthOf(1)
+    expect(replies[0].error).to.equal(undefined)
+    expect(readConnectionSession('conn-static')?.sentCount).to.equal(1)
+  })
+
+  it('does not advance it for a preview', () => {
+    startConnectionSession('conn-static-preview', 1000)
+    const rule = createRule({
+      matchCondition: '',
+      reply: { topic: 'out/static', mode: 'fixed', payload: '{"ok":true}', qos: 0, retain: false, delayMs: 0 },
+    })
+    planAutoReplies([rule], {
+      topic: 'app/A1/AF0201/device/system/post',
+      payload: '{"cmd":"X"}',
+      connectionId: 'conn-static-preview',
+      commitCounters: false,
+    })
+    expect(readConnectionSession('conn-static-preview')?.sentCount).to.equal(0)
   })
 })

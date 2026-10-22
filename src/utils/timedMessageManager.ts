@@ -6,13 +6,12 @@ import { getMessageId } from '@/utils/idGenerator'
 import { ignoreQoS0Message } from '@/utils/mqttUtils'
 import {
   collectUnresolvedVariables,
-  connectionFieldVariables,
+  connectionVariableOptions,
   createPayloadVariableResolver,
-  mergeVariables,
+  payloadTypeSupportsVariables,
 } from '@/utils/payloadVariables'
 import { hasMessageHeaderID, savePublishedMessageHistory } from '@/utils/historyRecordUtils'
 import { DEFAULT_HISTORY_MAX_COUNT } from '@/utils/data'
-import { getGlobalVariableMap } from '@/utils/configProfiles'
 
 /**
  * Global registry of running timed messages, keyed by connection.
@@ -259,25 +258,26 @@ async function publishWithoutView(connectionId: string, message: MessageModel, t
       getLog().warn(`Timed message skipped: connection ${connectionId} is not connected`)
       return
     }
-    // Variables ("客户端变量", 全局变量 and the fields of the connection) refill on every tick,
-    // exactly like the built-in ones. They are read from the database here, so a tick sees an edit
-    // the user made after the timed message was started. Without the connection page there is
+    // Variables (the scopes assembled by `connectionVariableMap` in connectionVariables.ts:
+    // "客户端变量", 全局变量 and the fields of the connection) refill on every tick, exactly like the
+    // built-in ones. They are read from the database here, so a tick sees an edit the user made
+    // after the timed message was started. Without the connection page there is
     // nobody to ask for confirmation, so a tick with an unresolved placeholder is skipped instead
     // of publishing the raw template; the probe below does not touch the counters, the message that
     // really goes out is resolved once more.
     const { connectionService } = useServices()
     const source = await connectionService.getVariableSource(connectionId)
-    const variables = mergeVariables(source?.variables, getGlobalVariableMap(), connectionFieldVariables(source))
-    const texts = ['Plaintext', 'JSON'].includes(type) ? [message.topic, message.payload as string] : [message.topic]
-    const unresolved = collectUnresolvedVariables(variables, texts)
+    const variableOptions = connectionVariableOptions(source)
+    const texts = payloadTypeSupportsVariables(type) ? [message.topic, message.payload as string] : [message.topic]
+    const unresolved = collectUnresolvedVariables({}, texts, variableOptions)
     if (unresolved.length) {
       getLog().warn(`Timed message skipped: unresolved variables ${unresolved.join(', ')} (connection ${connectionId})`)
       return
     }
-    const resolver = createPayloadVariableResolver({ variables })
+    const resolver = createPayloadVariableResolver(variableOptions)
     const wireTopic = resolver.resolve(message.topic)
     let filledPayload: string | Buffer | undefined = message.payload
-    if (filledPayload && ['JSON', 'Plaintext'].includes(type)) {
+    if (filledPayload && payloadTypeSupportsVariables(type)) {
       filledPayload = resolver.resolve(filledPayload as string)
     }
     resolver.commit()

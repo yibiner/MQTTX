@@ -413,7 +413,9 @@ export default class ConnectionService {
    */
   public async getVariableSource(
     id: string,
-  ): Promise<Pick<ConnectionModel, 'variables' | 'clientId' | 'username' | 'name' | 'host' | 'port'> | undefined> {
+  ): Promise<
+    Pick<ConnectionModel, 'id' | 'variables' | 'clientId' | 'username' | 'name' | 'host' | 'port'> | undefined
+  > {
     const connection = await this.connectionRepository.findOne({
       where: { id },
       select: ['id', 'variables', 'clientId', 'username', 'name', 'host', 'port'],
@@ -422,6 +424,7 @@ export default class ConnectionService {
       return undefined
     }
     return {
+      id: connection.id,
       variables: connection.variables,
       clientId: connection.clientId,
       username: connection.username,

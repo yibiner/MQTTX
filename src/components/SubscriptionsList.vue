@@ -271,8 +271,7 @@ import { getSubscriptionId } from '@/utils/idGenerator'
 import getContextmenuPosition from '@/utils/getContextmenuPosition'
 import { reconcileAutoSubscriptions } from '@/utils/autoSubscribe'
 import { buildRowSubscribeOptions } from '@/utils/subscribeOptions'
-import { getGlobalVariableMap } from '@/utils/configProfiles'
-import { connectionFieldVariables, mergeVariables } from '@/utils/payloadVariables'
+import { connectionVariableOptions } from '@/utils/payloadVariables'
 import { LeftValues } from '@/utils/styles'
 import getErrorReason from '@/utils/mqttErrorReason'
 import { hasPersistentSession } from '@/utils/subscriptionUtils'
@@ -626,12 +625,14 @@ export default class SubscriptionsList extends Vue {
     if (!Array.isArray(groups) || !groups.length || !connectionId) {
       return
     }
-    const variables = mergeVariables(
-      this.record.variables,
-      getGlobalVariableMap(),
-      connectionFieldVariables(this.record),
+    const variableOptions = connectionVariableOptions(this.record)
+    const { groups: nextGroups, changed } = reconcileAutoSubscriptions(
+      groups,
+      this.subsList,
+      previousRows,
+      {},
+      variableOptions,
     )
-    const { groups: nextGroups, changed } = reconcileAutoSubscriptions(groups, this.subsList, previousRows, variables)
     if (!changed) {
       return
     }

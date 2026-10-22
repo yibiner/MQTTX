@@ -152,6 +152,17 @@ export const deleteMessagePreset = (id: string): void => {
 
 const GLOBAL_VARIABLES_KEY = 'globalVariables'
 
+/**
+ * Bumped on every change of the global variables list.
+ *
+ * The variable definitions of a connection are normalized from this list, and the automatic-reply
+ * engine caches them per connection for its hot path. The revision lets that cache notice an edit
+ * without re-reading the list (or guessing from a TTL).
+ */
+let globalVariablesRevision = 0
+
+export const getGlobalVariablesRevision = (): number => globalVariablesRevision
+
 export const getGlobalVariables = (): GlobalVariableModel[] => readList(GLOBAL_VARIABLES_KEY)
 
 export const getGlobalVariable = (id: string): GlobalVariableModel | undefined =>
@@ -167,6 +178,27 @@ export function saveGlobalVariable(variable: Omit<GlobalVariableModel, 'id'> & {
     variables.splice(index, 1, saved)
   }
   writeList(GLOBAL_VARIABLES_KEY, variables)
+  globalVariablesRevision += 1
+  return saved
+}
+
+/**
+ * Adds several global variables with one write of the store.
+ *
+ * The legacy-inline migration can create dozens of definitions at once; writing the whole
+ * `config.json` once instead of once per definition keeps the one-click action from freezing the
+ * renderer. The ids are generated here and returned, so the caller can adopt the persisted state of
+ * the corresponding counter.
+ */
+export function saveGlobalVariables(
+  variables: Array<Omit<GlobalVariableModel, 'id'> & { id?: string }>,
+): GlobalVariableModel[] {
+  if (!Array.isArray(variables) || variables.length === 0) {
+    return []
+  }
+  const saved = variables.map((variable) => ({ ...variable, id: variable.id ?? uuidv4() } as GlobalVariableModel))
+  writeList(GLOBAL_VARIABLES_KEY, [...saved, ...getGlobalVariables()])
+  globalVariablesRevision += 1
   return saved
 }
 
@@ -175,6 +207,7 @@ export const deleteGlobalVariable = (id: string): void => {
     GLOBAL_VARIABLES_KEY,
     getGlobalVariables().filter((variable) => variable.id !== id),
   )
+  globalVariablesRevision += 1
 }
 
 /**

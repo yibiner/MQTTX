@@ -8,7 +8,9 @@ import {
   getGlobalVariable,
   getGlobalVariableMap,
   getGlobalVariables,
+  getGlobalVariablesRevision,
   saveGlobalVariable,
+  saveGlobalVariables,
 } from '@/utils/configProfiles'
 import { resolvePayloadVariables } from '@/utils/payloadVariables'
 
@@ -115,5 +117,40 @@ describe('configProfiles list cache', () => {
     expect(getGlobalVariableMap().cachedVar).to.equal('v2')
     deleteGlobalVariable(saved.id)
     expect(getGlobalVariableMap().cachedVar).to.equal(undefined)
+  })
+})
+
+describe('configProfiles global variable batch and revision', () => {
+  it('creates a batch with one write and one revision bump', () => {
+    const before = getGlobalVariablesRevision()
+    const saved = saveGlobalVariables([
+      { name: 'batchAlpha', value: '1' },
+      { name: 'batchBeta', value: '2' },
+    ])
+    try {
+      expect(saved).to.have.lengthOf(2)
+      expect(saved.map((variable) => variable.name)).to.deep.equal(['batchAlpha', 'batchBeta'])
+      expect(saved.every((variable) => Boolean(variable.id))).to.equal(true)
+      expect(getGlobalVariablesRevision()).to.equal(before + 1)
+      expect(
+        getGlobalVariables()
+          .slice(0, 2)
+          .map((variable) => variable.name),
+      ).to.deep.equal(['batchAlpha', 'batchBeta'])
+    } finally {
+      saved.forEach((variable) => deleteGlobalVariable(variable.id))
+    }
+  })
+
+  it('bumps the revision on an edit and a delete', () => {
+    const saved = saveGlobalVariable({ name: 'revisionVar', value: '1' })
+    const afterSave = getGlobalVariablesRevision()
+    saveGlobalVariable({ id: saved.id, name: 'revisionVar', value: '2' })
+    const afterEdit = getGlobalVariablesRevision()
+    deleteGlobalVariable(saved.id)
+    const afterDelete = getGlobalVariablesRevision()
+
+    expect(afterEdit).to.equal(afterSave + 1)
+    expect(afterDelete).to.equal(afterEdit + 1)
   })
 })

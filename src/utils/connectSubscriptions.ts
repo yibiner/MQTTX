@@ -2,8 +2,7 @@ import log4js from 'log4js'
 import type { MqttClient } from 'mqtt'
 import store from '@/store'
 import useServices from '@/database/useServices'
-import { getGlobalVariableMap } from '@/utils/configProfiles'
-import { connectionFieldVariables, mergeVariables } from '@/utils/payloadVariables'
+import { connectionVariableOptions, onConnectionEstablished } from '@/utils/payloadVariables'
 import { ConnectSubscriptionBatch, ConnectSubscriptionTopic, planConnectSubscriptions } from '@/utils/autoSubscribe'
 import { buildRowSubscribeOptions } from '@/utils/subscribeOptions'
 import { getSubscriptionId } from '@/utils/idGenerator'
@@ -29,6 +28,8 @@ interface AttachedSubscriptions {
   connectionId: string
   record: ConnectionModel
   timers: Array<ReturnType<typeof setTimeout>>
+  /** the client's connect handler, removed again when the connection is deleted */
+  handler?: () => void
 }
 
 const attached = new Map<MqttClient, AttachedSubscriptions>()
@@ -66,8 +67,7 @@ const clearTimers = (timers: Array<ReturnType<typeof setTimeout>>) => {
   timers.length = 0
 }
 
-const resolveVariables = (record: ConnectionModel | null | undefined) =>
-  mergeVariables(record?.variables, getGlobalVariableMap(), connectionFieldVariables(record))
+const resolveVariables = (record: ConnectionModel | null | undefined) => connectionVariableOptions(record)
 
 /**
  * Registers the connect-time subscriptions of one connection.
@@ -80,18 +80,24 @@ export const attachConnectSubscriptions = (client: MqttClient, connectionId: str
   const existing = attached.get(client)
   if (existing) {
     existing.record = record
+    existing.connectionId = connectionId
     return
   }
   const entry: AttachedSubscriptions = { connectionId, record, timers: [] }
   attached.set(client, entry)
 
-  client.on('connect', () => {
+  const onConnect = () => {
     clearTimers(entry.timers)
     const source = records.get(connectionId) ?? entry.record
+    // Start the session and run the connect resets BEFORE the subscription topics are resolved:
+    // they may use `${connectedAt}` or a variable that resets on connect.
+    if (source) {
+      onConnectionEstablished(source)
+    }
     const plan = planConnectSubscriptions({
       rows: source?.subscriptions,
       groups: source?.autoSubscriptions,
-      variables: resolveVariables(source),
+      ...resolveVariables(source),
       restoreManual: store.getters?.autoResub !== false,
     })
     if (plan.unresolved.length) {
@@ -136,7 +142,9 @@ export const attachConnectSubscriptions = (client: MqttClient, connectionId: str
             .join(', '),
       )
     }
-  })
+  }
+  entry.handler = onConnect
+  client.on('connect', onConnect)
 
   // A reconnect fires 'connect' again and reschedules, so anything pending belongs to a connection
   // that is gone.
@@ -159,9 +167,16 @@ export const updateConnectSubscriptions = (connectionId: string, record: Connect
 /** Cancels everything that is still waiting for its delay, e.g. when the connection is deleted. */
 export const detachConnectSubscriptions = (connectionId: string): void => {
   records.delete(connectionId)
-  attached.forEach((entry) => {
+  listeners.delete(connectionId)
+  attached.forEach((entry, client) => {
     if (entry.connectionId === connectionId) {
       clearTimers(entry.timers)
+      // Remove the listener as well: keeping the client (and its connection record) in the map
+      // after a deletion would leak the whole object graph for the rest of the session.
+      if (entry.handler) {
+        client.removeListener('connect', entry.handler)
+      }
+      attached.delete(client)
     }
   })
 }
