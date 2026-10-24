@@ -133,6 +133,48 @@
                 <i class="iconfont icon-stop-script"></i>
               </a>
             </el-tooltip>
+            <el-popover
+              v-model="agentBridgeVisible"
+              placement="bottom-end"
+              width="380"
+              trigger="click"
+              popper-class="agent-bridge-popper"
+            >
+              <div class="agent-bridge-panel">
+                <div class="agent-bridge-row">
+                  <span>{{ $t('connections.agentBridge') }}</span>
+                  <el-switch
+                    :value="agentBridgeEnabled"
+                    active-color="#34c388"
+                    inactive-color="#A2A9B0"
+                    @change="setAgentBridgeEnabled"
+                  ></el-switch>
+                </div>
+                <p class="agent-bridge-tip">{{ $t('connections.agentBridgeTip') }}</p>
+                <p v-if="agentBridgeEnabled && !client.connected" class="agent-bridge-error">
+                  {{ $t('connections.agentBridgeOffline') }}
+                </p>
+                <p v-if="agentBridgeError" class="agent-bridge-error">{{ agentBridgeError }}</p>
+                <template v-if="agentBridgeEnabled && agentBridgeConfig">
+                  <pre>{{ agentBridgeConfig }}</pre>
+                  <p class="agent-bridge-sse">{{ $t('connections.agentBridgeSse', { url: agentBridgeSseUrl }) }}</p>
+                  <el-button size="mini" type="primary" @click="copyAgentBridgeConfig">
+                    {{ $t('connections.agentBridgeCopy') }}
+                  </el-button>
+                </template>
+              </div>
+              <a slot="reference" href="javascript:;" :class="['agent-bridge-btn', { active: agentBridgeEnabled }]">
+                <el-tooltip
+                  placement="bottom"
+                  :effect="theme !== 'light' ? 'light' : 'dark'"
+                  :open-delay="500"
+                  :content="$t('connections.agentBridge')"
+                  :disabled="agentBridgeVisible"
+                >
+                  <i class="el-icon-connection"></i>
+                </el-tooltip>
+              </a>
+            </el-popover>
             <el-tooltip
               v-if="enableCopilot"
               placement="bottom"
@@ -417,6 +459,8 @@ import {
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import useServices from '@/database/useServices'
 import { getMessageId, getSubscriptionId } from '@/utils/idGenerator'
+import { describeConnection, messageFromAgent, selectAgentMessages, toAgentMessage } from '@/utils/agentBridge'
+import { attachAgentBridge, detachAgentBridge, focusAgentBridge, AgentBridgeHandler } from '@/utils/agentBridgeClient'
 import getContextmenuPosition from '@/utils/getContextmenuPosition'
 import { deserializeBufferToProtobuf, printObjectAsString, serializeProtobufToBuffer } from '@/utils/protobuf'
 import { jsonStringify } from '@/utils/jsonUtils'
@@ -554,6 +598,12 @@ export default class ConnectionsDetail extends Vue {
   /** Tells this view about the replies the engine published, so they show up in the conversation. */
   private unsubAutoReplyPublished: (() => void) | null = null
   private sendTimedMessageCount = 0
+  private agentBridgeVisible = false
+  private agentBridgeEnabled = false
+  private agentBridgeConfig = ''
+  private agentBridgeSseUrl = ''
+  private agentBridgeError = ''
+  private agentBridgeHandler: AgentBridgeHandler | null = null
   private receivedMsgType: PayloadType = this.getReceivedMsgType()
   private msgType: MessageType = 'all'
 
@@ -641,6 +691,13 @@ export default class ConnectionsDetail extends Vue {
 
   get curConnectionId(): string {
     return this.$route.params.id
+  }
+
+  @Watch('agentBridgeVisible')
+  private handleAgentBridgeVisible(visible: boolean) {
+    if (visible) {
+      this.loadAgentBridgeStatus()
+    }
   }
 
   @Watch('record')
@@ -1849,8 +1906,12 @@ export default class ConnectionsDetail extends Vue {
     for (const msg of incomingMsgs) {
       const isActiveTopicMessages = matchTopicMethod(this.activeTopic, msg.topic)
       const isActiveMsgType = this.isMessageTypeActive(msg)
-      if (isActiveMsgType && (!this.activeTopic || isActiveTopicMessages)) {
-        if (this.searchParams.topic !== '' || this.searchParams.payload !== '') {
+      const fromAgent = messageFromAgent(msg)
+      const passesFilter = isActiveMsgType && (!this.activeTopic || isActiveTopicMessages)
+      // A publish from the local agent has to stay on screen even when a direction, topic or
+      // search filter would hide an ordinary message. That list is how the send is checked.
+      if (fromAgent || passesFilter) {
+        if (!fromAgent && (this.searchParams.topic !== '' || this.searchParams.payload !== '')) {
           const isMatch = this.searchMessage(msg)
           if (isMatch) {
             _messages.push(msg)
@@ -2194,6 +2255,146 @@ export default class ConnectionsDetail extends Vue {
     )
 
     afterSendCallback?.(isNewPayload, recordId)
+  }
+
+  /**
+   * Publishes a message for the local MCP bridge and draws it with the same path as a manual send.
+   * The text returned to the agent is the text appended to the message list.
+   */
+  private publishFromAgent(input: {
+    topic: string
+    payload: string
+    qos: 0 | 1 | 2
+    retain: boolean
+  }): Promise<ReturnType<typeof toAgentMessage>> {
+    const topic = (input.topic || '').trim()
+    if (!topic) {
+      return Promise.reject(new Error('topic is required'))
+    }
+    if (typeof input.payload !== 'string') {
+      return Promise.reject(new Error('payload must be a string'))
+    }
+    if (!this.client.connected || typeof this.client.publish !== 'function') {
+      return Promise.reject(new Error('The connection is not connected'))
+    }
+    const qos = input.qos
+    const retain = input.retain === true
+    const type: PayloadType = 'Plaintext'
+    const variableOptions = this.findMessageVariables()
+    const unresolved = this.findUnresolvedVariables(variableOptions, topic, input.payload, type)
+    if (unresolved.length) {
+      return Promise.reject(new Error(`Unresolved variables: ${unresolved.join(', ')}`))
+    }
+    const resolver = createPayloadVariableResolver(variableOptions)
+    const publishTopic = resolver.resolve(topic)
+    const filledPayload = resolver.resolve(input.payload)
+    let convertedPayload = filledPayload
+    let wirePayload: string | Buffer = filledPayload
+    if (filledPayload) {
+      convertedPayload = this.convertPayloadByFunction(filledPayload, 'publish', type)
+      const encoded = this.handlePayloadBySchemaOrType(convertedPayload, type)
+      if (encoded === undefined) {
+        return Promise.reject(new Error('The publish script or schema rejected the payload, so nothing was sent'))
+      }
+      wirePayload = encoded
+    }
+    const publish = this.client.publish.bind(this.client)
+    return new Promise((resolve, reject) => {
+      publish(publishTopic, wirePayload, { qos, retain }, async (error?: Error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+        resolver.commit()
+        const message: MessageModel = {
+          id: getMessageId(),
+          out: true,
+          createAt: time.getNowDate(),
+          topic: publishTopic,
+          payload: convertedPayload.toString(),
+          qos,
+          retain,
+          meta: JSON.stringify({ agent: true }),
+        }
+        this.updateMeta(message, 'function', 'publish')
+        this.updateMeta(message, 'schema', 'publish')
+        if (this.record.id && !ignoreQoS0Message(qos)) {
+          await this.saveMessage(this.record.id, [message])
+        }
+        this.renderMessage(this.curConnectionId, message, 'publish')
+        resolve(toAgentMessage(message))
+      })
+    })
+  }
+
+  private describeForAgent() {
+    if (!this.record || !this.record.id) {
+      throw new Error('The connection is still loading')
+    }
+    return describeConnection({
+      id: this.record.id,
+      name: this.record.name,
+      clientId: this.record.clientId,
+      protocol: this.record.protocol,
+      host: this.record.host,
+      port: this.record.port,
+      path: this.record.path,
+      connected: this.client.connected === true,
+      subscriptions: this.record.subscriptions,
+      messageSequences: this.record.messageSequences,
+    })
+  }
+
+  private listMessagesForAgent(input: { limit?: number; afterId?: string }) {
+    return selectAgentMessages(
+      this.recordMsgs.list.map((message) => toAgentMessage(message)),
+      input,
+    )
+  }
+
+  private bindAgentBridge() {
+    if (this.agentBridgeHandler) {
+      return
+    }
+    const handler: AgentBridgeHandler = {
+      describe: () => this.describeForAgent(),
+      publish: (input) => this.publishFromAgent(input),
+      listMessages: (input) => this.listMessagesForAgent(input),
+    }
+    this.agentBridgeHandler = handler
+    attachAgentBridge(handler)
+  }
+
+  private async loadAgentBridgeStatus() {
+    try {
+      const status = await ipcRenderer.invoke('agent-bridge:get-status')
+      this.applyAgentBridgeStatus(status)
+    } catch (error) {
+      this.agentBridgeError = error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  private async setAgentBridgeEnabled(enabled: boolean) {
+    try {
+      const status = await ipcRenderer.invoke('agent-bridge:set-enabled', enabled)
+      this.applyAgentBridgeStatus(status)
+    } catch (error) {
+      this.agentBridgeEnabled = !enabled
+      this.agentBridgeError = error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  private applyAgentBridgeStatus(status: { enabled: boolean; config: string; sseUrl: string; error: string }) {
+    this.agentBridgeEnabled = !!status.enabled
+    this.agentBridgeConfig = status.config || ''
+    this.agentBridgeSseUrl = status.sseUrl || ''
+    this.agentBridgeError = status.error || ''
+  }
+
+  private copyAgentBridgeConfig() {
+    const { clipboard } = require('electron')
+    clipboard.writeText(this.agentBridgeConfig)
+    this.$message.success(this.$t('connections.agentBridgeCopied') as string)
   }
 
   /**
@@ -2704,6 +2905,9 @@ export default class ConnectionsDetail extends Vue {
     })
     this.setMessageListHeight()
     window.addEventListener('resize', this.onWindowResize)
+    this.bindAgentBridge()
+    window.addEventListener('focus', this.onAgentBridgeWindowFocus)
+    this.loadAgentBridgeStatus()
     // Timed message wiring is done in syncTimedMessagesBinding() (called from
     // getConnectionValue in created()), because the reused view can switch connections
     // without being destroyed and the binding must follow the connection id.
@@ -2735,6 +2939,15 @@ export default class ConnectionsDetail extends Vue {
     this.unbindAutomationBinding()
     this.forceStopToReconnect()
     window.removeEventListener('resize', this.onWindowResize)
+    window.removeEventListener('focus', this.onAgentBridgeWindowFocus)
+    if (this.agentBridgeHandler) {
+      detachAgentBridge(this.agentBridgeHandler)
+      this.agentBridgeHandler = null
+    }
+  }
+
+  private onAgentBridgeWindowFocus() {
+    focusAgentBridge()
   }
 
   get activeSearchTerms() {
@@ -2821,9 +3034,13 @@ export default class ConnectionsDetail extends Vue {
         .edit-btn,
         .connect-btn,
         .copilot-btn,
+        .agent-bridge-btn,
         .new-window-btn,
         .clear-history-btn {
           margin-right: 16px;
+        }
+        .agent-bridge-btn.active i {
+          color: var(--color-main-green);
         }
         .edit-btn {
           &.disabled {
@@ -2955,5 +3172,43 @@ export default class ConnectionsDetail extends Vue {
   font-size: 13px;
   height: 34px;
   border-bottom: 1px solid var(--color-border-default);
+}
+
+.agent-bridge-popper {
+  -webkit-app-region: no-drag;
+  .agent-bridge-panel {
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--color-text-default);
+  }
+  .agent-bridge-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .agent-bridge-tip,
+  .agent-bridge-sse {
+    margin: 8px 0 0;
+    color: var(--color-text-light);
+  }
+  .agent-bridge-error {
+    margin: 8px 0 0;
+    color: var(--color-minor-red);
+  }
+  pre {
+    margin: 8px 0;
+    padding: 8px;
+    max-height: 180px;
+    overflow: auto;
+    background: var(--color-bg-primary);
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
+    user-select: text;
+  }
 }
 </style>

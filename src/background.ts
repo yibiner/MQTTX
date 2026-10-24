@@ -25,6 +25,7 @@ import ORMConfig from './database/database.config'
 import version from '@/version'
 import { initialize } from '@electron/remote/main'
 import { initMCPHandlers, cleanupMCPConnections } from './main/ai/mcp/MCPManager'
+import { initAgentBridge, stopAgentBridge } from './main/agentBridge/ipc'
 import { getEnableHardwareAccelerationSetting } from '@/utils/settings'
 import { normalizeHistoryMaxCount } from '@/utils/data'
 
@@ -204,6 +205,8 @@ function handleIpcMessages() {
   })
   // Initialize MCP handlers
   initMCPHandlers()
+  // Local MCP server that lets Cursor and Claude Code use the connection on screen.
+  initAgentBridge(electronStore)
 }
 
 // handle event when APP quit
@@ -219,6 +222,7 @@ function beforeAppQuit() {
 
   // cleanup MCP connections
   cleanupMCPConnections()
+  stopAgentBridge()
 
   // quit APP
   app.quit()

@@ -1,5 +1,8 @@
 <template>
   <div class="msg-right-item">
+    <div v-if="fromAgent">
+      <el-tag size="mini" class="agent-tag">{{ $t('connections.agentBridgeSent') }}</el-tag>
+    </div>
     <div v-if="functionName || schemaName">
       <el-tag size="mini">
         <span>&nbsp;{{ $t('connections.usedScript') }}</span>
@@ -67,12 +70,27 @@ export default class MsgRightItem extends Vue {
     this.$emit('showmenu', this.payload, event)
   }
 
+  get metaObject(): { functionName?: string; schemaName?: string; agent?: boolean } {
+    if (!this.meta) {
+      return {}
+    }
+    try {
+      return JSON.parse(this.meta)
+    } catch (error) {
+      return {}
+    }
+  }
+
   get functionName() {
-    return this.meta ? JSON.parse(this.meta).functionName : null
+    return this.metaObject.functionName || null
   }
 
   get schemaName() {
-    return this.meta ? JSON.parse(this.meta).schemaName : null
+    return this.metaObject.schemaName || null
+  }
+
+  get fromAgent() {
+    return this.metaObject.agent === true
   }
 }
 </script>
@@ -101,6 +119,17 @@ export default class MsgRightItem extends Vue {
       color: var(--color-text-active) !important;
       border: 1px solid var(--color-border-right_metainfo) !important;
     }
+  }
+  .agent-tag.el-tag {
+    height: 20px;
+    margin-bottom: 4px;
+    padding: 0 8px;
+    border-color: transparent;
+    background: var(--color-light-green);
+    color: var(--color-main-green);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
   }
   .search-highlight {
     background-color: #ffeb3b !important;
