@@ -201,20 +201,23 @@ export default class AutoSubscribeEditor extends Vue {
 .auto-subscribe-editor {
   font-size: 12px;
 
-  // The head row holds the add button and the hint icon. Its height matches a form label
-  // (`el-form-item__label` is 32px and centres its text), so the button sits on the same line as the
-  // section label in the preset dialog instead of floating above it.
+  // The head row holds the add button and the hint. 32px matches a small form label, so in the
+  // preset dialog the button sits on the same line as 「自动订阅」 instead of dropping below it.
+  // The hint stays next to the button; pushing it to the far edge left it detached from both.
   .editor-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 6px;
     min-height: 32px;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
 
-  // Same hint affordance as elsewhere in the app (settings, connection form): a "!" icon that
-  // opens the explanation on hover.
   .editor-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 32px;
     color: var(--color-text-default);
     cursor: help;
     line-height: 1;
@@ -225,46 +228,68 @@ export default class AutoSubscribeEditor extends Vue {
   }
 
   .auto-subscribe-group {
-    padding: 10px 12px 4px;
+    padding: 10px 12px;
     margin-bottom: 10px;
     border: 1px solid var(--color-border-default);
     border-radius: 4px;
-    background: var(--color-bg-card-normal);
+    background: var(--color-bg-normal);
   }
 
   .group-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px 16px;
     margin-bottom: 8px;
   }
 
   .group-delay {
     display: flex;
     align-items: center;
+    flex: 1 1 auto;
+    gap: 6px;
+    min-height: 28px;
     .field-label {
-      margin-right: 6px;
+      flex: none;
+      width: 96px;
+      margin-right: 4px;
       color: var(--color-text-default);
+      line-height: 28px;
     }
-    .delay-input {
-      width: 76px;
-    }
-    .field-unit {
-      margin: 0 8px 0 4px;
-      color: var(--color-text-light);
+    .delay-input.el-input-number--mini {
+      width: 88px;
+      flex: none;
+      line-height: 26px;
+      .el-input__inner {
+        height: 28px;
+        line-height: 28px;
+        padding-left: 8px;
+        padding-right: 8px;
+      }
     }
   }
 
+  .group-header .group-delay span.field-unit {
+    flex: none;
+    margin: 0;
+    color: var(--color-text-light);
+    line-height: 28px;
+  }
+
   .quick-delays {
-    display: flex;
+    display: inline-flex;
     align-items: center;
+    flex: none;
     gap: 2px;
+    height: 28px;
     .quick-delay {
-      padding: 0 5px;
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 6px;
       color: var(--color-main-green);
       border-radius: 3px;
+      line-height: 1;
       &.active {
         color: var(--color-text-active);
         background: var(--color-main-green);
@@ -276,11 +301,33 @@ export default class AutoSubscribeEditor extends Vue {
     display: flex;
     align-items: center;
     gap: 10px;
+    margin-left: auto;
+    flex: none;
+    height: 28px;
     .merge-checkbox {
+      display: inline-flex;
+      align-items: center;
+      height: 28px;
       margin-right: 0;
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--color-text-default);
+      .el-checkbox__label {
+        padding-left: 6px;
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 28px;
+        color: var(--color-text-default);
+      }
     }
     .group-delete {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
       color: var(--color-minor-red);
+      line-height: 1;
     }
   }
 
@@ -291,25 +338,34 @@ export default class AutoSubscribeEditor extends Vue {
     gap: 8px;
     .topic-input {
       flex: 1;
+      min-width: 0;
     }
-    .topic-qos {
+    .topic-qos.el-select {
       width: 88px;
       flex: none;
     }
     .topic-delete {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
       color: var(--color-minor-red);
       flex: none;
+      line-height: 1;
     }
   }
 
   .topic-add,
-  .group-add {
+  .group-add.el-button--text {
+    height: 32px;
     padding: 0;
     font-size: 12px;
+    line-height: 32px;
   }
 
   .topic-add {
-    margin-bottom: 4px;
+    margin-bottom: 0;
   }
 }
 </style>

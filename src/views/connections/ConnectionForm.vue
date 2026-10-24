@@ -314,8 +314,10 @@
         </transition-group>
 
         <div class="info-header">
-          <h3>{{ $t('connections.clientVariables') }}</h3>
-          <VariablesHelp />
+          <h3 class="section-title">
+            {{ $t('connections.clientVariables') }}
+            <VariablesHelp />
+          </h3>
         </div>
         <el-card shadow="never" class="info-body item-card">
           <el-row :gutter="10">
@@ -344,6 +346,22 @@
           <el-row :gutter="10">
             <el-col :span="24">
               <AutoReplyEditor v-model="record.autoReplies" :variable-names="autoReplyVariableNames" />
+            </el-col>
+          </el-row>
+        </el-card>
+
+        <div class="info-header">
+          <h3>{{ $t('connections.messageSequence') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-row :gutter="10">
+            <el-col :span="24">
+              <MessageSequenceEditor
+                v-model="record.messageSequences"
+                :variable-names="autoReplyVariableNames"
+                :templates="sequencePresets"
+                @example="applySequenceExample"
+              />
             </el-col>
           </el-row>
         </el-card>
@@ -722,11 +740,17 @@ import useServices from '@/database/useServices'
 import { emptyToNull } from '@/utils/handleString'
 import { getClientId } from '@/utils/idGenerator'
 import { getMQTTProtocol, getDefaultRecord } from '@/utils/mqttUtils'
-import { getClientProfiles, getGlobalVariables, getServerProfiles } from '@/utils/configProfiles'
+import {
+  ensureMessageSequencePresets,
+  getClientProfiles,
+  getGlobalVariables,
+  getServerProfiles,
+} from '@/utils/configProfiles'
 import VariableEditor from '@/components/VariableEditor.vue'
 import { onConnectionVariablesChanged, validateStoredVariables } from '@/utils/payloadVariables'
 import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
+import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
 import VariablesHelp from '@/components/VariablesHelp.vue'
 import Editor from '@/components/Editor.vue'
 import KeyValueEditor from '@/components/KeyValueEditor.vue'
@@ -740,6 +764,7 @@ import { sortConnectionTree } from '@/utils/connections'
     VariableEditor,
     AutoSubscribeEditor,
     AutoReplyEditor,
+    MessageSequenceEditor,
     VariablesHelp,
   },
 })
@@ -771,6 +796,8 @@ export default class ConnectionForm extends Vue {
   private serverProfiles: ServerProfileModel[] = []
 
   private clientProfiles: ClientProfileModel[] = []
+  /** Sequence templates edited in preset settings. Shown as insert buttons on this form. */
+  private sequencePresets: MessageSequencePresetModel[] = []
 
   private serverProfileId: string | null = null
 
@@ -1104,6 +1131,25 @@ export default class ConnectionForm extends Vue {
     return names
   }
 
+  /**
+   * A sequence template can bring the variables it needs. An existing value is left as it is:
+   * inserting the water template again must not put the level back to 2000.
+   */
+  private applySequenceExample(payload: { variables?: { [name: string]: StoredVariable } }) {
+    const incoming = payload?.variables ?? {}
+    const current = { ...(this.record.variables ?? {}) }
+    let changed = false
+    Object.keys(incoming).forEach((name) => {
+      if (current[name] === undefined) {
+        current[name] = incoming[name]
+        changed = true
+      }
+    })
+    if (changed) {
+      this.record.variables = current
+    }
+  }
+
   private async created() {
     await this.initRecord()
     this.variablesSnapshot = JSON.stringify(this.record.variables ?? {})
@@ -1116,6 +1162,8 @@ export default class ConnectionForm extends Vue {
       this.serverProfiles = getServerProfiles()
       this.clientProfiles = getClientProfiles()
     }
+    // Sequence buttons on this form are the templates saved in preset settings.
+    this.sequencePresets = ensureMessageSequencePresets()
   }
 
   /**
@@ -1179,6 +1227,7 @@ export default class ConnectionForm extends Vue {
     // subscriptions and replies come along; the connection can still tune them afterwards.
     this.record.autoSubscriptions = JSON.parse(JSON.stringify(profile.autoSubscriptions ?? []))
     this.record.autoReplies = JSON.parse(JSON.stringify(profile.autoReplies ?? []))
+    this.record.messageSequences = JSON.parse(JSON.stringify(profile.messageSequences ?? []))
     // The variables describe the client the preset belongs to, so they come along into the
     // "客户端变量" of the connection that is being created from it.
     this.record.variables = { ...(profile.variables ?? {}) }
@@ -1298,6 +1347,16 @@ export default class ConnectionForm extends Vue {
       font-size: 1rem;
       position: relative;
       top: 1px;
+    }
+    h3.section-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      .variables-help {
+        margin-left: 0;
+        font-weight: 400;
+        line-height: 1;
+      }
     }
     @include collapse-btn-transform(0deg, 180deg);
   }

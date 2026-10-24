@@ -4,7 +4,7 @@ import { getGlobalVariablesRevision } from '@/utils/configProfiles'
 import { connectionVariableOptions } from '@/utils/payloadVariables'
 import { applyAutoReplyVariableActions, markManualDisconnect, onConnectionClosed } from '@/utils/payloadVariables'
 import { mightMatchIncomingTopic, planAutoReplies, PlannedAutoReply } from '@/utils/autoReply'
-import { savePublishedMessageHistory } from '@/utils/historyRecordUtils'
+import { publishedPayloadType, savePublishedMessageHistory } from '@/utils/historyRecordUtils'
 import { getMessageId } from '@/utils/idGenerator'
 import time from '@/utils/time'
 
@@ -491,7 +491,13 @@ const publishReply = async (info: IncomingMessageInfo, reply: PlannedAutoReply):
     `Auto replied to ${info.topic} with ${reply.topic} (rule ${reply.ruleId}, connection ${info.connectionId})`,
   )
   try {
-    await savePublishedMessageHistory(info.connectionId, message, reply.payload, 'JSON', reply.topic)
+    await savePublishedMessageHistory(
+      info.connectionId,
+      message,
+      reply.payload,
+      publishedPayloadType(reply.payload),
+      reply.topic,
+    )
   } catch (error) {
     getLog().error(`Auto reply ${reply.ruleId} could not be saved: ${(error as Error).toString()}`)
   }

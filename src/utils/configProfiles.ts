@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
+import { builtinMessageSequencePresets } from '@/utils/messageSequenceExamples'
 
 /**
  * Reusable presets ("预设管理"), stored locally in electron-store:
@@ -6,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid'
  * - Server presets: a fixed broker address (dev / test / production), with a friendly alias.
  * - Client presets: a reusable MQTT identity (clientId / username / password / behaviour).
  * - Message presets: a reusable topic + message pair, selectable in the publish window.
+ * - Message sequence presets: a reusable sequence, listed when creating a connection.
  * - Global variables: named values referenced as `${name}` in every topic and message.
  *
  * Server/client presets are offered as pickers when creating a new connection, message
@@ -124,6 +126,15 @@ export const deleteClientProfile = (id: string): void => {
 }
 
 const MESSAGE_PRESETS_KEY = 'messagePresets'
+const MESSAGE_SEQUENCE_PRESETS_KEY = 'messageSequencePresets'
+
+const hasStoredKey = (key: string): boolean => {
+  const store = getStore()
+  if (store) {
+    return Boolean(store.has?.(key))
+  }
+  return Object.prototype.hasOwnProperty.call(memoryFallback, key)
+}
 
 export const getMessagePresets = (): MessagePresetModel[] => readList(MESSAGE_PRESETS_KEY)
 
@@ -147,6 +158,44 @@ export const deleteMessagePreset = (id: string): void => {
   writeList(
     MESSAGE_PRESETS_KEY,
     getMessagePresets().filter((preset) => preset.id !== id),
+  )
+}
+
+export const getMessageSequencePresets = (): MessageSequencePresetModel[] => readList(MESSAGE_SEQUENCE_PRESETS_KEY)
+
+export const getMessageSequencePreset = (id: string): MessageSequencePresetModel | undefined =>
+  getMessageSequencePresets().find((preset) => preset.id === id)
+
+/**
+ * The two device sequences exist the first time the list is read. Once the key has been written,
+ * deleting them stays deleted: an empty list is a choice, not a missing install.
+ */
+export const ensureMessageSequencePresets = (): MessageSequencePresetModel[] => {
+  if (!hasStoredKey(MESSAGE_SEQUENCE_PRESETS_KEY)) {
+    writeList(MESSAGE_SEQUENCE_PRESETS_KEY, builtinMessageSequencePresets())
+  }
+  return getMessageSequencePresets()
+}
+
+export function saveMessageSequencePreset(
+  preset: Omit<MessageSequencePresetModel, 'id'> & { id?: string },
+): MessageSequencePresetModel {
+  const presets = getMessageSequencePresets()
+  const saved: MessageSequencePresetModel = { ...preset, id: preset.id ?? uuidv4() }
+  const index = presets.findIndex((item) => item.id === saved.id)
+  if (index === -1) {
+    presets.unshift(saved)
+  } else {
+    presets.splice(index, 1, saved)
+  }
+  writeList(MESSAGE_SEQUENCE_PRESETS_KEY, presets)
+  return saved
+}
+
+export const deleteMessageSequencePreset = (id: string): void => {
+  writeList(
+    MESSAGE_SEQUENCE_PRESETS_KEY,
+    getMessageSequencePresets().filter((preset) => preset.id !== id),
   )
 }
 

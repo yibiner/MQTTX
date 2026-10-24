@@ -11,7 +11,17 @@ import {
   getGlobalVariablesRevision,
   saveGlobalVariable,
   saveGlobalVariables,
+  deleteMessageSequencePreset,
+  ensureMessageSequencePresets,
+  getMessageSequencePreset,
+  saveMessageSequencePreset,
 } from '@/utils/configProfiles'
+import {
+  createBlankMessageSequence,
+  OTA_SEQUENCE_PRESET_ID,
+  WATER_SEQUENCE_PRESET_ID,
+  waterVariableDefinition,
+} from '@/utils/messageSequenceExamples'
 import { resolvePayloadVariables } from '@/utils/payloadVariables'
 
 describe('configProfiles client presets', () => {
@@ -117,6 +127,52 @@ describe('configProfiles list cache', () => {
     expect(getGlobalVariableMap().cachedVar).to.equal('v2')
     deleteGlobalVariable(saved.id)
     expect(getGlobalVariableMap().cachedVar).to.equal(undefined)
+  })
+})
+
+describe('configProfiles message sequence presets', () => {
+  const createdIds: string[] = []
+
+  afterEach(() => {
+    createdIds.splice(0).forEach((id) => deleteMessageSequencePreset(id))
+  })
+
+  it('saves, updates and deletes a sequence preset', () => {
+    ensureMessageSequencePresets()
+    const step = createBlankMessageSequence().steps[0]
+    const saved = saveMessageSequencePreset({
+      name: 'dock',
+      sequence: { ...createBlankMessageSequence(), name: 'dock', steps: [{ ...step, topic: 'a/b' }] },
+    })
+    createdIds.push(saved.id)
+    expect(getMessageSequencePreset(saved.id)?.name).to.equal('dock')
+
+    saveMessageSequencePreset({ ...saved, name: 'dock-2' })
+    expect(getMessageSequencePreset(saved.id)?.name).to.equal('dock-2')
+    expect(ensureMessageSequencePresets().filter((preset) => preset.id === saved.id)).to.have.lengthOf(1)
+
+    deleteMessageSequencePreset(saved.id)
+    createdIds.pop()
+    expect(getMessageSequencePreset(saved.id)).to.equal(undefined)
+  })
+
+  it('seeds the two device sequences once and does not restore a deleted one', () => {
+    const first = ensureMessageSequencePresets()
+    expect(first.map((preset) => preset.id)).to.include.members([WATER_SEQUENCE_PRESET_ID, OTA_SEQUENCE_PRESET_ID])
+    expect(ensureMessageSequencePresets().map((preset) => preset.id)).to.deep.equal(first.map((preset) => preset.id))
+
+    const water = first.find((preset) => preset.id === WATER_SEQUENCE_PRESET_ID)
+    expect(water?.variables?.water).to.deep.equal(waterVariableDefinition())
+    expect(water?.sequence.trigger).to.equal('connect')
+    expect(first.find((preset) => preset.id === OTA_SEQUENCE_PRESET_ID)?.sequence.trigger).to.equal('message')
+
+    deleteMessageSequencePreset(WATER_SEQUENCE_PRESET_ID)
+    const again = ensureMessageSequencePresets()
+    expect(again.some((preset) => preset.id === WATER_SEQUENCE_PRESET_ID)).to.equal(false)
+    expect(again.some((preset) => preset.id === OTA_SEQUENCE_PRESET_ID)).to.equal(true)
+    if (water) {
+      saveMessageSequencePreset(water)
+    }
   })
 })
 

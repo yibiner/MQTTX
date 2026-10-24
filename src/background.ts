@@ -193,13 +193,13 @@ function handleIpcMessages() {
     app.relaunch()
     app.exit()
   })
-  // The renderer asks for throttling to be disabled only while timed messages are running,
-  // because a throttled hidden window makes their intervals drift. Note the inverted flag:
-  // `setBackgroundThrottling(true)` *allows* Chromium to throttle.
-  ipcMain.on('setBackgroundThrottling', (event: Electron.IpcMainEvent, timedMessagesRunning: boolean) => {
+  // The renderer asks for throttling to be disabled while a timed message or a message
+  // sequence is waiting, because a throttled hidden window makes their delays drift.
+  // Note the inverted flag: `setBackgroundThrottling(true)` *allows* Chromium to throttle.
+  ipcMain.on('setBackgroundThrottling', (event: Electron.IpcMainEvent, schedulingActive: boolean) => {
     const contents = event.sender
     if (contents && !contents.isDestroyed()) {
-      contents.setBackgroundThrottling(!timedMessagesRunning)
+      contents.setBackgroundThrottling(!schedulingActive)
     }
   })
   // Initialize MCP handlers

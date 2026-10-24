@@ -260,6 +260,8 @@ declare global {
     autoSubscriptions?: AutoSubscribeGroupModel[] | null
     /** Automatic replies of the preset, copied into the connection. */
     autoReplies?: AutoReplyRuleModel[] | null
+    /** Ordered publishes of the preset, copied into the connection. */
+    messageSequences?: MessageSequenceModel[] | null
   }
 
   /** Reusable topic + message preset, selectable directly in the publish window. */
@@ -268,6 +270,18 @@ declare global {
     name: string
     topic: string
     payload: string
+  }
+
+  /**
+   * A reusable message sequence, edited in preset settings.
+   * Creating a connection lists these and copies the chosen one onto that connection.
+   */
+  interface MessageSequencePresetModel {
+    id: string
+    name: string
+    sequence: MessageSequenceModel
+    /** Variables the sequence needs, copied onto the connection when the template is applied. */
+    variables?: { [name: string]: StoredVariable } | null
   }
 
   /**
@@ -406,6 +420,11 @@ declare global {
     autoSubscriptions?: AutoSubscribeGroupModel[] | null
     /** Rules that answer a received message automatically on this connection. */
     autoReplies?: AutoReplyRuleModel[] | null
+    /**
+     * Ordered publishes of this connection. Each step waits a delay after the previous one,
+     * resolves its templates at send time, then applies its variable assignments.
+     */
+    messageSequences?: MessageSequenceModel[] | null
   }
 
   /** One topic filter of an automatic subscription batch. */
@@ -468,6 +487,55 @@ declare global {
     resetVariables?: string[]
     /** `{ name, value }` where value is a template resolved against the received message */
     setVariables?: Array<{ name: string; value: string }>
+  }
+
+  /** When a message sequence starts. `message` uses the same topic filter and JMESPath condition as a reply. */
+  type MessageSequenceTrigger = 'manual' | 'connect' | 'message'
+
+  /** Comparison of a sequence's stop condition. Checked after a round, before the next one starts. */
+  type MessageSequenceCompare = 'lt' | 'lte' | 'gt' | 'gte' | 'eq'
+
+  /** Stop another loop when the named variable compares against `value`. The variable is read after the last step's assignment. */
+  interface MessageSequenceStopWhen {
+    variable: string
+    op: MessageSequenceCompare
+    value: number
+  }
+
+  /**
+   * One publish of a message sequence.
+   *
+   * `delayMs` is relative to the previous step (the first step may be 0). Templates are resolved
+   * when the step is sent. `actions` are applied after that publish, so the next step reads them.
+   */
+  interface MessageSequenceStepModel {
+    id: string
+    delayMs: number
+    topic: string
+    payload: string
+    qos: QoS
+    retain: boolean
+    actions?: AutoReplyActionsModel
+  }
+
+  /**
+   * Several publishes that belong together, e.g. a water report that then drinks on a schedule,
+   * or the ack and progress messages of an OTA. Starting the sequence again cancels the steps
+   * that have not been sent.
+   */
+  interface MessageSequenceModel {
+    id: string
+    name: string
+    enabled: boolean
+    trigger: MessageSequenceTrigger
+    /** MQTT topic filter, used when `trigger` is `message`. */
+    matchTopic: string
+    /** JMESPath condition against the received JSON, used when `trigger` is `message`. */
+    matchCondition: string
+    loop: boolean
+    /** Read after the last step of a round. Ignored when `loop` is false. */
+    stopWhen?: MessageSequenceStopWhen | null
+    steps: MessageSequenceStepModel[]
   }
 
   // MQTT 5 feature

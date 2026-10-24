@@ -12,6 +12,27 @@ import { DEFAULT_HISTORY_MAX_COUNT } from '@/utils/data'
  *                     when false only the topic/QoS/retain part is compared (used when the user
  *                     disabled "save message together").
  */
+/**
+ * How a published body should be stored.
+ *
+ * A JSON object or array is marked JSON so the history viewer formats it. Anything else,
+ * including a payload that only looks a little like JSON, stays plaintext: the history then
+ * shows the characters that were published.
+ */
+export const publishedPayloadType = (payload: string | Buffer | undefined | null): PayloadType => {
+  const text = payload === undefined || payload === null ? '' : String(payload).trim()
+  const wrapped = (text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))
+  if (!wrapped) {
+    return 'Plaintext'
+  }
+  try {
+    JSON.parse(text)
+    return 'JSON'
+  } catch (error) {
+    return 'Plaintext'
+  }
+}
+
 export const hasMessageHeaderID = async (
   data: HistoryMessageHeaderModel,
   matchMessage = true,

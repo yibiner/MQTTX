@@ -109,6 +109,10 @@ export default class ConnectionEntity {
   @Column({ type: 'simple-json', nullable: true, default: null })
   autoReplies?: AutoReplyRuleModel[] | null
 
+  // Ordered publishes, see ConnectionModel['messageSequences']
+  @Column({ type: 'simple-json', nullable: true, default: null })
+  messageSequences?: MessageSequenceModel[] | null
+
   @OneToOne(() => WillEntity, (will) => will.connection, { onDelete: 'CASCADE' })
   @JoinColumn()
   will?: WillEntity

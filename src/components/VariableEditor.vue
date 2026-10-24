@@ -15,28 +15,30 @@
         />
         <span class="variable-type">{{ kindLabel(row) }}</span>
         <span v-if="summaryOf(row)" class="variable-summary" :title="summaryOf(row)">{{ summaryOf(row) }}</span>
-        <template v-if="showRuntime && isStatefulRow(row)">
-          <span class="variable-current" :title="$t('configs.variableCurrentValue')">
-            <span class="variable-current-label">{{ $t('configs.variableCurrentValue') }}</span>
-            <code class="variable-current-value">{{ currentValueOf(row) }}</code>
-          </span>
-          <el-tooltip :content="$t('configs.variableReset')" placement="top">
-            <a href="javascript:;" class="variable-reset" @click="handleReset(index)">
-              <i class="el-icon-refresh"></i>
+        <div class="variable-actions">
+          <template v-if="showRuntime && isStatefulRow(row)">
+            <span class="variable-current" :title="$t('configs.variableCurrentValue')">
+              <span class="variable-current-label">{{ $t('configs.variableCurrentValue') }}</span>
+              <code class="variable-current-value">{{ currentValueOf(row) }}</code>
+            </span>
+            <el-tooltip :content="$t('configs.variableReset')" placement="top">
+              <a href="javascript:;" class="variable-icon variable-reset" @click="handleReset(index)">
+                <i class="el-icon-refresh"></i>
+              </a>
+            </el-tooltip>
+            <el-tooltip :content="$t('configs.variableSetValue')" placement="top">
+              <a href="javascript:;" class="variable-icon variable-set" @click="startSetValue(index)">
+                <i class="el-icon-edit"></i>
+              </a>
+            </el-tooltip>
+          </template>
+          <el-tooltip :content="$t('configs.variableEditDefinition')" placement="top">
+            <a href="javascript:;" class="variable-icon variable-expand" @click="toggle(index)">
+              <i :class="expandedIndex === index ? 'el-icon-arrow-down' : 'el-icon-setting'"></i>
             </a>
           </el-tooltip>
-          <el-tooltip :content="$t('configs.variableSetValue')" placement="top">
-            <a href="javascript:;" class="variable-set" @click="startSetValue(index)">
-              <i class="el-icon-edit"></i>
-            </a>
-          </el-tooltip>
-        </template>
-        <el-tooltip :content="$t('configs.variableEditDefinition')" placement="top">
-          <a href="javascript:;" class="variable-expand" @click="toggle(index)">
-            <i :class="expandedIndex === index ? 'el-icon-arrow-down' : 'el-icon-setting'"></i>
-          </a>
-        </el-tooltip>
-        <el-button icon="el-icon-delete" class="variable-delete" type="text" @click="handleRemove(index)" />
+          <el-button icon="el-icon-delete" class="variable-delete" type="text" @click="handleRemove(index)" />
+        </div>
       </div>
       <div v-if="editingValueIndex === index" class="variable-set-row">
         <span class="variable-set-label">{{ $t('configs.variableSetValue') }}</span>
@@ -47,10 +49,10 @@
           :placeholder="$t('configs.variableSetValuePrompt', { name: row.name.trim() })"
           @keyup.enter.native="confirmSetValue(index)"
         />
-        <a href="javascript:;" class="variable-set-confirm" @click="confirmSetValue(index)">
+        <a href="javascript:;" class="variable-icon variable-set-confirm" @click="confirmSetValue(index)">
           <i class="el-icon-check"></i>
         </a>
-        <a href="javascript:;" class="variable-set-cancel" @click="cancelSetValue">
+        <a href="javascript:;" class="variable-icon variable-set-cancel" @click="cancelSetValue">
           <i class="el-icon-close"></i>
         </a>
       </div>
@@ -330,29 +332,32 @@ export default class VariableEditor extends Vue {
 
 <style lang="scss" scoped>
 .variable-editor {
+  font-size: 12px;
   .variable-row {
     margin-bottom: 8px;
   }
   .variable-row-inputs {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
+    min-height: 32px;
   }
   .variable-name {
     width: 200px;
+    flex: none;
   }
   .variable-type {
     flex: none;
     padding: 0 6px;
     color: var(--color-text-default);
-    background: var(--color-bg-code);
+    background: var(--color-bg-tags);
     border-radius: 3px;
     font-size: 12px;
     line-height: 20px;
   }
   .variable-summary {
-    max-width: 220px;
+    flex: 1 1 80px;
+    min-width: 0;
     overflow: hidden;
     color: var(--color-text-light);
     font-family: Menlo, Monaco, Consolas, monospace;
@@ -360,31 +365,57 @@ export default class VariableEditor extends Vue {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .variable-actions {
+    display: inline-flex;
+    align-items: center;
+    margin-left: auto;
+    flex: none;
+    height: 28px;
+  }
   .variable-current {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    max-width: 180px;
+    margin-right: 4px;
     color: var(--color-text-default);
     font-size: 12px;
     .variable-current-value {
+      overflow: hidden;
       color: var(--color-main-green);
       font-family: Menlo, Monaco, Consolas, monospace;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   }
   .variable-current-label {
+    flex: none;
     color: var(--color-text-light);
   }
-  .variable-reset,
-  .variable-set,
-  .variable-expand {
+  .variable-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 28px;
     color: var(--color-text-default);
     font-size: 14px;
+    line-height: 1;
     &:hover {
       color: var(--color-main-green);
     }
   }
-  .variable-delete {
+  .variable-delete.el-button--text {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    min-width: 24px;
+    height: 28px;
+    padding: 0;
     color: var(--color-minor-red);
+    font-size: 14px;
+    line-height: 1;
   }
   .variable-set-row {
     display: flex;
@@ -411,12 +442,26 @@ export default class VariableEditor extends Vue {
       opacity: 0.75;
     }
   }
+  // Same surface as the surrounding card. The blue-grey card token read as a
+  // separate theme inside an otherwise white form.
   .variable-definition {
     margin-top: 8px;
-    padding: 8px 10px;
+    padding: 10px 12px;
     border: 1px solid var(--color-border-default);
     border-radius: 4px;
-    background: var(--color-bg-card-normal);
+    background: var(--color-bg-normal);
+  }
+  // The preset dialog paints every span inside a form item with the default text
+  // color. These tones have to outrank that rule or the summary and the set-value
+  // label wash out to the same grey as the field text.
+  .variable-row-inputs span.variable-summary,
+  .variable-actions span.variable-current-label {
+    color: var(--color-text-light);
+  }
+  .variable-set-row span.variable-set-label,
+  .variable-set-row .variable-set-confirm,
+  .variable-set-row .variable-set-cancel {
+    color: var(--color-main-green);
   }
   .variable-error {
     margin: 2px 0 0;
@@ -424,9 +469,12 @@ export default class VariableEditor extends Vue {
     font-size: 12px;
     line-height: 1.5;
   }
-  .variable-add {
-    padding: 4px 0;
+  .variable-add.el-button--text {
+    height: 32px;
+    padding: 0;
     color: var(--color-main-green);
+    font-size: 12px;
+    line-height: 32px;
   }
 }
 </style>

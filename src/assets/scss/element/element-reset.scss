@@ -179,12 +179,17 @@
 }
 
 /* Dialog */
+.el-dialog__wrapper {
+  // The page title is a window drag region. A tall dialog can scroll its header up into that band,
+  // and Electron then gives the click to the drag region instead of the close button.
+  -webkit-app-region: no-drag;
+}
 .el-dialog {
   background: var(--color-bg-normal);
   border-radius: 8px;
-  // The dialog scrolls inside its wrapper, and a tall one (a connection preset with a few automation
-  // rules) used to take the title row and its close button out of the viewport. Keep them pinned, so
-  // the button is always reachable no matter how far the content is scrolled.
+  -webkit-app-region: no-drag;
+  // Pin the title while the wrapper scrolls. Do not cap the dialog height or scroll the body:
+  // fullscreen charts size themselves to the viewport, and a few dialogs float a hint over the title.
   .el-dialog__header {
     position: sticky;
     top: 0;
@@ -194,6 +199,7 @@
     border-bottom: 1px solid var(--color-border-default);
     border-radius: 8px 8px 0 0;
     background: var(--color-bg-normal);
+    -webkit-app-region: no-drag;
     .el-dialog__title {
       color: var(--color-text-title);
       font-size: $font-size--subtitle;
@@ -204,6 +210,7 @@
   .el-dialog__headerbtn {
     top: 8px;
     right: 8px;
+    z-index: 3;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -211,6 +218,7 @@
     height: 40px;
     font-size: 16px;
     border-radius: 4px;
+    -webkit-app-region: no-drag;
     &:hover {
       background: var(--color-bg-item);
     }

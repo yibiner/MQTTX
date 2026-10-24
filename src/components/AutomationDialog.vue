@@ -15,6 +15,19 @@
           <AutoSubscribeEditor v-model="draft.autoSubscriptions" />
           <p class="automation-dialog-note">{{ $t('connections.automationSubscribeNote') }}</p>
         </el-tab-pane>
+        <el-tab-pane :label="$t('connections.messageSequence')" name="sequence">
+          <MessageSequenceEditor
+            v-model="draft.messageSequences"
+            :variable-names="variableNames"
+            :can-run="connected"
+            :running-ids="runningIds"
+            :templates="sequencePresets"
+            @run="handleRun"
+            @stop="handleStop"
+            @example="handleExample"
+          />
+          <p class="automation-dialog-note">{{ $t('connections.messageSequenceNote') }}</p>
+        </el-tab-pane>
         <el-tab-pane :label="$t('connections.autoReply')" name="reply">
           <AutoReplyEditor v-model="draft.autoReplies" :variable-names="variableNames" />
 
@@ -71,14 +84,16 @@ import { Component, Prop, Vue, Watch } from 'vue-property-decorator'
 import MyDialog from '@/components/MyDialog.vue'
 import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
+import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
 import { planAutoReplies } from '@/utils/autoReply'
 import { formatJsonText } from '@/utils/jmesPathCondition'
-import { getGlobalVariables } from '@/utils/configProfiles'
+import { ensureMessageSequencePresets, getGlobalVariables } from '@/utils/configProfiles'
 import { connectionVariableOptions } from '@/utils/payloadVariables'
 
 interface AutomationDraft {
   autoSubscriptions: AutoSubscribeGroupModel[]
   autoReplies: AutoReplyRuleModel[]
+  messageSequences: MessageSequenceModel[]
 }
 
 type PreviewResult =
@@ -99,17 +114,22 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? ([] as unkn
  * The reply tab has a small debug panel: paste a message the device would receive, press test, and it
  * shows which rule matches and the payload that would be sent - nothing is published.
  */
-@Component({ components: { MyDialog, AutoSubscribeEditor, AutoReplyEditor } })
+@Component({ components: { MyDialog, AutoSubscribeEditor, AutoReplyEditor, MessageSequenceEditor } })
 export default class AutomationDialog extends Vue {
   @Prop({ default: false }) public visible!: boolean
   @Prop({ required: true }) public record!: ConnectionModel
   @Prop({ default: false }) public connected!: boolean
+  /** Sequences of this connection that still have a step waiting. */
+  @Prop({ required: false, default: () => [] }) public runningIds!: string[]
 
-  private activeTab: 'subscribe' | 'reply' = 'reply'
-  private draft: AutomationDraft = { autoSubscriptions: [], autoReplies: [] }
+  private activeTab: 'subscribe' | 'reply' | 'sequence' = 'reply'
+  private draft: AutomationDraft = { autoSubscriptions: [], autoReplies: [], messageSequences: [] }
   private previewTopic = ''
   private previewPayload = ''
   private previewResult: PreviewResult | null = null
+  /** Variables a sequence template asked for. Kept on the draft until save or run. */
+  private exampleVariables: { [name: string]: StoredVariable } = {}
+  private sequencePresets: MessageSequencePresetModel[] = []
 
   get dialogVisible(): boolean {
     return this.visible
@@ -129,6 +149,11 @@ export default class AutomationDialog extends Vue {
   /** Variable names the reply actions can target: the connection's own and the global ones. */
   private get variableNames(): string[] {
     const names = Object.keys(this.record?.variables ?? {})
+    Object.keys(this.exampleVariables).forEach((name) => {
+      if (name && !names.includes(name)) {
+        names.push(name)
+      }
+    })
     getGlobalVariables().forEach((variable) => {
       if (variable.name && !names.includes(variable.name)) {
         names.push(variable.name)
@@ -138,15 +163,57 @@ export default class AutomationDialog extends Vue {
   }
 
   private handleOpen() {
+    this.sequencePresets = ensureMessageSequencePresets()
     this.draft = clone({
       autoSubscriptions: this.record?.autoSubscriptions ?? [],
       autoReplies: this.record?.autoReplies ?? [],
+      messageSequences: this.record?.messageSequences ?? [],
     })
     this.previewResult = null
+    this.exampleVariables = {}
+  }
+
+  /** The draft plus any variable the water example added and this connection does not have yet. */
+  private payload(): AutomationDraft & { variables?: { [name: string]: StoredVariable } } {
+    const base = clone(this.draft)
+    const names = Object.keys(this.exampleVariables)
+    if (!names.length) {
+      return base
+    }
+    const variables = { ...(this.record?.variables ?? {}) }
+    names.forEach((name) => {
+      if (variables[name] === undefined) {
+        variables[name] = this.exampleVariables[name]
+      }
+    })
+    return { ...base, variables }
   }
 
   private handleConfirm() {
-    this.$emit('save', clone(this.draft))
+    this.$emit('save', this.payload())
+  }
+
+  /** Run uses the draft currently on screen, so the parent saves it before the sequence starts. */
+  private handleRun(sequenceId: string) {
+    this.$emit('run', { sequenceId, ...this.payload() })
+  }
+
+  private handleStop(sequenceId: string) {
+    this.$emit('stop', sequenceId)
+  }
+
+  /**
+   * A sequence template can need a variable such as captured `water`. It stays on this draft:
+   * closing the dialog without saving leaves the connection's variables as they were.
+   */
+  private handleExample(payload: { variables?: { [name: string]: StoredVariable } }) {
+    const incoming = payload?.variables ?? {}
+    const current = { ...(this.record?.variables ?? {}), ...this.exampleVariables }
+    Object.keys(incoming).forEach((name) => {
+      if (current[name] === undefined) {
+        this.$set(this.exampleVariables, name, incoming[name])
+      }
+    })
   }
 
   /** Runs the rules against the simulated message, without touching the broker. */
@@ -228,13 +295,14 @@ export default class AutomationDialog extends Vue {
 
   .automation-preview-grid {
     display: grid;
-    grid-template-columns: 92px 1fr;
+    grid-template-columns: 96px 1fr;
     gap: 8px 10px;
-    align-items: center;
+    align-items: start;
     label {
+      min-width: 0;
       color: var(--color-text-default);
       line-height: 28px;
-      white-space: nowrap;
+      overflow-wrap: anywhere;
     }
   }
 

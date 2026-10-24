@@ -58,6 +58,7 @@ import { historyMessageWithPayload1792001000001 } from './migration/179200100000
 import { connectionVariables1792001000002 } from './migration/1792001000002-connectionVariables'
 import { autoSubscribeAndReply1792001000003 } from './migration/1792001000003-autoSubscribeAndReply'
 import { subscriptionAutoSubscribed1792001000004 } from './migration/1792001000004-subscriptionAutoSubscribed'
+import { messageSequences1792001000005 } from './migration/1792001000005-messageSequences'
 
 // Get store path; fall back when running in CLI (no Electron app)
 let STORE_PATH: string
@@ -126,6 +127,7 @@ const ORMConfig = {
     connectionVariables1792001000002,
     autoSubscribeAndReply1792001000003,
     subscriptionAutoSubscribed1792001000004,
+    messageSequences1792001000005,
   ],
   migrationsTableName: 'temp_migration_table',
   entities: [

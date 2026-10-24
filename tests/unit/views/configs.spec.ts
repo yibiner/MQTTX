@@ -14,7 +14,10 @@ import {
   deleteGlobalVariable,
   saveClientProfile,
   deleteClientProfile,
+  saveMessageSequencePreset,
+  deleteMessageSequencePreset,
 } from '@/utils/configProfiles'
+import { createBlankMessageSequence } from '@/utils/messageSequenceExamples'
 import { normalizeGlobalVariables, writeVariableState } from '@/utils/payloadVariables'
 
 const localVue = createLocalVue()
@@ -23,6 +26,7 @@ localVue.use(ElementUI)
 let createdIds: string[] = []
 let createdVariableIds: string[] = []
 let createdClientIds: string[] = []
+let createdSequenceIds: string[] = []
 
 /**
  * Element UI's `el-select` cannot mount in jsdom, so the whole view is shallow mounted: this still
@@ -43,6 +47,8 @@ describe('configs view', () => {
     createdVariableIds = []
     createdClientIds.forEach((id) => deleteClientProfile(id))
     createdClientIds = []
+    createdSequenceIds.forEach((id) => deleteMessageSequencePreset(id))
+    createdSequenceIds = []
   })
 
   /** Runs one of the form rules of the view the way element-ui does. */
@@ -106,6 +112,37 @@ describe('configs view', () => {
     expect(vm.describeVariables({ productType: 'A1', site: 'north' })).to.equal('productType=A1, site=north')
     expect(vm.describeVariables(null)).to.equal('-')
     expect(vm.describeVariables({})).to.equal('-')
+  })
+
+  it('opens a sequence preset with its sequence and variables', async () => {
+    const wrapper = createWrapper()
+    const saved = saveMessageSequencePreset({
+      name: 'dock',
+      sequence: {
+        ...createBlankMessageSequence(),
+        name: 'dock',
+        trigger: 'connect',
+        steps: [{ ...createBlankMessageSequence().steps[0], topic: 'device/water' }],
+      },
+      variables: { water: { kind: 'captured', value: '2000', resetOn: [] } },
+    })
+    createdSequenceIds.push(saved.id)
+    const vm = wrapper.vm as any
+    vm.activeTab = 'sequence'
+    await wrapper.vm.$nextTick()
+
+    vm.handleEdit((vm.messageSequencePresets as MessageSequencePresetModel[]).find((preset) => preset.id === saved.id))
+
+    expect(vm.dialogType).to.equal('sequence')
+    expect(vm.profileForm.name).to.equal('dock')
+    expect(vm.profileForm.messageSequences[0].trigger).to.equal('connect')
+    expect(vm.profileForm.messageSequences[0].steps[0].topic).to.equal('device/water')
+    expect(vm.profileForm.variables.water).to.deep.equal({ kind: 'captured', value: '2000', resetOn: [] })
+    expect(
+      vm.sequenceTriggerLabel(
+        vm.messageSequencePresets.find((preset: MessageSequencePresetModel) => preset.id === saved.id),
+      ),
+    ).to.equal('connections.messageSequenceTriggerConnect')
   })
 
   it('opens a client preset with the variables it was saved with', async () => {

@@ -11,6 +11,7 @@ import {
   payloadTypeSupportsVariables,
 } from '@/utils/payloadVariables'
 import { hasMessageHeaderID, savePublishedMessageHistory } from '@/utils/historyRecordUtils'
+import { setRendererScheduling } from '@/utils/rendererScheduling'
 import { DEFAULT_HISTORY_MAX_COUNT } from '@/utils/data'
 
 /**
@@ -205,16 +206,9 @@ export function stopAllTimedMessages(connectionId: string): number {
  * the renderer (Monaco, message list) burn CPU in the background for no reason.
  */
 function syncBackgroundThrottling(): void {
-  if (typeof process === 'undefined' || process.type !== 'renderer') {
-    return
-  }
-  try {
-    // Required lazily so that this module stays importable outside a renderer (unit tests).
-    const { ipcRenderer } = require('electron')
-    ipcRenderer?.send?.('setBackgroundThrottling', entries.length > 0)
-  } catch (error) {
-    getLog().warn(`Could not update background throttling: ${(error as Error).toString()}`)
-  }
+  // Shared with message sequences: stopping the last timed message must not let Chromium
+  // throttle a sequence that is still waiting on a long step.
+  setRendererScheduling('timed-messages', entries.length > 0)
 }
 
 function fireTimedMessage(entry: TimedMessageEntry): void {

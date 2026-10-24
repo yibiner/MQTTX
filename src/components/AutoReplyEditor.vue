@@ -364,14 +364,17 @@ export default class AutoReplyEditor extends Vue {
   .editor-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 6px;
     min-height: 32px;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
 
-  // Same hint affordance as elsewhere in the app (settings, connection form): a "!" icon that
-  // opens the explanation on hover.
   .editor-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 32px;
     color: var(--color-text-default);
     cursor: help;
     line-height: 1;
@@ -386,12 +389,14 @@ export default class AutoReplyEditor extends Vue {
     margin-bottom: 10px;
     border: 1px solid var(--color-border-default);
     border-radius: 4px;
-    background: var(--color-bg-card-normal);
+    background: var(--color-bg-normal);
   }
 
   .rule-header {
     display: flex;
     align-items: center;
+    gap: 12px;
+    min-height: 28px;
     margin-bottom: 10px;
     .rule-name {
       flex: 1;
@@ -401,9 +406,17 @@ export default class AutoReplyEditor extends Vue {
       display: flex;
       align-items: center;
       gap: 10px;
-      margin-left: 12px;
+      margin-left: auto;
+      flex: none;
+      height: 28px;
       .rule-delete {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
         color: var(--color-minor-red);
+        line-height: 1;
       }
     }
   }
@@ -434,18 +447,21 @@ export default class AutoReplyEditor extends Vue {
 
   .rule-grid {
     display: grid;
-    grid-template-columns: 92px 1fr;
+    grid-template-columns: 96px 1fr;
     gap: 8px 10px;
-    align-items: center;
+    align-items: start;
     label {
+      min-width: 0;
       color: var(--color-text-default);
       line-height: 28px;
-      white-space: nowrap;
+      overflow-wrap: anywhere;
     }
     .with-help {
       display: inline-flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 4px;
+      max-width: 100%;
     }
     .field-help {
       color: var(--color-text-default);
@@ -476,16 +492,26 @@ export default class AutoReplyEditor extends Vue {
     align-items: center;
     flex-wrap: wrap;
     gap: 4px 6px;
-    .delay-input {
-      width: 76px;
-    }
-    .unit {
-      color: var(--color-text-light);
+    min-height: 28px;
+    .delay-input.el-input-number--mini {
+      width: 88px;
+      flex: none;
+      line-height: 26px;
+      .el-input__inner {
+        height: 28px;
+        line-height: 28px;
+        padding-left: 8px;
+        padding-right: 8px;
+      }
     }
     .quick-delay {
-      padding: 0 5px;
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 6px;
       color: var(--color-main-green);
       border-radius: 3px;
+      line-height: 1;
       &.active {
         color: var(--color-text-active);
         background: var(--color-main-green);
@@ -494,12 +520,34 @@ export default class AutoReplyEditor extends Vue {
     .reply-flags {
       display: flex;
       align-items: center;
-      gap: 6px;
-      margin-left: 6px;
-      .qos-select {
-        width: 84px;
+      gap: 8px;
+      margin-left: auto;
+      height: 28px;
+      .el-checkbox {
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        margin-right: 0;
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--color-text-default);
+        .el-checkbox__label {
+          padding-left: 6px;
+          font-size: 12px;
+          font-weight: 400;
+          line-height: 28px;
+          color: var(--color-text-default);
+        }
+      }
+      .qos-select.el-select {
+        width: 88px;
       }
     }
+  }
+
+  .reply-options span.unit {
+    color: var(--color-text-light);
+    line-height: 28px;
   }
 
   // Variable actions of the rule, visually separated from the reply configuration.
@@ -531,13 +579,14 @@ export default class AutoReplyEditor extends Vue {
 
   .actions-grid {
     display: grid;
-    grid-template-columns: 92px 1fr;
+    grid-template-columns: 96px 1fr;
     gap: 8px 10px;
     align-items: start;
     label {
+      min-width: 0;
       color: var(--color-text-default);
       line-height: 28px;
-      white-space: nowrap;
+      overflow-wrap: anywhere;
     }
   }
 
@@ -556,13 +605,21 @@ export default class AutoReplyEditor extends Vue {
     align-items: center;
     gap: 6px;
     .set-variable-name {
-      width: 160px;
+      width: 140px;
+      flex: none;
     }
     .set-variable-value {
       flex: 1;
     }
     .set-variable-delete {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      flex: none;
       color: var(--color-minor-red);
+      line-height: 1;
     }
   }
 
@@ -573,9 +630,11 @@ export default class AutoReplyEditor extends Vue {
     font-size: 12px;
   }
 
-  .rule-add {
+  .rule-add.el-button--text {
+    height: 32px;
     padding: 0;
     font-size: 12px;
+    line-height: 32px;
   }
 }
 

@@ -308,7 +308,12 @@ export default class ConnectionService {
    */
   public async updateAutomation(
     id: string,
-    automation: { autoSubscriptions?: AutoSubscribeGroupModel[]; autoReplies?: AutoReplyRuleModel[] },
+    automation: {
+      autoSubscriptions?: AutoSubscribeGroupModel[]
+      autoReplies?: AutoReplyRuleModel[]
+      messageSequences?: MessageSequenceModel[]
+      variables?: { [name: string]: StoredVariable } | null
+    },
   ): Promise<void> {
     const patch: Partial<ConnectionEntity> = {}
     if (automation.autoSubscriptions !== undefined) {
@@ -316,6 +321,12 @@ export default class ConnectionService {
     }
     if (automation.autoReplies !== undefined) {
       patch.autoReplies = automation.autoReplies
+    }
+    if (automation.messageSequences !== undefined) {
+      patch.messageSequences = automation.messageSequences
+    }
+    if (automation.variables !== undefined) {
+      patch.variables = automation.variables
     }
     if (!Object.keys(patch).length) {
       return

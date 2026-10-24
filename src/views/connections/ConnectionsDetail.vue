@@ -75,6 +75,17 @@
             <transition name="el-fade-in">
               <template v-if="!showClientInfo && client.connected">
                 <el-tooltip
+                  v-if="runningSequenceIds.length > 0"
+                  placement="bottom"
+                  :effect="theme !== 'light' ? 'light' : 'dark'"
+                  :open-delay="500"
+                  :content="$t('connections.messageSequenceRunning')"
+                >
+                  <a class="stop-sequence-btn" href="javascript:;" @click="stopRunningSequences">
+                    <i class="el-icon-video-pause"></i>
+                  </a>
+                </el-tooltip>
+                <el-tooltip
                   v-if="timedMessages.length > 0"
                   placement="bottom"
                   :effect="theme !== 'light' ? 'light' : 'dark'"
@@ -325,7 +336,10 @@
       :visible.sync="automationDialogVisible"
       :record="record"
       :connected="client.connected"
+      :running-ids="runningSequenceIds"
       @save="handleAutomationSave"
+      @run="handleSequenceRun"
+      @stop="handleSequenceStop"
     />
     <ExportData :visible.sync="showExportData" :connection="record" />
     <ImportData :visible.sync="showImportData" />
@@ -389,6 +403,17 @@ import {
   updateConnectSubscriptions,
 } from '@/utils/connectSubscriptions'
 import { attachAutoReply, onAutoReplyPublished, registerAutoReply, unregisterAutoReply } from '@/utils/autoReplyEngine'
+import {
+  attachMessageSequences,
+  onMessageSequencePublished,
+  onMessageSequenceRunsChanged,
+  registerMessageSequences,
+  runningMessageSequenceIds,
+  startMessageSequence,
+  stopAllMessageSequences,
+  stopMessageSequence,
+  unregisterMessageSequences,
+} from '@/utils/messageSequenceEngine'
 import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import useServices from '@/database/useServices'
 import { getMessageId, getSubscriptionId } from '@/utils/idGenerator'
@@ -513,6 +538,10 @@ export default class ConnectionsDetail extends Vue {
 
   /** Open while a connected connection edits its automation rules. */
   private automationDialogVisible = false
+  /** Sequences of the connection on screen that still have a step waiting. */
+  private runningSequenceIds: string[] = []
+  private unsubSequenceRuns: (() => void) | null = null
+  private unsubSequencePublished: (() => void) | null = null
   private unsubConnectSubscribed: (() => void) | null = null
   /**
    * The message subscriptions this view owns, per connection id.
@@ -622,6 +651,7 @@ export default class ConnectionsDetail extends Vue {
     // against a snapshot of the record.
     if (this.record?.id) {
       registerAutoReply(this.record.id, this.record)
+      registerMessageSequences(this.record.id, this.record)
       updateConnectSubscriptions(this.record.id, this.record)
     }
   }
@@ -710,6 +740,7 @@ export default class ConnectionsDetail extends Vue {
         // The automatic replies answer through this client and belong to the connection, not to this
         // view: attached here (next to the client) they keep working when the user opens another page.
         attachAutoReply(curConnectClient as MqttClient, id)
+        attachMessageSequences(curConnectClient as MqttClient, id)
         this.client.on('connect', (conBack) => this.onConnect(conBack, { id, client: curConnectClient, mqttVersion }))
         this.client.on('error', this.onError)
         this.client.on('reconnect', this.onReConnect)
@@ -767,6 +798,7 @@ export default class ConnectionsDetail extends Vue {
               onConnectionDeleted(connection.id)
               detachConnectSubscriptions(connection.id)
               unregisterAutoReply(connection.id)
+              unregisterMessageSequences(connection.id)
               this.removeActiveConnection({ id: connection.id })
               this.$log.info(
                 `Successfully removed MQTTX connection ${connection.name}@${connection.host} with clientID ${connection.clientId}`,
@@ -954,6 +986,7 @@ export default class ConnectionsDetail extends Vue {
     // message wiring must follow the id: the previous connection's delegate is unregistered
     // (its ticks fall back to the store client) and this connection's is registered instead.
     this.syncTimedMessagesBinding(id)
+    this.runningSequenceIds = id ? runningMessageSequenceIds(id) : []
   }
 
   /**
@@ -970,6 +1003,7 @@ export default class ConnectionsDetail extends Vue {
     this.unbindAutomationBinding()
     this.automationConnectionId = id
     registerAutoReply(id, this.record)
+    registerMessageSequences(id, this.record)
     this.unsubConnectSubscribed = onConnectSubscribed(id, () => {
       // The subscriptions were added behind the panel's back: re-read the connection so the list,
       // the topic tree and the session state show them.
@@ -1134,33 +1168,102 @@ export default class ConnectionsDetail extends Vue {
   private async handleAutomationSave(payload: {
     autoSubscriptions: AutoSubscribeGroupModel[]
     autoReplies: AutoReplyRuleModel[]
+    messageSequences?: MessageSequenceModel[]
+    variables?: { [name: string]: StoredVariable }
   }): Promise<void> {
+    const saved = await this.persistAutomation(payload)
+    if (saved) {
+      this.automationDialogVisible = false
+      this.$message.success(this.$t('common.saveSuccess') as string)
+    }
+  }
+
+  /**
+   * Writes the automation draft onto the live record.
+   *
+   * The sequence runner reads this same object when a step fires, so a run started from the
+   * dialog sends the steps that are on screen. The dialog stays open when this is a run
+   * rather than a save.
+   */
+  private async persistAutomation(payload: {
+    autoSubscriptions: AutoSubscribeGroupModel[]
+    autoReplies: AutoReplyRuleModel[]
+    messageSequences?: MessageSequenceModel[]
+    variables?: { [name: string]: StoredVariable }
+  }): Promise<boolean> {
     const id = this.record?.id
     if (!id) {
-      return
+      return false
     }
     try {
       const { connectionService } = useServices()
       await connectionService.updateAutomation(id, {
         autoSubscriptions: payload.autoSubscriptions,
         autoReplies: payload.autoReplies,
+        ...(payload.messageSequences !== undefined ? { messageSequences: payload.messageSequences } : {}),
+        ...(payload.variables !== undefined ? { variables: payload.variables } : {}),
       })
-      // The record is the live object the reply engine and the connect planner read from, so replacing
-      // the two lists here is what makes the new rules answer the next message.
       this.record.autoSubscriptions = payload.autoSubscriptions
       this.record.autoReplies = payload.autoReplies
+      if (payload.messageSequences !== undefined) {
+        this.record.messageSequences = payload.messageSequences
+      }
+      if (payload.variables !== undefined) {
+        this.record.variables = payload.variables
+      }
       registerAutoReply(id, this.record)
+      registerMessageSequences(id, this.record)
       updateConnectSubscriptions(id, this.record)
-      this.automationDialogVisible = false
-      this.$message.success(this.$t('common.saveSuccess') as string)
       this.$log.info(
         `Automation rules updated while connected: ${payload.autoSubscriptions.length} subscription group(s), ` +
-          `${payload.autoReplies.length} reply rule(s) (connection ${id})`,
+          `${payload.autoReplies.length} reply rule(s), ` +
+          `${(payload.messageSequences ?? []).length} sequence(s) (connection ${id})`,
       )
+      return true
     } catch (error) {
       this.$message.error((error as Error).toString())
       this.$log.error(`Updating the automation rules failed: ${(error as Error).toString()}`)
+      return false
     }
+  }
+
+  /** Saves the draft, then starts the sequence from its first step. */
+  private async handleSequenceRun(payload: {
+    sequenceId: string
+    autoSubscriptions: AutoSubscribeGroupModel[]
+    autoReplies: AutoReplyRuleModel[]
+    messageSequences?: MessageSequenceModel[]
+    variables?: { [name: string]: StoredVariable }
+  }): Promise<void> {
+    const id = this.record?.id
+    if (!id || !payload?.sequenceId) {
+      return
+    }
+    const saved = await this.persistAutomation(payload)
+    if (!saved) {
+      return
+    }
+    const started = startMessageSequence(id, payload.sequenceId)
+    if (started) {
+      this.runningSequenceIds = runningMessageSequenceIds(id)
+      this.$message.success(this.$t('connections.messageSequenceStarted') as string)
+    } else {
+      this.$message.warning(this.$t('connections.messageSequenceNoStep') as string)
+    }
+  }
+
+  private handleSequenceStop(sequenceId: string) {
+    const id = this.record?.id
+    if (!id || !sequenceId) {
+      return
+    }
+    stopMessageSequence(id, sequenceId)
+    this.runningSequenceIds = runningMessageSequenceIds(id)
+  }
+
+  private stopRunningSequences() {
+    stopAllMessageSequences(this.curConnectionId)
+    this.runningSequenceIds = []
   }
 
   private hideNewMsgsTip() {
@@ -1371,6 +1474,9 @@ export default class ConnectionsDetail extends Vue {
       return false
     }
     this.stopTimedSend()
+    // Unfinished sequence steps are cancelled. A later connect starts connect-triggered
+    // sequences from the first step; it does not continue an OTA that was cut off.
+    stopAllMessageSequences(this.curConnectionId)
     // A manual disconnect ends the session: the next connect is not an "automatic reconnect".
     markManualDisconnect(this.curConnectionId)
     this.disconnectLoding = true
@@ -2586,6 +2692,16 @@ export default class ConnectionsDetail extends Vue {
     this.unsubAutoReplyPublished = onAutoReplyPublished((connectionId, message) => {
       this.renderMessage(connectionId, message, 'publish')
     })
+    // A sequence publishes through the client, like an automatic reply. This is what puts the
+    // text that actually went out into the conversation.
+    this.unsubSequencePublished = onMessageSequencePublished((connectionId, message) => {
+      this.renderMessage(connectionId, message, 'publish')
+    })
+    this.unsubSequenceRuns = onMessageSequenceRunsChanged((connectionId) => {
+      if (connectionId === this.curConnectionId) {
+        this.runningSequenceIds = runningMessageSequenceIds(connectionId)
+      }
+    })
     this.setMessageListHeight()
     window.addEventListener('resize', this.onWindowResize)
     // Timed message wiring is done in syncTimedMessagesBinding() (called from
@@ -2598,6 +2714,14 @@ export default class ConnectionsDetail extends Vue {
     if (this.unsubAutoReplyPublished) {
       this.unsubAutoReplyPublished()
       this.unsubAutoReplyPublished = null
+    }
+    if (this.unsubSequencePublished) {
+      this.unsubSequencePublished()
+      this.unsubSequencePublished = null
+    }
+    if (this.unsubSequenceRuns) {
+      this.unsubSequenceRuns()
+      this.unsubSequenceRuns = null
     }
     this.removeClinetsMessageListener()
     // Timed messages keep running across connection switches; only stop routing their ticks
@@ -2686,7 +2810,8 @@ export default class ConnectionsDetail extends Vue {
         }
         .remove-script-btn,
         .disconnect-btn,
-        .stop-interval-btn {
+        .stop-interval-btn,
+        .stop-sequence-btn {
           margin-right: 16px;
           i {
             color: var(--color-minor-red);

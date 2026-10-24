@@ -39,7 +39,15 @@
           @change="emitChange"
         ></el-input-number>
 
-        <label>{{ $t('configs.variableStep') }}</label>
+        <label class="with-help">
+          {{ $t('configs.variableStep') }}
+          <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
+            <div slot="content">{{ $t('configs.variableStepTip') }}</div>
+            <a href="javascript:;" class="field-help">
+              <i class="el-icon-warning-outline"></i>
+            </a>
+          </el-tooltip>
+        </label>
         <el-input-number
           v-model="draft.step"
           size="mini"
@@ -608,18 +616,25 @@ export default class VariableDefinitionEditor extends Vue {
 
 .definition-grid {
   display: grid;
-  grid-template-columns: 112px 1fr;
+  // 96px is the shared label column of the automation editors, so the inputs
+  // line up with 自动回复 and 消息序列 on the same form.
+  grid-template-columns: 96px 1fr;
   gap: 8px 10px;
-  align-items: center;
+  align-items: start;
   > label {
+    min-width: 0;
     color: var(--color-text-default);
+    font-size: 12px;
+    font-weight: 400;
     line-height: 28px;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .with-help {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 4px;
+    max-width: 100%;
   }
   .field-help {
     color: var(--color-text-default);
@@ -645,6 +660,21 @@ export default class VariableDefinitionEditor extends Vue {
 .generator-radio {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  min-height: 28px;
+  // The global mini radio is locked to 90px for the message-type tabs. Session labels such as
+  // "每次会话 UUID" do not fit that width, so this group sizes to its text.
+  ::v-deep .el-radio-button--mini .el-radio-button__inner {
+    width: auto;
+    padding: 7px 12px;
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  ::v-deep .el-radio-button--mini .el-radio-button__orig-radio:checked + .el-radio-button__inner {
+    border-color: var(--color-main-green);
+    border-left: 1px solid var(--color-main-green);
+  }
 }
 
 .choice-options {
@@ -659,12 +689,21 @@ export default class VariableDefinitionEditor extends Vue {
   gap: 6px;
   .choice-value {
     flex: 1;
+    min-width: 0;
   }
-  .choice-weight {
+  .choice-weight.el-input-number {
     width: 84px;
+    flex: none;
   }
   .choice-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex: none;
     color: var(--color-minor-red);
+    line-height: 1;
   }
 }
 
@@ -695,16 +734,17 @@ export default class VariableDefinitionEditor extends Vue {
 }
 
 .definition-advanced {
-  padding: 8px 10px;
-  margin-top: 6px;
-  border-radius: 4px;
-  background: var(--color-bg-card-normal);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border-default);
+  background: transparent;
 }
 
 .advanced-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px 10px;
+  align-items: start;
   margin-bottom: 8px;
   &:last-child {
     margin-bottom: 0;
@@ -712,26 +752,53 @@ export default class VariableDefinitionEditor extends Vue {
 }
 
 .advanced-label {
-  min-width: 96px;
+  min-width: 0;
   color: var(--color-text-default);
+  font-size: 12px;
+  font-weight: 400;
   line-height: 28px;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
-.bound-select {
-  width: 160px;
+.definition-advanced .advanced-row .bound-select {
+  width: 100%;
 }
 
 .reset-triggers {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 14px;
+  gap: 4px 14px;
+  min-height: 28px;
+  // Element's checkbox is 14px and medium weight. These options sit beside 12px field labels,
+  // so they use the same size and weight as 「重置时机」.
+  ::v-deep .el-checkbox {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    margin-right: 0;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--color-text-default);
+    .el-checkbox__input {
+      line-height: 1;
+    }
+    .el-checkbox__label {
+      padding-left: 6px;
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 28px;
+      color: var(--color-text-default);
+    }
+  }
   .reconnect-option {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    height: 28px;
     color: var(--color-text-default);
+    font-size: 12px;
+    font-weight: 400;
   }
 }
 
@@ -739,12 +806,16 @@ export default class VariableDefinitionEditor extends Vue {
   display: flex;
   align-items: center;
   gap: 6px;
-  .definition-number {
+  min-height: 28px;
+  .definition-number.el-input-number {
     width: 110px;
   }
-  .advanced-unit {
-    color: var(--color-text-light);
-  }
+}
+
+.variable-definition-editor .definition-advanced .reset-every span.advanced-unit {
+  color: var(--color-text-light);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .format-fields {
@@ -752,11 +823,16 @@ export default class VariableDefinitionEditor extends Vue {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
+  min-height: 28px;
   .format-label {
     color: var(--color-text-default);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 28px;
   }
-  .pad-number {
+  .pad-number.el-input-number {
     width: 90px;
+    flex: none;
   }
 }
 </style>
