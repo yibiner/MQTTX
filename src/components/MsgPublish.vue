@@ -48,7 +48,10 @@
                 </el-col>
                 <el-col :span="24">
                   <el-form-item :label="$t('connections.responseTopic')" prop="responseTopic">
-                    <el-input size="mini" v-model="MQTT5PropsForm.responseTopic" type="text" />
+                    <div class="topic-preset-field">
+                      <el-input size="mini" v-model="MQTT5PropsForm.responseTopic" type="text" />
+                      <TopicPresetPicker @select="applyResponseTopic" />
+                    </div>
                   </el-form-item>
                 </el-col>
                 <el-col :span="24">
@@ -326,6 +329,7 @@
           @blur="handleInputBlur"
         >
         </el-input>
+        <TopicPresetPicker bare @select="applyTopicPreset" />
       </div>
     </div>
     <div class="editor-container">
@@ -360,6 +364,7 @@ import { Getter } from 'vuex-class'
 import ClickOutside from 'vue-click-outside'
 import Editor from '@/components/Editor.vue'
 import KeyValueEditor from '@/components/KeyValueEditor.vue'
+import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import convertPayload from '@/utils/convertPayload'
 import { getMessageId } from '@/utils/idGenerator'
 import _ from 'lodash'
@@ -373,6 +378,7 @@ import { getMessagePresets } from '@/utils/configProfiles'
   components: {
     Editor,
     KeyValueEditor,
+    TopicPresetPicker,
   },
   directives: {
     ClickOutside,
@@ -820,6 +826,16 @@ export default class MsgPublish extends Vue {
   /** Reloads the message preset list (also used as the popover's @show hook). */
   private loadMessagePresets() {
     this.messagePresets = getMessagePresets()
+  }
+
+  /** Fills only the topic. The stored template is copied as written, including `${name}`. */
+  private applyTopicPreset(topic: string) {
+    this.msgRecord.topic = topic
+    this.topicRequired = false
+  }
+
+  private applyResponseTopic(topic: string) {
+    this.MQTT5PropsForm.responseTopic = topic
   }
 
   /** Fills topic + message from a preset. QoS/retain/payloadType stay as chosen by the user. */

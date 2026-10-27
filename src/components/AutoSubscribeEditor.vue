@@ -67,6 +67,7 @@
           :placeholder="topicPlaceholder"
           @input="emitChange"
         ></el-input>
+        <TopicPresetPicker @select="applyTopicPreset(topic, $event)" />
         <el-select v-model="topic.qos" size="mini" class="topic-qos" @change="emitChange">
           <el-option v-for="qos in qosList" :key="qos" :label="'QoS ' + qos" :value="qos"></el-option>
         </el-select>
@@ -84,6 +85,7 @@
 
 <script lang="ts">
 import { Component, Model, Vue, Watch } from 'vue-property-decorator'
+import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 
 const createId = (): string => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -105,7 +107,7 @@ const createGroup = (): AutoSubscribeGroupModel => ({
  * its own delay, or with merge switched off) is sent separately, which is how a device is simulated
  * that first listens on one topic and only later on another.
  */
-@Component
+@Component({ components: { TopicPresetPicker } })
 export default class AutoSubscribeEditor extends Vue {
   @Model('change', { type: Array }) private readonly value!: AutoSubscribeGroupModel[] | null | undefined
 
@@ -147,6 +149,11 @@ export default class AutoSubscribeEditor extends Vue {
 
   private isSameAsGroups(value: AutoSubscribeGroupModel[] | null | undefined): boolean {
     return JSON.stringify(value ?? []) === JSON.stringify(this.groups ?? [])
+  }
+
+  private applyTopicPreset(row: AutoSubscribeTopicModel, topic: string) {
+    row.topic = topic
+    this.emitChange()
   }
 
   private emitChange() {

@@ -91,12 +91,15 @@
 
         <template v-if="sequence.trigger === 'message'">
           <label>{{ $t('connections.autoReplyMatchTopic') }}</label>
-          <el-input
-            v-model="sequence.matchTopic"
-            size="mini"
-            placeholder="device/ota/cmd"
-            @input="emitChange"
-          ></el-input>
+          <div class="topic-preset-field">
+            <el-input
+              v-model="sequence.matchTopic"
+              size="mini"
+              placeholder="device/ota/cmd"
+              @input="emitChange"
+            ></el-input>
+            <TopicPresetPicker @select="applyMatchTopic(sequence, $event)" />
+          </div>
           <label>{{ $t('connections.autoReplyCondition') }}</label>
           <div>
             <el-input
@@ -182,12 +185,15 @@
         </div>
         <div class="step-grid">
           <label>{{ $t('connections.messageSequenceTopic') }}</label>
-          <el-input
-            v-model="step.topic"
-            size="mini"
-            placeholder="device/${clientId}/water/post"
-            @input="emitChange"
-          ></el-input>
+          <div class="topic-preset-field">
+            <el-input
+              v-model="step.topic"
+              size="mini"
+              placeholder="device/${clientId}/water/post"
+              @input="emitChange"
+            ></el-input>
+            <TopicPresetPicker @select="applyStepTopic(step, $event)" />
+          </div>
           <label>{{ $t('connections.messageSequencePayload') }}</label>
           <el-input
             v-model="step.payload"
@@ -247,6 +253,7 @@
 
 <script lang="ts">
 import { Component, Model, Prop, Vue, Watch } from 'vue-property-decorator'
+import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import { isValidCondition } from '@/utils/jmesPathCondition'
 import { cloneMessageSequence } from '@/utils/messageSequenceExamples'
 
@@ -281,7 +288,7 @@ const createSequence = (): MessageSequenceModel => ({
  * Assignments are stored on the step and applied by the runner after that step is sent, so
  * this editor only records the template (`${water - 20}`), it does not evaluate it.
  */
-@Component
+@Component({ components: { TopicPresetPicker } })
 export default class MessageSequenceEditor extends Vue {
   @Model('change', { type: Array }) private readonly value!: MessageSequenceModel[] | null | undefined
   @Prop({ required: false, default: () => [] }) private readonly variableNames!: string[]
@@ -383,6 +390,16 @@ export default class MessageSequenceEditor extends Vue {
         }
       }),
     }
+  }
+
+  private applyMatchTopic(sequence: MessageSequenceModel, topic: string) {
+    sequence.matchTopic = topic
+    this.emitChange()
+  }
+
+  private applyStepTopic(step: MessageSequenceStepModel, topic: string) {
+    step.topic = topic
+    this.emitChange()
   }
 
   private emitChange() {

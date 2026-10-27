@@ -179,7 +179,13 @@ describe('Creating Desktop connections in the selected group', () => {
         $log: { info: () => {} },
       },
       // Legacy test-utils supports false stubs, but its typings omit that value.
-      stubs: { transition: false, 'transition-group': false, Editor: true, KeyValueEditor: true } as any,
+      stubs: {
+        transition: false,
+        'transition-group': false,
+        Editor: true,
+        KeyValueEditor: true,
+        TopicPresetPicker: true,
+      } as any,
     })
     try {
       const form = wrapper.vm as any

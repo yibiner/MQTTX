@@ -15,6 +15,9 @@ import {
   ensureMessageSequencePresets,
   getMessageSequencePreset,
   saveMessageSequencePreset,
+  deleteTopicPreset,
+  getTopicPresets,
+  saveTopicPreset,
 } from '@/utils/configProfiles'
 import {
   createBlankMessageSequence,
@@ -208,5 +211,28 @@ describe('configProfiles global variable batch and revision', () => {
 
     expect(afterEdit).to.equal(afterSave + 1)
     expect(afterDelete).to.equal(afterEdit + 1)
+  })
+})
+
+describe('topic presets', () => {
+  it('keeps a topic template, including placeholders, exactly as written', () => {
+    const topic = 'app/${productType}/${clientId}/device/service/sub'
+    let id = ''
+    try {
+      const saved = saveTopicPreset({ name: ' service sub ', topic: `  ${topic}  ` })
+      id = saved.id
+      expect(saved.name).to.equal('service sub')
+      expect(saved.topic).to.equal(topic)
+      expect(getTopicPresets()[0]).to.deep.equal(saved)
+
+      const renamed = saveTopicPreset({ id, name: 'downlink', topic })
+      expect(getTopicPresets().filter((preset) => preset.id === id)).to.deep.equal([renamed])
+      expect(renamed.topic).to.equal(topic)
+    } finally {
+      if (id) {
+        deleteTopicPreset(id)
+      }
+    }
+    expect(getTopicPresets().some((preset) => preset.id === id)).to.equal(false)
   })
 })

@@ -585,7 +585,10 @@
             <el-row :gutter="10">
               <el-col :span="22">
                 <el-form-item label-width="160px" :label="$t('connections.willTopic')" prop="will.lastWillTopic">
-                  <el-input size="mini" v-model="record.will.lastWillTopic"></el-input>
+                  <div class="topic-preset-field">
+                    <el-input size="mini" v-model="record.will.lastWillTopic"></el-input>
+                    <TopicPresetPicker @select="applyWillTopic" />
+                  </div>
                 </el-form-item>
               </el-col>
               <el-col :span="2"></el-col>
@@ -706,7 +709,10 @@
                     :label="$t('connections.responseTopic')"
                     prop="responseTopic"
                   >
-                    <el-input size="mini" clearable v-model="record.will.properties.responseTopic"> </el-input>
+                    <div class="topic-preset-field">
+                      <el-input size="mini" clearable v-model="record.will.properties.responseTopic"></el-input>
+                      <TopicPresetPicker @select="applyWillResponseTopic" />
+                    </div>
                   </el-form-item>
                 </el-col>
                 <el-col :span="2"></el-col>
@@ -752,6 +758,7 @@ import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
 import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
 import VariablesHelp from '@/components/VariablesHelp.vue'
+import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import Editor from '@/components/Editor.vue'
 import KeyValueEditor from '@/components/KeyValueEditor.vue'
 import { LeftValues } from '@/utils/styles'
@@ -766,6 +773,7 @@ import { sortConnectionTree } from '@/utils/connections'
     AutoReplyEditor,
     MessageSequenceEditor,
     VariablesHelp,
+    TopicPresetPicker,
   },
 })
 export default class ConnectionForm extends Vue {
@@ -1027,6 +1035,21 @@ export default class ConnectionForm extends Vue {
     } else {
       this.$router.push(`/recent_connections/${id}`)
     }
+  }
+
+  private applyWillTopic(topic: string) {
+    if (!this.record.will) {
+      return
+    }
+    this.record.will.lastWillTopic = topic
+  }
+
+  private applyWillResponseTopic(topic: string) {
+    const properties = this.record.will?.properties
+    if (!properties) {
+      return
+    }
+    properties.responseTopic = topic
   }
 
   private handleCollapse(part: 'advanced' | 'willMessage') {

@@ -15,6 +15,7 @@ const stubs: { [name: string]: true } = {
   'el-button': true,
   'el-radio-group': true,
   'el-radio-button': true,
+  TopicPresetPicker: true,
 }
 
 const createRule = (overrides: Partial<AutoReplyRuleModel> = {}): AutoReplyRuleModel => ({

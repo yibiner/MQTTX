@@ -14,6 +14,7 @@ const stubs: { [name: string]: true } = {
   'el-switch': true,
   'el-tooltip': true,
   'el-button': true,
+  TopicPresetPicker: true,
 }
 
 const createGroup = (overrides: Partial<AutoSubscribeGroupModel> = {}): AutoSubscribeGroupModel => ({

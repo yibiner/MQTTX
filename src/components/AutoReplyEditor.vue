@@ -41,12 +41,15 @@
 
       <div class="rule-grid">
         <label>{{ $t('connections.autoReplyMatchTopic') }}</label>
-        <el-input
-          v-model="rule.matchTopic"
-          size="mini"
-          placeholder="app/+/+/device/system/post"
-          @input="emitChange"
-        ></el-input>
+        <div class="topic-preset-field">
+          <el-input
+            v-model="rule.matchTopic"
+            size="mini"
+            placeholder="app/+/+/device/system/post"
+            @input="emitChange"
+          ></el-input>
+          <TopicPresetPicker @select="applyMatchTopic(rule, $event)" />
+        </div>
 
         <label class="with-help">
           {{ $t('connections.autoReplyCondition') }}
@@ -102,12 +105,15 @@
         ></el-input>
 
         <label>{{ $t('connections.autoReplyReplyTopic') }}</label>
-        <el-input
-          v-model="rule.reply.topic"
-          size="mini"
-          placeholder="app/${productType}/${clientId}/device/system/reply"
-          @input="emitChange"
-        ></el-input>
+        <div class="topic-preset-field">
+          <el-input
+            v-model="rule.reply.topic"
+            size="mini"
+            placeholder="app/${productType}/${clientId}/device/system/reply"
+            @input="emitChange"
+          ></el-input>
+          <TopicPresetPicker @select="applyReplyTopic(rule, $event)" />
+        </div>
 
         <label>{{ $t('connections.autoReplyDelay') }}</label>
         <div class="reply-options">
@@ -204,6 +210,7 @@
 
 <script lang="ts">
 import { Component, Model, Prop, Vue, Watch } from 'vue-property-decorator'
+import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import { isValidCondition } from '@/utils/jmesPathCondition'
 
 const createId = (): string => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -238,7 +245,7 @@ const createRule = (): AutoReplyRuleModel => ({
  * write a field of the received message into one (`actions`), which is how a captured device state
  * travels from one reply to the next.
  */
-@Component
+@Component({ components: { TopicPresetPicker } })
 export default class AutoReplyEditor extends Vue {
   @Model('change', { type: Array }) private readonly value!: AutoReplyRuleModel[] | null | undefined
   /** Known variable names, offered by the reset picker (free text is still accepted). */
@@ -308,6 +315,16 @@ export default class AutoReplyEditor extends Vue {
       return undefined
     }
     return { resetVariables, setVariables }
+  }
+
+  private applyMatchTopic(rule: AutoReplyRuleModel, topic: string) {
+    rule.matchTopic = topic
+    this.emitChange()
+  }
+
+  private applyReplyTopic(rule: AutoReplyRuleModel, topic: string) {
+    rule.reply.topic = topic
+    this.emitChange()
   }
 
   private emitChange() {

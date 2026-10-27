@@ -6,6 +6,7 @@ import { builtinMessageSequencePresets } from '@/utils/messageSequenceExamples'
  *
  * - Server presets: a fixed broker address (dev / test / production), with a friendly alias.
  * - Client presets: a reusable MQTT identity (clientId / username / password / behaviour).
+ * - Topic presets: a reusable topic template, selectable wherever a topic is filled in.
  * - Message presets: a reusable topic + message pair, selectable in the publish window.
  * - Message sequence presets: a reusable sequence, listed when creating a connection.
  * - Global variables: named values referenced as `${name}` in every topic and message.
@@ -126,6 +127,7 @@ export const deleteClientProfile = (id: string): void => {
 }
 
 const MESSAGE_PRESETS_KEY = 'messagePresets'
+const TOPIC_PRESETS_KEY = 'topicPresets'
 const MESSAGE_SEQUENCE_PRESETS_KEY = 'messageSequencePresets'
 
 const hasStoredKey = (key: string): boolean => {
@@ -158,6 +160,36 @@ export const deleteMessagePreset = (id: string): void => {
   writeList(
     MESSAGE_PRESETS_KEY,
     getMessagePresets().filter((preset) => preset.id !== id),
+  )
+}
+
+export const getTopicPresets = (): TopicPresetModel[] => readList(TOPIC_PRESETS_KEY)
+
+/**
+ * Stores the topic as written. `${name}` is not resolved here: the connection that later sends or
+ * matches the topic fills it from its own variables.
+ */
+export function saveTopicPreset(preset: Omit<TopicPresetModel, 'id'> & { id?: string }): TopicPresetModel {
+  const presets = getTopicPresets()
+  const saved: TopicPresetModel = {
+    id: preset.id ?? uuidv4(),
+    name: String(preset.name ?? '').trim(),
+    topic: String(preset.topic ?? '').trim(),
+  }
+  const index = presets.findIndex((item) => item.id === saved.id)
+  if (index === -1) {
+    presets.unshift(saved)
+  } else {
+    presets.splice(index, 1, saved)
+  }
+  writeList(TOPIC_PRESETS_KEY, presets)
+  return saved
+}
+
+export const deleteTopicPreset = (id: string): void => {
+  writeList(
+    TOPIC_PRESETS_KEY,
+    getTopicPresets().filter((preset) => preset.id !== id),
   )
 }
 

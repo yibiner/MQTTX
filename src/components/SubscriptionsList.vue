@@ -137,15 +137,18 @@
                   <i class="el-icon-warning-outline"></i>
                 </a>
               </el-tooltip>
-              <el-input
-                v-model="topicInput"
-                type="textarea"
-                placeholder="testtopic/#"
-                size="small"
-                @keydown.enter.native.prevent
-                @keyup.enter.native.prevent
-              >
-              </el-input>
+              <div class="topic-preset-field is-area">
+                <el-input
+                  v-model="topicInput"
+                  type="textarea"
+                  placeholder="testtopic/#"
+                  size="small"
+                  @keydown.enter.native.prevent
+                  @keyup.enter.native.prevent
+                >
+                </el-input>
+                <TopicPresetPicker @select="applyTopicPreset" />
+              </div>
               <div v-if="topicHasWhitespace" class="topic-whitespace-hint">
                 <span class="topic-whitespace-label">{{ $t('connections.topicWhitespaceHint') }}</span>
                 <span class="topic-whitespace-marker">
@@ -265,6 +268,7 @@ import LeftPanel from '@/components/LeftPanel.vue'
 import MyDialog from '@/components/MyDialog.vue'
 import Contextmenu from '@/components/Contextmenu.vue'
 import KeyValueEditor from '@/components/KeyValueEditor.vue'
+import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import useServices from '@/database/useServices'
 import time from '@/utils/time'
 import { getSubscriptionId } from '@/utils/idGenerator'
@@ -282,6 +286,7 @@ import { hasPersistentSession } from '@/utils/subscriptionUtils'
     MyDialog,
     Contextmenu,
     KeyValueEditor,
+    TopicPresetPicker,
   },
 })
 export default class SubscriptionsList extends Vue {
@@ -346,6 +351,19 @@ export default class SubscriptionsList extends Vue {
 
   set topicInput(value: string) {
     this.subRecord.topic = this.topicWhitespaceDetection ? value : value.trim()
+  }
+
+  /**
+   * One subscription takes the preset as its topic. With multiple topics enabled, another preset is
+   * added after a comma, which is how this box lists several topics.
+   */
+  private applyTopicPreset(topic: string) {
+    if (!this.multiTopics) {
+      this.topicInput = topic
+      return
+    }
+    const current = (this.topicInput || '').replace(/[\s,]+$/, '')
+    this.topicInput = current ? `${current},${topic}` : topic
   }
 
   get topicHasWhitespace(): boolean {

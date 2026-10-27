@@ -273,6 +273,16 @@ declare global {
   }
 
   /**
+   * A reusable topic template. Placeholders such as `${clientId}` stay in the stored topic and are
+   * filled by the connection that sends or matches it.
+   */
+  interface TopicPresetModel {
+    id: string
+    name: string
+    topic: string
+  }
+
+  /**
    * A reusable message sequence, edited in preset settings.
    * Creating a connection lists these and copies the chosen one onto that connection.
    */

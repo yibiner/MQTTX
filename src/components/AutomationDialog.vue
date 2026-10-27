@@ -37,7 +37,10 @@
             <div class="automation-preview-title">{{ $t('connections.autoReplyPreviewTitle') }}</div>
             <div class="automation-preview-grid">
               <label>{{ $t('connections.autoReplyPreviewTopic') }}</label>
-              <el-input v-model="previewTopic" size="mini" placeholder="app/ACME900/xxx/device/ntp/sub" />
+              <div class="topic-preset-field">
+                <el-input v-model="previewTopic" size="mini" placeholder="app/ACME900/xxx/device/ntp/sub" />
+                <TopicPresetPicker @select="applyPreviewTopic" />
+              </div>
               <label>{{ $t('connections.autoReplyPreviewPayload') }}</label>
               <el-input
                 v-model="previewPayload"
@@ -87,6 +90,7 @@ import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
 import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
 import { planAutoReplies } from '@/utils/autoReply'
 import { formatJsonText } from '@/utils/jmesPathCondition'
+import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import { ensureMessageSequencePresets, getGlobalVariables } from '@/utils/configProfiles'
 import { connectionVariableOptions } from '@/utils/payloadVariables'
 
@@ -114,7 +118,9 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? ([] as unkn
  * The reply tab has a small debug panel: paste a message the device would receive, press test, and it
  * shows which rule matches and the payload that would be sent - nothing is published.
  */
-@Component({ components: { MyDialog, AutoSubscribeEditor, AutoReplyEditor, MessageSequenceEditor } })
+@Component({
+  components: { MyDialog, AutoSubscribeEditor, AutoReplyEditor, MessageSequenceEditor, TopicPresetPicker },
+})
 export default class AutomationDialog extends Vue {
   @Prop({ default: false }) public visible!: boolean
   @Prop({ required: true }) public record!: ConnectionModel
@@ -256,6 +262,10 @@ export default class AutomationDialog extends Vue {
    * Shows the reply as it will be sent. It is formatted without parsing it, because `JSON.parse` would
    * round a 64-bit integer of the message (see `formatJsonText`).
    */
+  private applyPreviewTopic(topic: string) {
+    this.previewTopic = topic
+  }
+
   private prettyPayload(payload: string): string {
     return formatJsonText(payload)
   }

@@ -5,6 +5,7 @@
       <el-tabs v-model="activeTab">
         <el-tab-pane :label="$t('configs.serverProfiles')" name="server"></el-tab-pane>
         <el-tab-pane :label="$t('configs.clientProfiles')" name="client"></el-tab-pane>
+        <el-tab-pane :label="$t('configs.topicPresets')" name="topic"></el-tab-pane>
         <el-tab-pane :label="$t('configs.messagePresets')" name="message"></el-tab-pane>
         <el-tab-pane :label="$t('configs.messageSequencePresets')" name="sequence"></el-tab-pane>
         <el-tab-pane :label="$t('configs.globalVariables')" name="variable"></el-tab-pane>
@@ -176,6 +177,39 @@
         </el-table-column>
       </el-table>
 
+      <!-- Topic 预设列表 -->
+      <el-table
+        v-else-if="activeTab === 'topic'"
+        key="topic"
+        :data="topicPresets"
+        size="mini"
+        :empty-text="$t('configs.empty')"
+        row-key="id"
+      >
+        <el-table-column
+          :label="$t('configs.name')"
+          prop="name"
+          min-width="160"
+          show-overflow-tooltip
+        ></el-table-column>
+        <el-table-column
+          :label="$t('configs.topic')"
+          prop="topic"
+          min-width="280"
+          show-overflow-tooltip
+        ></el-table-column>
+        <el-table-column :label="$t('common.oper')" width="110" align="center">
+          <template slot-scope="{ row }">
+            <a href="javascript:;" class="profile-oper" @click="handleEdit(row)">
+              <i class="iconfont icon-edit"></i>
+            </a>
+            <a href="javascript:;" class="profile-oper danger" @click="handleDelete(row)">
+              <i class="iconfont icon-delete"></i>
+            </a>
+          </template>
+        </el-table-column>
+      </el-table>
+
       <!-- 消息预设列表 -->
       <el-table
         v-else-if="activeTab === 'message'"
@@ -266,12 +300,29 @@
           </el-form-item>
         </template>
 
+        <template v-else-if="dialogType === 'topic'">
+          <el-form-item :label="$t('configs.name')" prop="name">
+            <el-input v-model.trim="profileForm.name" clearable :placeholder="$t('configs.name')"></el-input>
+          </el-form-item>
+          <el-form-item :label="$t('configs.topic')" prop="topic">
+            <el-input
+              v-model.trim="profileForm.topic"
+              clearable
+              placeholder="app/${productType}/${clientId}/device/service/sub"
+            ></el-input>
+            <p class="topic-preset-hint">{{ $t('configs.topicPresetsHint') }}</p>
+          </el-form-item>
+        </template>
+
         <template v-else-if="dialogType === 'message'">
           <el-form-item :label="$t('configs.name')" prop="name">
             <el-input v-model.trim="profileForm.name" clearable :placeholder="$t('configs.name')"></el-input>
           </el-form-item>
           <el-form-item :label="$t('configs.topic')" prop="topic">
-            <el-input v-model.trim="profileForm.topic" clearable placeholder="sensor/temperature"></el-input>
+            <div class="topic-preset-field">
+              <el-input v-model.trim="profileForm.topic" clearable placeholder="sensor/temperature"></el-input>
+              <TopicPresetPicker @select="applyMessageTopicPreset" />
+            </div>
           </el-form-item>
           <el-form-item prop="payload">
             <!-- The resize hint lives on the label, like every other hint of this dialog. -->
@@ -438,6 +489,9 @@ import {
   getMessagePreset,
   saveMessagePreset,
   deleteMessagePreset,
+  getTopicPresets,
+  saveTopicPreset,
+  deleteTopicPreset,
   ensureMessageSequencePresets,
   saveMessageSequencePreset,
   deleteMessageSequencePreset,
@@ -452,6 +506,7 @@ import VariableDefinitionEditor from '@/components/VariableDefinitionEditor.vue'
 import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
 import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
+import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import {
   normalizeGlobalVariables,
   normalizeVariableDefinition,
@@ -469,7 +524,7 @@ import { createBlankMessageSequence } from '@/utils/messageSequenceExamples'
 import isJsonPayload from '@/utils/payloadLanguage'
 import validFormatJson from '@/utils/validFormatJson'
 
-type DialogType = 'server' | 'client' | 'message' | 'sequence' | 'variable'
+type DialogType = 'server' | 'client' | 'topic' | 'message' | 'sequence' | 'variable'
 
 interface ServerProfileForm {
   id?: string
@@ -523,6 +578,12 @@ interface MessagePresetForm {
   payload: string
 }
 
+interface TopicPresetForm {
+  id?: string
+  name: string
+  topic: string
+}
+
 interface SequencePresetForm {
   id?: string
   name: string
@@ -572,6 +633,7 @@ const kindLabelKey = (kind: VariableKind): string =>
     AutoSubscribeEditor,
     AutoReplyEditor,
     MessageSequenceEditor,
+    TopicPresetPicker,
   },
 })
 export default class Configs extends Vue {
@@ -579,6 +641,7 @@ export default class Configs extends Vue {
   private serverProfiles: ServerProfileModel[] = []
   private clientProfiles: ClientProfileModel[] = []
   private messagePresets: MessagePresetModel[] = []
+  private topicPresets: TopicPresetModel[] = []
   private messageSequencePresets: MessageSequencePresetModel[] = []
   private globalVariables: GlobalVariableModel[] = []
 
@@ -592,6 +655,7 @@ export default class Configs extends Vue {
     | ServerProfileForm
     | ClientProfileForm
     | MessagePresetForm
+    | TopicPresetForm
     | SequencePresetForm
     | VariableForm
   ) & {
@@ -750,13 +814,30 @@ export default class Configs extends Vue {
   private loadData() {
     this.serverProfiles = getServerProfiles()
     this.clientProfiles = getClientProfiles()
+    this.topicPresets = getTopicPresets()
     this.messagePresets = getMessagePresets()
     this.messageSequencePresets = ensureMessageSequencePresets()
     this.globalVariables = getGlobalVariables()
   }
 
   private created() {
+    this.applyRouteTab()
     this.loadData()
+  }
+
+  /** `/configs?tab=topic` opens the topic list, so a picker can jump straight to where presets are edited. */
+  @Watch('$route')
+  private applyRouteTab() {
+    const query = this.$route && this.$route.query
+    const tab = query && query.tab
+    const tabs: DialogType[] = ['server', 'client', 'topic', 'message', 'sequence', 'variable']
+    if (typeof tab === 'string' && (tabs as string[]).includes(tab)) {
+      this.activeTab = tab as DialogType
+    }
+  }
+
+  private applyMessageTopicPreset(topic: string) {
+    this.profileForm.topic = topic
   }
 
   /** The variable tab adds variables, every other tab adds a profile or a preset. */
@@ -768,6 +849,9 @@ export default class Configs extends Vue {
   private get dialogWidth(): string {
     if (this.dialogType === 'message') {
       return '760px'
+    }
+    if (this.dialogType === 'topic') {
+      return '560px'
     }
     return this.dialogType === 'client' || this.dialogType === 'sequence' ? '720px' : '460px'
   }
@@ -911,6 +995,8 @@ export default class Configs extends Vue {
     this.editingId = null
     if (this.activeTab === 'server') {
       this.profileForm = { alias: '', host: '', port: 1883, protocol: 'mqtt', path: undefined }
+    } else if (this.activeTab === 'topic') {
+      this.profileForm = { name: '', topic: '' }
     } else if (this.activeTab === 'message') {
       this.profileForm = { name: '', topic: '', payload: '' }
       this.presetPayloadLang = 'json'
@@ -942,6 +1028,7 @@ export default class Configs extends Vue {
       | ServerProfileModel
       | ClientProfileModel
       | MessagePresetModel
+      | TopicPresetModel
       | MessageSequencePresetModel
       | GlobalVariableModel,
   ) {
@@ -974,6 +1061,13 @@ export default class Configs extends Vue {
         payload: preset.payload,
       }
       this.presetPayloadLang = isJsonPayload(preset.payload) ? 'json' : 'plaintext'
+    } else if (this.activeTab === 'topic') {
+      const preset = row as TopicPresetModel
+      this.profileForm = {
+        id: preset.id,
+        name: preset.name,
+        topic: preset.topic,
+      }
     } else if (this.activeTab === 'sequence') {
       const preset = row as MessageSequencePresetModel
       const sequence = JSON.parse(JSON.stringify(preset.sequence)) as MessageSequenceModel
@@ -1015,6 +1109,7 @@ export default class Configs extends Vue {
       | ServerProfileModel
       | ClientProfileModel
       | MessagePresetModel
+      | TopicPresetModel
       | MessageSequencePresetModel
       | GlobalVariableModel,
   ) {
@@ -1026,6 +1121,8 @@ export default class Configs extends Vue {
           deleteServerProfile(row.id)
         } else if (this.activeTab === 'message') {
           deleteMessagePreset(row.id)
+        } else if (this.activeTab === 'topic') {
+          deleteTopicPreset(row.id)
         } else if (this.activeTab === 'variable') {
           onGlobalVariableDeleted(row.id)
           deleteGlobalVariable(row.id)
@@ -1077,6 +1174,12 @@ export default class Configs extends Vue {
         })
         // The definition changed: its shared value starts from the new default.
         onGlobalVariableChanged(saved.id)
+      } else if (this.dialogType === 'topic') {
+        saveTopicPreset({
+          id: this.editingId ?? undefined,
+          name: String(this.profileForm.name ?? ''),
+          topic: String(this.profileForm.topic ?? ''),
+        })
       } else if (this.dialogType === 'message') {
         saveMessagePreset({
           id: this.editingId ?? undefined,
@@ -1164,6 +1267,13 @@ export default class Configs extends Vue {
     &.constant {
       color: var(--color-text-light);
     }
+  }
+  .topic-preset-hint {
+    margin: 6px 0 0;
+    color: var(--color-text-light);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
   }
   .variable-cell {
     color: var(--color-text-default);
