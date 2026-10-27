@@ -5,6 +5,7 @@ import { savePublishedMessageHistory, publishedPayloadType } from '@/utils/histo
 import { getMessageId } from '@/utils/idGenerator'
 import {
   applyAutoReplyVariableActions,
+  assignSequenceRunStart,
   connectionVariableOptions,
   createPayloadVariableResolver,
   peekDefinitionValue,
@@ -517,6 +518,9 @@ const begin = (connectionId: string, sequenceId: string, trigger?: TriggerMessag
   map.set(sequenceId, run)
   notifyRuns(connectionId)
   syncScheduling()
+  // The click (or the trigger) is the start. Write it before the first delay, so a step that
+  // waits still reports the moment the run began.
+  assignSequenceRunStart(record)
   getLog().info(`Message sequence "${sequence.name || sequenceId}" started (connection ${connectionId})`)
   schedule(connectionId, sequenceId, run, sequence.steps[0]?.delayMs)
   return true

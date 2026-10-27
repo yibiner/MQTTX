@@ -472,4 +472,28 @@ describe('messageSequenceEngine', () => {
     await wait(60)
     expect(published).to.deep.equal([])
   })
+
+  it('writes the sequence start time when the run begins and keeps it for every step', async () => {
+    const published: Array<{ topic: string; payload: string }> = []
+    const record = {
+      id: 'conn-start',
+      clientId: 'dev-1',
+      variables: {
+        startAt: { kind: 'runStart' },
+        water: { kind: 'captured', value: '2000', resetOn: [] },
+      },
+      messageSequences: [sequence({ steps: [step('s0', 0, '${startAt}'), step('s1', 0, '${startAt}')] })],
+    } as unknown as ConnectionModel
+    attach('conn-start', record, published)
+    const before = Date.now()
+    expect(startMessageSequence('conn-start', 'seq')).to.equal(true)
+    const stamped = peekDefinitionValue(connectionVariableDefinitions(record).startAt)
+    expect(stamped).to.be.a('number')
+    expect(Number(stamped)).to.be.at.least(before)
+    expect(Number(stamped)).to.be.at.most(Date.now())
+    expect(published).to.deep.equal([])
+    expect(String(peekDefinitionValue(connectionVariableDefinitions(record).water))).to.equal('2000')
+    await wait(40)
+    expect(published.map((item) => item.payload)).to.deep.equal([String(stamped), String(stamped)])
+  })
 })

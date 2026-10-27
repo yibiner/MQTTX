@@ -79,6 +79,7 @@ export {
 export type { ConnectionVariableSet, ConnectionVariableSource } from './connectionVariables'
 export {
   applyAutoReplyVariableActions,
+  assignSequenceRunStart,
   applyConnectionVariableTrigger,
   applyVariableResetTrigger,
   clearConnectionSession,

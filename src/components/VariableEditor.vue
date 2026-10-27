@@ -239,6 +239,8 @@ export default class VariableEditor extends Vue {
         return config?.generator === 'template' ? config.value ?? '' : 'UUID'
       case 'captured':
         return config?.value || '-'
+      case 'runStart':
+        return '-'
       default:
         return ''
     }

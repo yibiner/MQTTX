@@ -423,6 +423,22 @@ export default {
     hu: 'Rögzített',
     ko: '캡처 값',
   },
+  variableKindRunStart: {
+    zh: '开始时间',
+    en: 'Start time',
+    tr: 'Başlangıç zamanı',
+    ja: '開始時刻',
+    hu: 'Kezdés ideje',
+    ko: '시작 시간',
+  },
+  variableRunStartHint: {
+    zh: '写在客户端变量上。这条连接的消息序列一开始，就把当时的毫秒时间戳写进来。同一次运行里每条消息读到的是同一次开始时间，再次运行会重新写入。',
+    en: 'Use it as a client variable. When a message sequence on this connection starts, the variable becomes that moment in epoch milliseconds. Every message in the same run reads the same time, and starting the sequence again writes a new one.',
+    tr: 'Bunu bir istemci değişkeni olarak kullanın. Bu bağlantıdaki bir mesaj dizisi başladığında değişken, o anın milisaniye zaman damgası olur. Aynı çalıştırmadaki her mesaj aynı zamanı okur, dizi yeniden başlayınca yeni bir zaman yazılır.',
+    ja: 'クライアント変数として使います。この接続のメッセージシーケンスが始まると、その瞬間のミリ秒タイムスタンプが書き込まれます。同じ実行中の各メッセージは同じ時刻を読み、もう一度実行すると新しい時刻になります。',
+    hu: 'Kliensváltozóként használd. Amikor ezen a kapcsolaton elindul egy üzenetsor, a változó annak a pillanatnak az ezredmásodperc időbélyege lesz. Ugyanabban a futásban minden üzenet ugyanazt az időt olvassa, egy újraindítás új időt ír.',
+    ko: '클라이언트 변수로 둡니다. 이 연결의 메시지 시퀀스가 시작되면 그 순간의 밀리초 타임스탬프가 기록됩니다. 같은 실행의 모든 메시지는 같은 시각을 읽고, 다시 실행하면 새 시각이 기록됩니다.',
+  },
   variableDefault: {
     zh: '默认值',
     en: 'Default',

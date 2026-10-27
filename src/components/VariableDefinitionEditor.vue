@@ -235,6 +235,11 @@
           @input="emitChange"
         ></el-input>
       </template>
+
+      <!-- runStart: the timestamp written when a message sequence on this connection starts -->
+      <template v-else-if="draft.kind === 'runStart'">
+        <p class="definition-hint">{{ $t('configs.variableRunStartHint') }}</p>
+      </template>
     </div>
 
     <p v-for="issue in issues" :key="issue" class="definition-error">{{ issueLabel(issue) }}</p>
@@ -355,7 +360,16 @@ import { Component, Model, Vue, Watch } from 'vue-property-decorator'
 import { normalizeVariableDefinition, toStoredVariable, validateVariableDefinition } from '@/utils/payloadVariables'
 import type { VariableDefinitionIssue } from '@/utils/payloadVariables'
 
-const KINDS: VariableKind[] = ['constant', 'sequence', 'random', 'randomWalk', 'choice', 'session', 'captured']
+const KINDS: VariableKind[] = [
+  'constant',
+  'sequence',
+  'random',
+  'randomWalk',
+  'choice',
+  'session',
+  'captured',
+  'runStart',
+]
 const BOUND_STRATEGIES: VariableBoundStrategy[] = ['clamp', 'wrap', 'reset', 'keep']
 
 /** The issue codes of `validateVariableDefinition`, translated by the editor. */
@@ -718,6 +732,15 @@ export default class VariableDefinitionEditor extends Vue {
   margin: 6px 0 0;
   color: var(--color-minor-red);
   font-size: 12px;
+  line-height: 1.5;
+}
+
+.definition-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--color-text-light);
+  font-size: 12px;
+  font-weight: 400;
   line-height: 1.5;
 }
 

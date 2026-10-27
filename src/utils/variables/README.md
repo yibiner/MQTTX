@@ -69,6 +69,7 @@ lives in a separate store so the definition stays a configuration:
 | `choice`     | weighted `options`                                            | 95% normal value, 5% fault code                 |
 | `session`    | generated once per connection session (`uuid` or a template)  | `${sessionId}`                                  |
 | `captured`   | written by an automatic reply action, `value` is the fallback | capture the last `msgId`                        |
+| `runStart`   | epoch ms written when a message sequence on this connection starts | `${startAt}` stays fixed for that run      |
 
 State keys decide who shares a value:
 

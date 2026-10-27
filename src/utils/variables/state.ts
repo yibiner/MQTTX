@@ -420,6 +420,15 @@ const applyBoundStrategy = (
   }
 }
 
+/** A stored start time. Blank or non-numeric state means the sequence has not started yet. */
+const finiteStateNumber = (value: number | string | undefined): number | undefined => {
+  if (value === undefined || value === '') {
+    return undefined
+  }
+  const parsed = typeof value === 'number' ? value : Number(String(value).trim())
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 /** Zero padding / decimal places of a stateful value; `undefined` keeps the natural form. */
 export const formatVariableValue = (
   value: number | string,
@@ -563,6 +572,15 @@ export const computeDefinitionValue = (
       }
       return { value: definition.value ?? '' }
     }
+    case 'runStart': {
+      // Written once when a sequence run begins. Until then the name stays unresolved, so a message
+      // cannot go out with an empty start time.
+      const stamped = finiteStateNumber(record?.value)
+      if (stamped === undefined) {
+        return undefined
+      }
+      return { value: formatVariableValue(stamped, definition.format) }
+    }
     default:
       return undefined
   }
@@ -587,7 +605,10 @@ export const peekDefinitionValue = (definition: ResolvedVariableDefinition): str
       record = undefined
     }
   }
-  if (definition.kind === 'session' || definition.kind === 'captured') {
+  if (definition.kind === 'session' || definition.kind === 'captured' || definition.kind === 'runStart') {
+    if (definition.kind === 'runStart') {
+      return finiteStateNumber(record?.value)
+    }
     return record?.value ?? (definition.kind === 'captured' ? definition.value : undefined)
   }
   if (record === undefined) {

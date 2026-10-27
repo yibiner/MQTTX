@@ -4,6 +4,7 @@ import { deleteGlobalVariable, saveGlobalVariable } from '@/utils/configProfiles
 import { APP_STARTED_AT, globalStateKey } from '@/utils/variables'
 import {
   applyAutoReplyVariableActions,
+  assignSequenceRunStart,
   applyVariableResetTrigger,
   connectionVariableDefinitions,
   createPayloadVariableResolver,
@@ -770,5 +771,39 @@ describe('stateful variable regressions reported by the review', () => {
     const values = Array.from({ length: 6 }, () => resolveValue('ratio', { ratio: definition }, 'connection-ratio'))
     expect(values.map(Number).every((value) => value >= 0 && value <= 1)).to.equal(true)
     expect(values.slice(0, 4)).to.deep.equal(['0', '0.4', '0.8', '0.2'])
+  })
+})
+
+describe('stateful variables: sequence start time', () => {
+  beforeEach(() => {
+    resetAllVariableStates()
+    resetLifecycleState()
+  })
+
+  it('stays unresolved until a sequence run writes the start time', () => {
+    const record = connectionRecord('conn-start', { startAt: { kind: 'runStart' } })
+    const definitions = connectionVariableDefinitions(record)
+    const pending = resolvePayloadVariables('${startAt}', { definitions, connectionId: 'conn-start' })
+    expect(pending.text).to.equal('${startAt}')
+    expect(pending.unresolved).to.deep.equal(['startAt'])
+    expect(peekDefinitionValue(definitions.startAt)).to.equal(undefined)
+
+    expect(assignSequenceRunStart(record, 1700000000000)).to.deep.equal(['startAt'])
+    const stamped = connectionVariableDefinitions(record)
+    expect(peekDefinitionValue(stamped.startAt)).to.equal(1700000000000)
+    expect(resolve('{"ts":${startAt}}', stamped, { connectionId: 'conn-start' })).to.equal('{"ts":1700000000000}')
+    expect(resolve('${startAt + 1000}', stamped, { connectionId: 'conn-start' })).to.equal('1700000001000')
+  })
+
+  it('does not move a global start-time variable when one connection starts a sequence', () => {
+    const saved = saveGlobalVariable({ name: 'sharedStart', value: '', definition: { kind: 'runStart' } })
+    try {
+      const record = connectionRecord('conn-local', { startAt: { kind: 'runStart' } })
+      assignSequenceRunStart(record, 42)
+      expect(peekDefinitionValue(connectionVariableDefinitions(record).startAt)).to.equal(42)
+      expect(peekDefinitionValue(globalVariableDefinitions().sharedStart)).to.equal(undefined)
+    } finally {
+      deleteGlobalVariable(saved.id)
+    }
   })
 })

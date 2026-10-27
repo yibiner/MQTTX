@@ -161,6 +161,32 @@ export const setVariableValue = (
   return true
 }
 
+/**
+ * Writes the start time of a sequence run into this connection's `runStart` variables.
+ *
+ * Called when the run actually begins (a click, a connect trigger, or a matching message), before
+ * the first step waits out its delay. A later step of the same run keeps reading this value.
+ * Starting the sequence again writes a new time. A global variable is left alone: one shared clock
+ * would move for every connection.
+ */
+export const assignSequenceRunStart = (
+  record: ConnectionVariableSource | null | undefined,
+  startedAt: number = Date.now(),
+): string[] => {
+  if (!record?.id || !Number.isFinite(startedAt)) {
+    return []
+  }
+  const names: string[] = []
+  Object.values(connectionVariableDefinitions(record)).forEach((definition) => {
+    if (definition.kind !== 'runStart' || definition.scope !== 'connection' || !definition.stateKey) {
+      return
+    }
+    setDefinitionValue(definition, startedAt)
+    names.push(definition.name)
+  })
+  return names
+}
+
 /** Applies the variable actions of a matched automatic reply rule (E7 / C4). */
 export const applyAutoReplyVariableActions = (
   record: ConnectionVariableSource | null | undefined,

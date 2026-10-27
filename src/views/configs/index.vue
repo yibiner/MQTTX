@@ -954,6 +954,8 @@ export default class Configs extends Vue {
         return definition.generator === 'template' ? definition.value ?? '' : 'UUID'
       case 'captured':
         return definition.value || '-'
+      case 'runStart':
+        return '-'
       default:
         return '-'
     }

@@ -300,7 +300,8 @@ declare global {
    * message field in an automatic reply).
    *
    * A variable is either a plain constant or one of the stateful kinds (`sequence`, `random`,
-   * `randomWalk`, `choice`, `session`, `captured`), configured by `definition`.
+   * `randomWalk`, `choice`, `session`, `captured`, `runStart`), configured by `definition`.
+   * `runStart` is written when a message sequence on that connection actually starts.
    */
   interface GlobalVariableModel {
     id: string
@@ -312,7 +313,7 @@ declare global {
   }
 
   /** How a stateful variable produces its value. */
-  type VariableKind = 'constant' | 'sequence' | 'random' | 'randomWalk' | 'choice' | 'session' | 'captured'
+  type VariableKind = 'constant' | 'sequence' | 'random' | 'randomWalk' | 'choice' | 'session' | 'captured' | 'runStart'
 
   /** Lifecycle events that may reset a stateful variable to its initial value. */
   type VariableResetTrigger = 'connect' | 'disconnect' | 'appStart' | 'manual' | 'bound'

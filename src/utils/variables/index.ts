@@ -88,6 +88,7 @@ export type { ConnectionSessionState, ComputedValue, ComputeValueOptions, Variab
 export { definitionsVariablesProvider } from './providers/definitions'
 export {
   applyAutoReplyVariableActions,
+  assignSequenceRunStart,
   markManualDisconnect,
   onConnectionClosed,
   onConnectionDeleted,

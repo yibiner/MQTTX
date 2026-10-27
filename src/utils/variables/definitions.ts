@@ -60,7 +60,7 @@ export const sessionStateKey = (connectionId: string): string => `s:${connection
 const RESET_TRIGGERS: VariableResetTrigger[] = ['connect', 'disconnect', 'appStart', 'manual', 'bound']
 const BOUND_STRATEGIES: VariableBoundStrategy[] = ['clamp', 'wrap', 'reset', 'keep']
 
-const STATE_KEYS: VariableKind[] = ['sequence', 'random', 'randomWalk', 'choice', 'session', 'captured']
+const STATE_KEYS: VariableKind[] = ['sequence', 'random', 'randomWalk', 'choice', 'session', 'captured', 'runStart']
 
 /** Whether a definition keeps a current value that changes between sends. */
 export const isStatefulKind = (kind: VariableKind): boolean => STATE_KEYS.includes(kind)
@@ -73,6 +73,7 @@ export const KIND_ALIASES: VariableKind[] = [
   'choice',
   'session',
   'captured',
+  'runStart',
 ]
 
 const numberFrom = (value: string | undefined): number | undefined => {
@@ -232,7 +233,7 @@ export const normalizeGlobalVariables = (
       value: definition?.value ?? variable.value,
     }
     const kind = definition?.kind
-    if (kind && kind !== 'constant' && kind !== 'session' && kind !== 'captured') {
+    if (kind && kind !== 'constant' && kind !== 'session' && kind !== 'captured' && kind !== 'runStart') {
       // Numeric kinds have no template: the legacy `value` is their initial number. A session
       // keeps its generator template and a captured variable its fallback value.
       stored.value = undefined
@@ -375,6 +376,8 @@ export const summarizeDefinition = (definition: ResolvedVariableDefinition): str
       return definition.generator === 'template' ? 'session template' : 'session uuid'
     case 'captured':
       return 'captured'
+    case 'runStart':
+      return 'run start'
     default:
       return 'constant'
   }
