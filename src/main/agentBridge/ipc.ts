@@ -10,6 +10,7 @@ import { ipcMain, WebContents } from 'electron'
 import { randomBytes, randomUUID } from 'crypto'
 import version from '@/version'
 import { agentBridgeClientConfig, agentBridgeSseUrl } from '@/utils/agentBridge'
+import type { AgentMessagePage, AgentWaitResult } from '@/utils/agentBridge'
 import { startAgentBridgeServer, AgentBridgeServer } from './http'
 import type { AgentBridgeTools } from './protocol'
 
@@ -20,6 +21,8 @@ const DEFAULT_PORT = 21883
 const PORT_TRIES = 10
 const READ_TIMEOUT_MS = 8000
 const PUBLISH_TIMEOUT_MS = 20000
+/** A wait tool call answers on its own timeout; this only catches a page that stopped answering. */
+const WAIT_TIMEOUT_MS = 70000
 
 interface AgentBridgeStore {
   get(key: string): unknown
@@ -167,12 +170,15 @@ function rendererTools(): AgentBridgeTools {
   return {
     getConnection: () => callRenderer('get_connection', {}, READ_TIMEOUT_MS),
     publish: (input) => callRenderer('publish', input, PUBLISH_TIMEOUT_MS),
-    listMessages: (input) => callRenderer('list_messages', input, READ_TIMEOUT_MS),
+    listMessages: (input) => callRenderer<AgentMessagePage>('list_messages', input, READ_TIMEOUT_MS),
+    waitForMessage: (input) => callRenderer<AgentWaitResult>('wait_for_message', input, WAIT_TIMEOUT_MS),
+    startSequence: (input) => callRenderer('start_sequence', input, PUBLISH_TIMEOUT_MS),
+    stopSequence: (input) => callRenderer('stop_sequence', input, READ_TIMEOUT_MS),
   }
 }
 
-function callRenderer(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
-  return new Promise((resolve, reject) => {
+function callRenderer<T>(method: string, params: unknown, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
     if (!target || target.isDestroyed()) {
       reject(new Error('Open a connection in MQTTX Plus. The bridge uses the connection currently on screen.'))
       return

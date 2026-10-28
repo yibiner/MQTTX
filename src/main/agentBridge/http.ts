@@ -1,5 +1,5 @@
 /**
- * Local MCP endpoint for Cursor and Claude Code.
+ * Local MCP endpoint for an AI agent on this machine.
  *
  * Listens on 127.0.0.1 only. Streamable HTTP is POST /mcp. Clients that still speak the older SSE
  * transport use GET /sse and POST /message. Both call the same tool handler. The bearer token is

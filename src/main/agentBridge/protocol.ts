@@ -4,15 +4,36 @@
  * The server speaks the methods both transports need (initialize, tools/list, tools/call). It does
  * not open an MQTT session of its own: every tool is answered by the window that is showing the
  * connection, which is also what puts a publish into the message list.
+ *
+ * Reading is deliberately not tied to the view: `list_messages` and `wait_for_message` see the
+ * stored messages of the connection plus what the page just received, so the direction tab, the
+ * topic filter, the search box and the scroll position never hide a message from an agent.
  */
-import type { AgentPublishInput } from '@/utils/agentBridge'
+import type { AgentMessageFilter, AgentMessagePage, AgentPublishInput, AgentWaitResult } from '@/utils/agentBridge'
+import { MAX_WAIT_MS } from '@/utils/agentBridge'
 
 export class AgentBridgeInputError extends Error {}
+
+export interface AgentSequenceTarget {
+  /** Sequence id, or its name when the caller only knows that. */
+  sequence?: string
+  id?: string
+  name?: string
+  /** Guard against acting on another connection than the one that was read. */
+  connectionId?: string
+}
 
 export interface AgentBridgeTools {
   getConnection(): Promise<unknown>
   publish(input: AgentPublishInput): Promise<unknown>
-  listMessages(input: { limit?: number; afterId?: string }): Promise<unknown>
+  listMessages(
+    input: AgentMessageFilter & { limit?: number; afterId?: string; connectionId?: string },
+  ): Promise<AgentMessagePage>
+  waitForMessage(
+    input: AgentMessageFilter & { timeoutMs?: number; afterId?: string; connectionId?: string },
+  ): Promise<AgentWaitResult>
+  startSequence(input: AgentSequenceTarget): Promise<unknown>
+  stopSequence(input: AgentSequenceTarget): Promise<unknown>
 }
 
 export interface McpContext {
@@ -37,17 +58,24 @@ export interface JsonRpcResponse {
 const SUPPORTED_PROTOCOL_VERSIONS = ['2024-11-05', '2025-03-26', '2025-06-18']
 const DEFAULT_PROTOCOL_VERSION = '2025-03-26'
 
+const CONNECTION_ID_PROPERTY = {
+  type: 'string',
+  description:
+    'Optional. The connectionId returned by get_connection. When the app is now showing another connection, the call is refused instead of sending to the wrong device.',
+}
+
 export const AGENT_BRIDGE_INSTRUCTIONS =
   'You are using the MQTT connection currently open in MQTTX Plus. ' +
-  'Publish and read messages with these tools. Subscriptions, variables, automatic replies and message sequences stay in the app; do not recreate them or open your own MQTT client. ' +
+  'Publish, read messages and run its saved message sequences with these tools. Subscriptions, variables, automatic replies and message sequences stay in the app; do not recreate them or open your own MQTT client. ' +
   "A publish is shown in that connection's message list, and the tool result is the text the list shows. " +
-  'Call get_connection again when the user may have switched connections, because the bridge follows the connection on screen.'
+  'list_messages and wait_for_message see every message of the connection, independent of the filters and the scroll position of the list. ' +
+  'Pass the connectionId from get_connection on later calls: if the user switched connections meanwhile, the call fails instead of acting on another device, and you should call get_connection again.'
 
 const TOOLS = [
   {
     name: 'get_connection',
     description:
-      'Read the MQTT connection currently open in MQTTX Plus: name, broker, client id, whether it is connected, its subscriptions and the names of its message sequences. This is the simulated device. Do not copy its variables or sequences, and do not connect to the broker yourself.',
+      'Read the MQTT connection currently open in MQTTX Plus: name, broker, client id, whether it is connected, its subscriptions, the names and current values of its variables, the rules it answers by itself, and its message sequences (with whether one is running). This is the simulated device. Do not copy its variables or sequences, and do not connect to the broker yourself.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -64,6 +92,7 @@ const TOOLS = [
         payload: { type: 'string', description: 'UTF-8 payload. Empty is allowed.' },
         qos: { type: 'integer', enum: [0, 1, 2], description: 'Defaults to 0.' },
         retain: { type: 'boolean', description: 'Defaults to false.' },
+        connectionId: CONNECTION_ID_PROPERTY,
       },
       required: ['topic', 'payload'],
     },
@@ -71,13 +100,71 @@ const TOOLS = [
   {
     name: 'list_messages',
     description:
-      'Read the messages currently shown for the open connection, oldest first. Includes messages it received and messages it sent (manual, sequence, automatic reply, and this bridge). Pass afterId of the last message you have seen to read only newer ones. When cursorReset is true, that id is no longer on screen and the returned messages are the newest visible page.',
+      'Read the recent messages of the open connection, oldest first, newest `limit`. This is the stored history plus what arrived a moment ago, so the direction tab, the topic filter, the search box and the scroll position of the list do not affect it. Pass afterId of the last message you saw to read only newer ones. When cursorReset is true, that id is older than the returned window and the messages are the newest page.',
     inputSchema: {
       type: 'object',
       properties: {
         limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Defaults to 30.' },
         afterId: { type: 'string', description: 'Return messages after this id.' },
+        topic: { type: 'string', description: 'MQTT topic filter, e.g. device/+/state or device/#' },
+        direction: {
+          type: 'string',
+          enum: ['in', 'out'],
+          description: 'in = received by the connection, out = published by it.',
+        },
+        contains: { type: 'string', description: 'Keep messages whose payload contains this text.' },
+        connectionId: CONNECTION_ID_PROPERTY,
       },
+    },
+  },
+  {
+    name: 'wait_for_message',
+    description:
+      'Wait for the next message the open connection receives or publishes that matches the filter, and return it. Use it instead of polling after a publish. Resolves with matched true as soon as one arrives; on timeout it returns matched false and a hint, and the connection is still fine.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'MQTT topic filter, e.g. device/+/state' },
+        direction: { type: 'string', enum: ['in', 'out'], description: 'Defaults to any direction.' },
+        contains: { type: 'string', description: 'Keep messages whose payload contains this text.' },
+        afterId: {
+          type: 'string',
+          description: 'Only consider messages after this id, so a message you already read is not matched again.',
+        },
+        timeoutMs: {
+          type: 'integer',
+          minimum: 1,
+          maximum: MAX_WAIT_MS,
+          description: `How long to wait. Defaults to 10000, maximum ${MAX_WAIT_MS}.`,
+        },
+        connectionId: CONNECTION_ID_PROPERTY,
+      },
+    },
+  },
+  {
+    name: 'start_sequence',
+    description:
+      'Start one of the message sequences saved on the open connection, by id or by name. This is the same run the user starts from the app: the steps, their delays and the variable writes stay in the app. Returns the sequence state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sequence: { type: 'string', description: 'Sequence id or its name as get_connection reports it.' },
+        connectionId: CONNECTION_ID_PROPERTY,
+      },
+      required: ['sequence'],
+    },
+  },
+  {
+    name: 'stop_sequence',
+    description:
+      'Stop a running message sequence of the open connection, by id or by name. Steps that have not been sent yet are dropped.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sequence: { type: 'string', description: 'Sequence id or its name as get_connection reports it.' },
+        connectionId: CONNECTION_ID_PROPERTY,
+      },
+      required: ['sequence'],
     },
   },
 ]
@@ -101,28 +188,139 @@ export function parsePublishArguments(args: unknown): AgentPublishInput {
   if (record.retain !== undefined && typeof record.retain !== 'boolean') {
     throw new AgentBridgeInputError('retain must be a boolean')
   }
-  return { topic, payload: record.payload, qos, retain: record.retain === true }
+  const input: AgentPublishInput = { topic, payload: record.payload, qos, retain: record.retain === true }
+  const connectionId = optionalString(record.connectionId, 'connectionId')
+  if (connectionId) {
+    input.connectionId = connectionId
+  }
+  return input
 }
 
-export function parseListArguments(args: unknown): { limit?: number; afterId?: string } {
+export function parseListArguments(args: unknown): AgentMessageFilter & {
+  limit?: number
+  afterId?: string
+  connectionId?: string
+} {
+  const parsed: AgentMessageFilter & { limit?: number; afterId?: string; connectionId?: string } = parseFilterArguments(
+    args,
+    'list_messages',
+  )
   if (args === undefined || args === null) {
-    return {}
+    return parsed
   }
-  const record = objectArguments(args, 'list_messages')
-  const parsed: { limit?: number; afterId?: string } = {}
-  if (record.limit !== undefined) {
-    if (!Number.isInteger(record.limit) || (record.limit as number) < 1 || (record.limit as number) > 100) {
-      throw new AgentBridgeInputError('limit must be an integer from 1 to 100')
-    }
-    parsed.limit = record.limit as number
-  }
-  if (record.afterId !== undefined) {
-    if (typeof record.afterId !== 'string' || !record.afterId) {
-      throw new AgentBridgeInputError('afterId must be a message id')
-    }
-    parsed.afterId = record.afterId
-  }
+  const record = args as Record<string, unknown>
+  applyMessageLimit(record, parsed)
+  applyAfterId(record, parsed)
+  applyConnectionId(record, parsed)
   return parsed
+}
+
+export function parseWaitArguments(args: unknown): AgentMessageFilter & {
+  timeoutMs?: number
+  afterId?: string
+  connectionId?: string
+} {
+  const parsed: AgentMessageFilter & { timeoutMs?: number; afterId?: string; connectionId?: string } =
+    parseFilterArguments(args, 'wait_for_message')
+  if (args === undefined || args === null) {
+    return parsed
+  }
+  const record = args as Record<string, unknown>
+  if (record.timeoutMs !== undefined) {
+    if (
+      !Number.isInteger(record.timeoutMs) ||
+      (record.timeoutMs as number) < 1 ||
+      (record.timeoutMs as number) > MAX_WAIT_MS
+    ) {
+      throw new AgentBridgeInputError(`timeoutMs must be an integer from 1 to ${MAX_WAIT_MS}`)
+    }
+    parsed.timeoutMs = record.timeoutMs as number
+  }
+  applyAfterId(record, parsed)
+  applyConnectionId(record, parsed)
+  return parsed
+}
+
+function applyMessageLimit(record: Record<string, unknown>, parsed: { limit?: number }): void {
+  if (record.limit === undefined) {
+    return
+  }
+  if (!Number.isInteger(record.limit) || (record.limit as number) < 1 || (record.limit as number) > 100) {
+    throw new AgentBridgeInputError('limit must be an integer from 1 to 100')
+  }
+  parsed.limit = record.limit as number
+}
+
+function applyAfterId(record: Record<string, unknown>, parsed: { afterId?: string }): void {
+  if (record.afterId === undefined) {
+    return
+  }
+  if (typeof record.afterId !== 'string' || !record.afterId) {
+    throw new AgentBridgeInputError('afterId must be a message id')
+  }
+  parsed.afterId = record.afterId
+}
+
+function applyConnectionId(record: Record<string, unknown>, parsed: { connectionId?: string }): void {
+  const connectionId = optionalString(record.connectionId, 'connectionId')
+  if (connectionId) {
+    parsed.connectionId = connectionId
+  }
+}
+
+export function parseSequenceArguments(args: unknown, tool: string): AgentSequenceTarget {
+  const record = objectArguments(args, tool)
+  const target: AgentSequenceTarget = {}
+  const sequence =
+    typeof record.sequence === 'string'
+      ? record.sequence.trim()
+      : typeof record.id === 'string'
+      ? record.id.trim()
+      : typeof record.name === 'string'
+      ? record.name.trim()
+      : ''
+  if (!sequence) {
+    throw new AgentBridgeInputError('sequence is required: the id or the name from get_connection')
+  }
+  target.sequence = sequence
+  const connectionId = optionalString(record.connectionId, 'connectionId')
+  if (connectionId) {
+    target.connectionId = connectionId
+  }
+  return target
+}
+
+function parseFilterArguments(args: unknown, tool: string): AgentMessageFilter {
+  const filter: AgentMessageFilter = {}
+  if (args === undefined || args === null) {
+    return filter
+  }
+  const record = objectArguments(args, tool)
+  const topic = optionalString(record.topic, 'topic')
+  if (topic) {
+    filter.topic = topic
+  }
+  if (record.direction !== undefined) {
+    if (record.direction !== 'in' && record.direction !== 'out') {
+      throw new AgentBridgeInputError('direction must be in or out')
+    }
+    filter.direction = record.direction
+  }
+  const contains = optionalString(record.contains, 'contains')
+  if (contains) {
+    filter.contains = contains
+  }
+  return filter
+}
+
+function optionalString(value: unknown, field: string): string {
+  if (value === undefined || value === null) {
+    return ''
+  }
+  if (typeof value !== 'string') {
+    throw new AgentBridgeInputError(`${field} must be a string`)
+  }
+  return value.trim()
 }
 
 export async function handleMcpMessage(message: unknown, context: McpContext): Promise<JsonRpcResponse | null> {
@@ -179,6 +377,15 @@ async function callTool(
     }
     if (name === 'list_messages') {
       return toolText(await tools.listMessages(parseListArguments(args)))
+    }
+    if (name === 'wait_for_message') {
+      return toolText(await tools.waitForMessage(parseWaitArguments(args)))
+    }
+    if (name === 'start_sequence') {
+      return toolText(await tools.startSequence(parseSequenceArguments(args, 'start_sequence')))
+    }
+    if (name === 'stop_sequence') {
+      return toolText(await tools.stopSequence(parseSequenceArguments(args, 'stop_sequence')))
     }
     return toolText(`Unknown tool: ${name || ''}`, true)
   } catch (error) {

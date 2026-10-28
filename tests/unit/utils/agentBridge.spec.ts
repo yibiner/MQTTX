@@ -2,13 +2,28 @@ import { expect } from 'chai'
 import http from 'http'
 import {
   agentBridgeClientConfig,
+  agentConnectionMismatch,
+  appendAgentMessage,
+  clampWaitMs,
   describeConnection,
+  filterAgentMessages,
+  matchAgentMessage,
+  mergeAgentMessages,
   messageFromAgent,
   selectAgentMessages,
   toAgentMessage,
   AgentDisplayedMessage,
 } from '@/utils/agentBridge'
-import { AGENT_BRIDGE_INSTRUCTIONS, handleMcpMessage } from '@/main/agentBridge/protocol'
+import { AgentMessageFeed } from '@/utils/agentMessageFeed'
+import {
+  AGENT_BRIDGE_INSTRUCTIONS,
+  handleMcpMessage,
+  parseListArguments,
+  parsePublishArguments,
+  parseSequenceArguments,
+  parseWaitArguments,
+} from '@/main/agentBridge/protocol'
+import type { AgentBridgeTools } from '@/main/agentBridge/protocol'
 import { startAgentBridgeServer, AgentBridgeServer } from '@/main/agentBridge/http'
 
 const TOKEN = 'local-test-token'
@@ -32,6 +47,17 @@ const displayed = (id: string, payload: string): AgentDisplayedMessage => ({
   qos: 0,
   retain: false,
   createAt: '2026-10-24 16:00:00',
+})
+
+/** Every MCP tool of the bridge, so a test only stubs what it asserts on. */
+const toolsStub = (overrides: Partial<AgentBridgeTools> = {}): AgentBridgeTools => ({
+  getConnection: async () => ({}),
+  publish: async () => ({}),
+  listMessages: async () => ({ messages: [], cursorReset: false }),
+  waitForMessage: async () => ({ matched: false, waitedMs: 0 }),
+  startSequence: async () => ({}),
+  stopSequence: async () => ({}),
+  ...overrides,
 })
 
 interface HttpResult {
@@ -107,10 +133,114 @@ describe('agent bridge', () => {
       path: '/mqtt',
       connected: true,
       subscriptions: [{ topic: 'device/+/cmd', qos: 1, disabled: false }],
-      sequences: [{ name: '水量循环', enabled: true, trigger: 'connect' }],
+      sequences: [{ id: '', name: '水量循环', enabled: true, trigger: 'connect', running: false, steps: 0 }],
+      variables: [],
+      autoReplies: [],
     })
     expect(snapshot).to.not.have.property('password')
     expect(snapshot).to.not.have.property('username')
+  })
+
+  it('reports variable values, running sequences and the rules the app answers itself', () => {
+    const snapshot = describeConnection({
+      id: 'conn-1',
+      name: 'washer',
+      clientId: 'washer-1',
+      port: 1883,
+      connected: true,
+      messageSequences: [
+        { id: 'seq-1', name: '水量循环', enabled: true, trigger: 'manual', steps: [{}, {}, {}] },
+        { id: 'seq-2', name: 'OTA', enabled: false, trigger: 'message', steps: [{}] },
+      ],
+      runningSequenceIds: ['seq-1'],
+      variables: [
+        { name: 'water', kind: 'sequence', scope: 'connection', value: '1980' },
+        { name: 'startAt', kind: 'runStart', scope: 'connection', value: null },
+      ],
+      autoReplies: [{ name: 'ack', enabled: true, matchTopic: 'device/cmd' }],
+    })
+    expect(snapshot.sequences).to.deep.equal([
+      { id: 'seq-1', name: '水量循环', enabled: true, trigger: 'manual', running: true, steps: 3 },
+      { id: 'seq-2', name: 'OTA', enabled: false, trigger: 'message', running: false, steps: 1 },
+    ])
+    expect(snapshot.variables).to.deep.equal([
+      { name: 'water', kind: 'sequence', scope: 'connection', value: '1980' },
+      { name: 'startAt', kind: 'runStart', scope: 'connection', value: null },
+    ])
+    expect(snapshot.autoReplies).to.deep.equal([{ name: 'ack', enabled: true, matchTopic: 'device/cmd' }])
+  })
+
+  it('refuses a call that names another connection', () => {
+    expect(agentConnectionMismatch(undefined, { id: 'conn-1', name: 'washer' })).to.equal(null)
+    expect(agentConnectionMismatch('conn-1', { id: 'conn-1', name: 'washer' })).to.equal(null)
+    const refused = agentConnectionMismatch('conn-1', { id: 'conn-2', name: 'dryer' })
+    expect(refused).to.contain('dryer')
+    expect(refused).to.contain('conn-2')
+  })
+
+  it('merges stored messages with what the view filtered out', () => {
+    const stored = [displayed('m1', 'a'), displayed('m2', 'b')]
+    const live = [displayed('m2', 'b'), { ...displayed('m3', 'c'), source: 'agent' as const }]
+    expect(mergeAgentMessages(stored, live).map((item) => item.id)).to.deep.equal(['m1', 'm2', 'm3'])
+    expect(filterAgentMessages(mergeAgentMessages(stored, live), { topic: 'device/+' })).to.have.length(3)
+    expect(filterAgentMessages(mergeAgentMessages(stored, live), { topic: 'other/#' })).to.have.length(0)
+    expect(matchAgentMessage(displayed('m4', 'x'), { contains: 'x' })).to.equal(true)
+    expect(matchAgentMessage(displayed('m4', 'x'), { direction: 'out' })).to.equal(false)
+
+    let log: AgentDisplayedMessage[] = []
+    for (let index = 0; index < 205; index += 1) {
+      log = appendAgentMessage(log, displayed(`m${index}`, 'x'))
+    }
+    expect(log).to.have.length(200)
+    expect(log[199].id).to.equal('m204')
+    expect(clampWaitMs(999999)).to.equal(60000)
+    expect(clampWaitMs(undefined)).to.equal(10000)
+  })
+
+  describe('message feed', () => {
+    it('answers a wait with the next matching arrival, not with what arrived before', async () => {
+      const feed = new AgentMessageFeed()
+      feed.record(displayed('m1', 'old'))
+      const pending = feed.wait({ topic: 'device/#', afterId: 'm1', timeoutMs: 500 })
+      feed.record({ ...displayed('m2', 'wrong-topic'), topic: 'other/topic' })
+      feed.record({ ...displayed('m3', '{"water":1980}'), topic: 'device/water/state' })
+      const result = await pending
+      expect(result.matched).to.equal(true)
+      expect(result.message?.id).to.equal('m3')
+      expect(feed.waiting).to.equal(0)
+    })
+
+    it('answers at once when the message arrived between the publish and the wait', async () => {
+      const feed = new AgentMessageFeed()
+      feed.record(displayed('m1', 'start'))
+      feed.record(displayed('m2', 'ack'))
+      const result = await feed.wait({ contains: 'ack', afterId: 'm1', timeoutMs: 5000 })
+      expect(result.matched).to.equal(true)
+      expect(result.waitedMs).to.equal(0)
+      expect(result.message?.id).to.equal('m2')
+    })
+
+    it('times out with a hint and keeps the filter', async () => {
+      const feed = new AgentMessageFeed()
+      const result = await feed.wait({ topic: 'device/+/ack', timeoutMs: 20 })
+      expect(result.matched).to.equal(false)
+      expect(result.waitedMs).to.be.at.least(20)
+      expect(result.hint).to.contain('device/+/ack')
+      expect(feed.waiting).to.equal(0)
+    })
+
+    it('settles waiters when the page goes away and forgets the log when it clears', async () => {
+      const feed = new AgentMessageFeed()
+      const pending = feed.wait({ timeoutMs: 30000 })
+      expect(feed.waiting).to.equal(1)
+      feed.settleAll('The connection page was closed.')
+      const result = await pending
+      expect(result.matched).to.equal(false)
+      expect(result.hint).to.contain('closed')
+      feed.record(displayed('m1', 'x'))
+      feed.clear()
+      expect(feed.messages).to.have.length(0)
+    })
   })
 
   it('marks an agent publish and pages the visible messages', () => {
@@ -140,14 +270,12 @@ describe('agent bridge', () => {
       { jsonrpc: '2.0', id: 7, method: 'initialize', params: { protocolVersion: '2025-03-26' } },
       {
         serverVersion: '1.13.1',
-        tools: {
-          getConnection: async () => ({}),
+        tools: toolsStub({
           publish: async (input) => {
             published = input
             return input
           },
-          listMessages: async () => ({ messages: [] }),
-        },
+        }),
       },
     )
     const result = response?.result as { instructions: string; protocolVersion: string }
@@ -155,6 +283,7 @@ describe('agent bridge', () => {
     expect(result.instructions).to.equal(AGENT_BRIDGE_INSTRUCTIONS)
     expect(result.instructions).to.contain('message list')
     expect(result.instructions).to.contain('do not recreate')
+    expect(result.instructions).to.contain('connectionId')
 
     const refused = await handleMcpMessage(
       {
@@ -165,14 +294,12 @@ describe('agent bridge', () => {
       },
       {
         serverVersion: '1.13.1',
-        tools: {
-          getConnection: async () => ({}),
+        tools: toolsStub({
           publish: async (input) => {
             published = input
             return input
           },
-          listMessages: async () => ({ messages: [] }),
-        },
+        }),
       },
     )
     const tool = refused?.result as { isError?: boolean; content: Array<{ text: string }> }
@@ -183,12 +310,111 @@ describe('agent bridge', () => {
     expect(
       await handleMcpMessage(
         { jsonrpc: '2.0', method: 'notifications/initialized' },
-        {
-          serverVersion: '1.13.1',
-          tools: { getConnection: async () => ({}), publish: async () => ({}), listMessages: async () => ({}) },
-        },
+        { serverVersion: '1.13.1', tools: toolsStub() },
       ),
     ).to.equal(null)
+  })
+
+  it('parses the arguments of the new tools', () => {
+    expect(parsePublishArguments({ topic: ' a/b ', payload: '', connectionId: ' conn-1 ' })).to.deep.equal({
+      topic: 'a/b',
+      payload: '',
+      qos: 0,
+      retain: false,
+      connectionId: 'conn-1',
+    })
+    expect(parseListArguments({ limit: 5, topic: 'device/+/state', direction: 'in', contains: 'ota' })).to.deep.equal({
+      limit: 5,
+      topic: 'device/+/state',
+      direction: 'in',
+      contains: 'ota',
+    })
+    expect(parseListArguments({ connectionId: 'conn-1' })).to.deep.equal({ connectionId: 'conn-1' })
+    expect(parseWaitArguments({ timeoutMs: 1500, afterId: 'm1', connectionId: 'conn-1' })).to.deep.equal({
+      timeoutMs: 1500,
+      afterId: 'm1',
+      connectionId: 'conn-1',
+    })
+    expect(() => parseWaitArguments({ timeoutMs: 0 })).to.throw('timeoutMs')
+    expect(() => parseWaitArguments({ timeoutMs: 60001 })).to.throw('timeoutMs')
+    expect(() => parseListArguments({ direction: 'sideways' })).to.throw('direction')
+    expect(parseSequenceArguments({ sequence: ' 水量循环 ' }, 'start_sequence')).to.deep.equal({
+      sequence: '水量循环',
+    })
+    expect(() => parseSequenceArguments({}, 'start_sequence')).to.throw('sequence is required')
+  })
+
+  it('calls the new tools through the protocol and reports a wait timeout as a result', async () => {
+    const seen: string[] = []
+    const tools = toolsStub({
+      waitForMessage: async (input) => {
+        seen.push(`wait:${input.topic}:${input.timeoutMs}`)
+        return { matched: false, waitedMs: 20, hint: 'no matching message' }
+      },
+      startSequence: async (input) => {
+        seen.push(`start:${input.sequence}`)
+        return { sequenceId: 'seq-1', name: '水量循环', running: true, steps: 3 }
+      },
+      stopSequence: async (input) => {
+        seen.push(`stop:${input.sequence}`)
+        return { sequenceId: 'seq-1', name: '水量循环', running: false }
+      },
+    })
+    const wait = await handleMcpMessage(
+      {
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'tools/call',
+        params: { name: 'wait_for_message', arguments: { topic: 'device/+/ack', timeoutMs: 20 } },
+      },
+      { serverVersion: '1.13.1', tools },
+    )
+    const waited = wait?.result as { isError?: boolean; content: Array<{ text: string }> }
+    expect(waited.isError).to.not.equal(true)
+    expect(JSON.parse(waited.content[0].text)).to.deep.equal({
+      matched: false,
+      waitedMs: 20,
+      hint: 'no matching message',
+    })
+
+    const started = await handleMcpMessage(
+      {
+        jsonrpc: '2.0',
+        id: 10,
+        method: 'tools/call',
+        params: { name: 'start_sequence', arguments: { sequence: '水量循环' } },
+      },
+      { serverVersion: '1.13.1', tools },
+    )
+    expect(JSON.parse((started?.result as { content: Array<{ text: string }> }).content[0].text)).to.include({
+      sequenceId: 'seq-1',
+      running: true,
+    })
+
+    await handleMcpMessage(
+      {
+        jsonrpc: '2.0',
+        id: 11,
+        method: 'tools/call',
+        params: { name: 'stop_sequence', arguments: { sequence: '水量循环' } },
+      },
+      { serverVersion: '1.13.1', tools },
+    )
+    expect(seen).to.deep.equal(['wait:device/+/ack:20', 'start:水量循环', 'stop:水量循环'])
+
+    const listed = await handleMcpMessage(
+      { jsonrpc: '2.0', id: 12, method: 'tools/list' },
+      { serverVersion: '1.13.1', tools },
+    )
+    const names = (listed?.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)
+    expect(names).to.deep.equal([
+      'get_connection',
+      'publish',
+      'list_messages',
+      'wait_for_message',
+      'start_sequence',
+      'stop_sequence',
+    ])
   })
 
   describe('local HTTP endpoint', () => {
@@ -201,7 +427,7 @@ describe('agent bridge', () => {
         ports: [0],
         context: {
           serverVersion: '1.13.1',
-          tools: {
+          tools: toolsStub({
             getConnection: async () => {
               calls.push('get_connection')
               return { name: 'washer', connected: true }
@@ -210,8 +436,7 @@ describe('agent bridge', () => {
               calls.push('publish')
               return { direction: 'out', topic: input.topic, payload: input.payload, source: 'agent' }
             },
-            listMessages: async () => ({ messages: [], cursorReset: false }),
-          },
+          }),
         },
       })
     })

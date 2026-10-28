@@ -4,12 +4,10 @@
  */
 import { ipcRenderer } from 'electron'
 import { AgentPublishInput } from '@/utils/agentBridge'
+import type { AgentBridgeTools } from '@/main/agentBridge/protocol'
 
-export interface AgentBridgeHandler {
-  describe(): Promise<unknown> | unknown
-  publish(input: AgentPublishInput): Promise<unknown>
-  listMessages(input: { limit?: number; afterId?: string }): Promise<unknown> | unknown
-}
+/** What this page must answer; the same methods the MCP tool list exposes. */
+export type AgentBridgeHandler = AgentBridgeTools
 
 const NO_CONNECTION = 'Open a connection in MQTTX Plus. The bridge uses the connection currently on screen.'
 
@@ -58,13 +56,22 @@ function ensureListening(): void {
 
 async function dispatch(current: AgentBridgeHandler, method: string, params: unknown): Promise<unknown> {
   if (method === 'get_connection') {
-    return current.describe()
+    return current.getConnection()
   }
   if (method === 'publish') {
     return current.publish(params as AgentPublishInput)
   }
   if (method === 'list_messages') {
-    return current.listMessages((params || {}) as { limit?: number; afterId?: string })
+    return current.listMessages((params || {}) as Parameters<AgentBridgeTools['listMessages']>[0])
+  }
+  if (method === 'wait_for_message') {
+    return current.waitForMessage((params || {}) as Parameters<AgentBridgeTools['waitForMessage']>[0])
+  }
+  if (method === 'start_sequence') {
+    return current.startSequence((params || {}) as Parameters<AgentBridgeTools['startSequence']>[0])
+  }
+  if (method === 'stop_sequence') {
+    return current.stopSequence((params || {}) as Parameters<AgentBridgeTools['stopSequence']>[0])
   }
   throw new Error(`Unknown tool: ${method}`)
 }

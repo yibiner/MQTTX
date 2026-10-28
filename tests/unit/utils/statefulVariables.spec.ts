@@ -7,6 +7,7 @@ import {
   assignSequenceRunStart,
   applyVariableResetTrigger,
   connectionVariableDefinitions,
+  connectionVariableSnapshot,
   createPayloadVariableResolver,
   formatVariableValue,
   globalVariableDefinitions,
@@ -805,5 +806,25 @@ describe('stateful variables: sequence start time', () => {
     } finally {
       deleteGlobalVariable(saved.id)
     }
+  })
+
+  it('reports current values to the local agent without advancing anything', () => {
+    const record = connectionRecord('conn-read', {
+      water: { kind: 'sequence', initial: 2000, step: -20 },
+      startAt: { kind: 'runStart' },
+      label: { kind: 'constant', value: 'kitchen' },
+    })
+    const before = connectionVariableSnapshot(record)
+    expect(before).to.deep.equal([
+      { name: 'water', kind: 'sequence', scope: 'connection', value: '2000' },
+      { name: 'startAt', kind: 'runStart', scope: 'connection', value: null },
+      { name: 'label', kind: 'constant', scope: 'connection', value: 'kitchen' },
+    ])
+    // Reading did not step the counter, so the next message still sends the initial value.
+    expect(resolve('${water}', connectionVariableDefinitions(record), { connectionId: 'conn-read' })).to.equal('2000')
+    assignSequenceRunStart(record, 1700000000000)
+    expect(connectionVariableSnapshot(record).find((variable) => variable.name === 'startAt')?.value).to.equal(
+      '1700000000000',
+    )
   })
 })

@@ -73,6 +73,7 @@ export {
   connectionVariableGuide,
   connectionVariableMap,
   connectionVariableOptions,
+  connectionVariableSnapshot,
   connectionVariables,
   globalVariableDefinitions,
 } from './connectionVariables'

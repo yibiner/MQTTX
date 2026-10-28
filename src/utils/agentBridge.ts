@@ -4,13 +4,25 @@
  * An external agent publishes and reads through the connection that is on screen. Subscriptions,
  * variables and message sequences stay in this app, so the objects below are a view of that
  * connection, never a second copy of its state.
+ *
+ * Two rules shape the tool surface:
+ *
+ *   - Reading is independent of the view. `list_messages` answers from the stored messages plus the
+ *     pages's own log, so scrolling, the direction tab, the topic filter and the search box change
+ *     nothing an agent can see. A verification run must not lose a reply because the list was
+ *     scrolled up.
+ *   - Every call can name the connection it expects. A different one on screen is refused instead
+ *     of quietly sending to another device.
  */
+import { matchTopicMethod } from '@/utils/topicMatch'
 
 export interface AgentPublishInput {
   topic: string
   payload: string
   qos: 0 | 1 | 2
   retain: boolean
+  /** Optional guard: the call is refused when the open connection has another id. */
+  connectionId?: string
 }
 
 export interface AgentDisplayedMessage {
@@ -25,6 +37,31 @@ export interface AgentDisplayedMessage {
   source?: 'agent'
 }
 
+/** One variable of the open connection, as the agent may read it. */
+export interface AgentVariableValue {
+  name: string
+  kind: string
+  scope: string
+  /** Current value; null while a stateful variable has not been resolved yet. */
+  value: string | null
+}
+
+export interface AgentSequenceInfo {
+  id: string
+  name: string
+  enabled: boolean
+  trigger: string
+  /** True while a step is waiting or in flight. */
+  running: boolean
+  steps: number
+}
+
+export interface AgentAutoReplyInfo {
+  name: string
+  enabled: boolean
+  matchTopic: string
+}
+
 export interface AgentConnectionSnapshot {
   connectionId: string
   name: string
@@ -35,11 +72,39 @@ export interface AgentConnectionSnapshot {
   path?: string
   connected: boolean
   subscriptions: Array<{ topic: string; qos: number; disabled: boolean }>
-  sequences: Array<{ name: string; enabled: boolean; trigger: string }>
+  sequences: AgentSequenceInfo[]
+  variables: AgentVariableValue[]
+  /** Rules the app answers by itself; the agent should not send the same reply twice. */
+  autoReplies: AgentAutoReplyInfo[]
+}
+
+/** What a `list_messages` / `wait_for_message` call can narrow down to. */
+export interface AgentMessageFilter {
+  /** MQTT topic filter (`+`, `#`, or `$share/...`). */
+  topic?: string
+  direction?: 'in' | 'out'
+  /** Case-sensitive substring of the payload. */
+  contains?: string
+}
+
+export interface AgentMessagePage {
+  messages: AgentDisplayedMessage[]
+  /** True when `afterId` is gone, so the returned messages are the newest page. */
+  cursorReset: boolean
+}
+
+export interface AgentWaitResult {
+  matched: boolean
+  waitedMs: number
+  message?: AgentDisplayedMessage
+  hint?: string
 }
 
 const DEFAULT_MESSAGE_LIMIT = 30
 const MAX_MESSAGE_LIMIT = 100
+const DEFAULT_WAIT_MS = 10000
+export const MAX_WAIT_MS = 60000
+const MAX_BUFFERED_MESSAGES = 200
 
 export function messageFromAgent(message: { meta?: string }): boolean {
   if (!message.meta) {
@@ -70,9 +135,8 @@ export function toAgentMessage(message: MessageModel): AgentDisplayedMessage {
 
 /**
  * The messages the connection page is showing, oldest first, capped to the newest `limit`.
- * `afterId` drops everything up to and including that message. When the id is no longer in the
- * visible list, `cursorReset` is true and the newest page is returned so the caller can resync
- * instead of waiting on a cursor that will never appear.
+ * `afterId` drops everything up to and including that message. Kept for the visible list; agent
+ * reads go through `mergeAgentMessages` instead, which also sees what the view filtered out.
  */
 export function selectAgentMessages(
   messages: AgentDisplayedMessage[],
@@ -92,11 +156,88 @@ export function selectAgentMessages(
   return { messages: rows.slice(-limit), cursorReset }
 }
 
+/**
+ * Stored messages plus the ones this page saw that are not in the store yet (QoS 0 when the user
+ * asked to skip those, and everything inside the one-second write buffer). Both are in arrival
+ * order, the page log only holds newer rows, so it is appended after the stored page.
+ */
+export function mergeAgentMessages(
+  persisted: AgentDisplayedMessage[],
+  live: AgentDisplayedMessage[],
+): AgentDisplayedMessage[] {
+  const merged = persisted.slice()
+  const seen = new Set(merged.map((message) => message.id))
+  live.forEach((message) => {
+    if (!message.id || seen.has(message.id)) {
+      return
+    }
+    seen.add(message.id)
+    merged.push(message)
+  })
+  return merged
+}
+
+/** Keeps the tail of the page log, so a long verification run cannot grow without bound. */
+export function appendAgentMessage(
+  log: AgentDisplayedMessage[],
+  message: AgentDisplayedMessage,
+): AgentDisplayedMessage[] {
+  if (!message.id) {
+    return log
+  }
+  const next = log.concat([message])
+  return next.length > MAX_BUFFERED_MESSAGES ? next.slice(next.length - MAX_BUFFERED_MESSAGES) : next
+}
+
+export function matchAgentMessage(message: AgentDisplayedMessage, filter: AgentMessageFilter = {}): boolean {
+  if (filter.direction && message.direction !== filter.direction) {
+    return false
+  }
+  if (filter.topic && !matchTopicMethod(filter.topic, message.topic)) {
+    return false
+  }
+  if (filter.contains && !message.payload.includes(filter.contains)) {
+    return false
+  }
+  return true
+}
+
+export function filterAgentMessages(
+  messages: AgentDisplayedMessage[],
+  filter: AgentMessageFilter = {},
+): AgentDisplayedMessage[] {
+  return messages.filter((message) => matchAgentMessage(message, filter))
+}
+
+/** "topic device/+/ack, direction in, payload contains \"OTA\"" — used when a wait times out. */
+export function describeAgentFilter(filter: AgentMessageFilter = {}): string {
+  const parts: string[] = []
+  if (filter.topic) parts.push(`topic ${filter.topic}`)
+  if (filter.direction) parts.push(`direction ${filter.direction}`)
+  if (filter.contains) parts.push(`payload contains ${JSON.stringify(filter.contains)}`)
+  return parts.length ? parts.join(', ') : 'any message'
+}
+
+/** Index of `afterId` in the page log, or -1 when it is not there (already pruned or older). */
+export function agentMessageIndex(messages: AgentDisplayedMessage[], afterId?: string): number {
+  if (!afterId) {
+    return -1
+  }
+  return messages.findIndex((message) => message.id === afterId)
+}
+
 export function clampMessageLimit(limit?: number): number {
   if (!Number.isInteger(limit)) {
     return DEFAULT_MESSAGE_LIMIT
   }
   return Math.min(MAX_MESSAGE_LIMIT, Math.max(1, limit as number))
+}
+
+export function clampWaitMs(timeoutMs?: number): number {
+  if (!Number.isInteger(timeoutMs)) {
+    return DEFAULT_WAIT_MS
+  }
+  return Math.min(MAX_WAIT_MS, Math.max(1, timeoutMs as number))
 }
 
 /**
@@ -113,8 +254,26 @@ export function describeConnection(input: {
   path?: string
   connected: boolean
   subscriptions?: Array<{ topic: string; qos: number; disabled?: boolean | null }>
-  messageSequences?: Array<{ name: string; enabled: boolean; trigger: string }> | null
+  messageSequences?: Array<{
+    id?: string
+    name: string
+    enabled: boolean
+    trigger: string
+    steps?: Array<unknown>
+  }> | null
+  runningSequenceIds?: string[]
+  variables?: AgentVariableValue[]
+  autoReplies?: Array<{ name: string; enabled: boolean; matchTopic: string }> | null
 }): AgentConnectionSnapshot {
+  const running = new Set(input.runningSequenceIds || [])
+  const sequences = (input.messageSequences || []).map((sequence) => ({
+    id: sequence.id || '',
+    name: sequence.name,
+    enabled: !!sequence.enabled,
+    trigger: sequence.trigger,
+    running: running.has(sequence.id || ''),
+    steps: (sequence.steps || []).length,
+  }))
   const snapshot: AgentConnectionSnapshot = {
     connectionId: input.id || '',
     name: input.name || '',
@@ -128,10 +287,17 @@ export function describeConnection(input: {
       qos: subscription.qos,
       disabled: !!subscription.disabled,
     })),
-    sequences: (input.messageSequences || []).map((sequence) => ({
-      name: sequence.name,
-      enabled: !!sequence.enabled,
-      trigger: sequence.trigger,
+    sequences,
+    variables: (input.variables || []).map((variable) => ({
+      name: variable.name,
+      kind: variable.kind,
+      scope: variable.scope,
+      value: variable.value === undefined ? null : variable.value,
+    })),
+    autoReplies: (input.autoReplies || []).map((rule) => ({
+      name: rule.name,
+      enabled: !!rule.enabled,
+      matchTopic: rule.matchTopic,
     })),
   }
   if (input.path) {
@@ -140,7 +306,24 @@ export function describeConnection(input: {
   return snapshot
 }
 
-/** Cursor and Claude Code both accept this streamable-HTTP entry. */
+/**
+ * Refuses a call that names a connection other than the open one, instead of sending to whichever
+ * device happens to be on screen. `undefined` keeps the old "use the open one" behavior.
+ */
+export function agentConnectionMismatch(
+  expected: string | undefined,
+  current: { id?: string; name?: string },
+): string | null {
+  if (!expected || !current.id || expected === current.id) {
+    return null
+  }
+  return (
+    `The open connection changed: it is now "${current.name || current.id}" (${current.id}), not ${expected}. ` +
+    'Call get_connection again before publishing or reading.'
+  )
+}
+
+/** Streamable HTTP entry for a local AI agent. */
 export function agentBridgeClientConfig(port: number, token: string): string {
   return JSON.stringify(
     {

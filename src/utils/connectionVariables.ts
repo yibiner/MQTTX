@@ -182,6 +182,30 @@ export const connectionVariableOptions = (
   connectionId: connection?.id,
 })
 
+/**
+ * The current value of every variable of one connection, for display and for the local agent.
+ *
+ * This is a read: nothing advances (a sequence counter does not step, a random value is not drawn).
+ * A stateful variable that has no value yet (`runStart` before its sequence started, a random value
+ * before its first draw) reports `null` rather than the initial value, because a message would not
+ * resolve it either.
+ */
+export const connectionVariableSnapshot = (
+  connection: ConnectionVariableSource | null | undefined,
+): Array<{ name: string; kind: string; scope: string; value: string | null }> => {
+  const definitions = connectionVariableDefinitions(connection)
+  return Object.keys(definitions).map((name) => {
+    const definition = definitions[name]
+    const current = definition.kind === 'constant' ? definition.value : peekDefinitionValue(definition)
+    return {
+      name,
+      kind: definition.kind,
+      scope: definition.scope,
+      value: current === undefined || String(current) === '' ? null : String(current),
+    }
+  })
+}
+
 /** The connection fields as guide entries, so "变量说明" lists them next to the other sources. */
 export const connectionVariableGuide: VariableGuideEntry[] = ['clientId', 'username', 'name', 'host', 'port'].map(
   (name) => ({ name: '${' + name + '}', group: 'connection' }),
