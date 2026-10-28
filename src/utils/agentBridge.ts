@@ -100,11 +100,24 @@ export interface AgentWaitResult {
   hint?: string
 }
 
+/** What `wait_for_message` narrows down to, plus how far back an arrival still counts. */
+export interface AgentWaitOptions extends AgentMessageFilter {
+  timeoutMs?: number
+  /** Only an arrival after this message id counts. */
+  afterId?: string
+  /**
+   * `createAt` of `afterId`, resolved by the page. The feed drops old arrivals, so the id the agent
+   * names is often no longer held there; without this the wait could not tell newer from older.
+   */
+  afterCreateAt?: string
+}
+
 const DEFAULT_MESSAGE_LIMIT = 30
 const MAX_MESSAGE_LIMIT = 100
 const DEFAULT_WAIT_MS = 10000
 export const MAX_WAIT_MS = 60000
-const MAX_BUFFERED_MESSAGES = 200
+/** How many arrivals the page keeps for the agent; older ones are still in the store. */
+export const MAX_BUFFERED_MESSAGES = 200
 
 export function messageFromAgent(message: { meta?: string }): boolean {
   if (!message.meta) {
@@ -134,32 +147,13 @@ export function toAgentMessage(message: MessageModel): AgentDisplayedMessage {
 }
 
 /**
- * The messages the connection page is showing, oldest first, capped to the newest `limit`.
- * `afterId` drops everything up to and including that message. Kept for the visible list; agent
- * reads go through `mergeAgentMessages` instead, which also sees what the view filtered out.
- */
-export function selectAgentMessages(
-  messages: AgentDisplayedMessage[],
-  input: { limit?: number; afterId?: string } = {},
-): { messages: AgentDisplayedMessage[]; cursorReset: boolean } {
-  const limit = clampMessageLimit(input.limit)
-  let rows = messages
-  let cursorReset = false
-  if (input.afterId) {
-    const index = rows.findIndex((message) => message.id === input.afterId)
-    if (index >= 0) {
-      rows = rows.slice(index + 1)
-    } else {
-      cursorReset = true
-    }
-  }
-  return { messages: rows.slice(-limit), cursorReset }
-}
-
-/**
  * Stored messages plus the ones this page saw that are not in the store yet (QoS 0 when the user
- * asked to skip those, and everything inside the one-second write buffer). Both are in arrival
- * order, the page log only holds newer rows, so it is appended after the stored page.
+ * asked to skip those, and everything inside the one-second write buffer).
+ *
+ * The two sources overlap: a row can be in the store and still in the page log. The page log also
+ * starts before the stored page does (the store only answers with its newest rows), so appending it
+ * would put old arrivals at the end and make them look newest. The merge therefore dedupes by id and
+ * restores arrival order by `createAt`, which is what "newest `limit`" below relies on.
  */
 export function mergeAgentMessages(
   persisted: AgentDisplayedMessage[],
@@ -174,10 +168,12 @@ export function mergeAgentMessages(
     seen.add(message.id)
     merged.push(message)
   })
-  return merged
+  // Both sources carry the sqlite `createAt` format, so the string order is the arrival order.
+  // Array.prototype.sort is stable, so rows sharing a timestamp keep the order they came in.
+  return merged.sort((left, right) => (left.createAt < right.createAt ? -1 : left.createAt > right.createAt ? 1 : 0))
 }
 
-/** Keeps the tail of the page log, so a long verification run cannot grow without bound. */
+/** Keep the tail of an arrival log, so a long verification run cannot grow without bound. */
 export function appendAgentMessage(
   log: AgentDisplayedMessage[],
   message: AgentDisplayedMessage,
@@ -218,12 +214,24 @@ export function describeAgentFilter(filter: AgentMessageFilter = {}): string {
   return parts.length ? parts.join(', ') : 'any message'
 }
 
-/** Index of `afterId` in the page log, or -1 when it is not there (already pruned or older). */
+/** Index of `afterId` in the given messages, or -1 when it is not there (already pruned or older). */
 export function agentMessageIndex(messages: AgentDisplayedMessage[], afterId?: string): number {
   if (!afterId) {
     return -1
   }
   return messages.findIndex((message) => message.id === afterId)
+}
+
+/** Where an `afterId` sits inside a page: everything after it, or `cursorReset` when it is gone. */
+export function messagesAfter(
+  messages: AgentDisplayedMessage[],
+  afterId?: string,
+): { rows: AgentDisplayedMessage[]; cursorReset: boolean } {
+  if (!afterId) {
+    return { rows: messages, cursorReset: false }
+  }
+  const index = agentMessageIndex(messages, afterId)
+  return index >= 0 ? { rows: messages.slice(index + 1), cursorReset: false } : { rows: messages, cursorReset: true }
 }
 
 export function clampMessageLimit(limit?: number): number {

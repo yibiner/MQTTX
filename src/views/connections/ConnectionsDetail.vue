@@ -474,10 +474,16 @@ import {
   filterAgentMessages,
   mergeAgentMessages,
   messageFromAgent,
-  selectAgentMessages,
+  messagesAfter,
   toAgentMessage,
 } from '@/utils/agentBridge'
-import type { AgentDisplayedMessage, AgentMessageFilter, AgentMessagePage, AgentWaitResult } from '@/utils/agentBridge'
+import type {
+  AgentDisplayedMessage,
+  AgentMessageFilter,
+  AgentMessagePage,
+  AgentWaitOptions,
+  AgentWaitResult,
+} from '@/utils/agentBridge'
 import { AgentMessageFeed } from '@/utils/agentMessageFeed'
 import { attachAgentBridge, detachAgentBridge, focusAgentBridge, AgentBridgeHandler } from '@/utils/agentBridgeClient'
 import getContextmenuPosition from '@/utils/getContextmenuPosition'
@@ -2421,7 +2427,8 @@ export default class ConnectionsDetail extends Vue {
    *
    * Stored history answers after a restart and beyond the rows this page holds; the feed adds what
    * the view filtered out or has not written yet. Filters of the agent narrow the result, the ones
-   * of the message list never do.
+   * of the message list never do. Everything is ordered by arrival, so `afterId` and the newest
+   * `limit` mean the same thing regardless of which source a row came from.
    */
   private async listMessagesForAgent(input: {
     limit?: number
@@ -2438,13 +2445,20 @@ export default class ConnectionsDetail extends Vue {
       if (input.direction) filter.direction = input.direction
       if (input.contains) filter.contains = input.contains
       const stored = await this.readStoredAgentMessages(limit)
-      const merged = filterAgentMessages(mergeAgentMessages(stored, this.agentFeed.messages), filter)
-      return selectAgentMessages(merged, { limit, afterId: input.afterId })
+      const merged = mergeAgentMessages(stored, this.agentFeed.messages)
+      const { rows, cursorReset } = messagesAfter(merged, input.afterId)
+      return { messages: filterAgentMessages(rows, filter).slice(-limit), cursorReset }
     })
   }
 
-  /** Waits for the next message the connection receives or publishes. */
-  private waitForMessageForAgent(input: {
+  /**
+   * Waits for the next message the connection receives or publishes.
+   *
+   * `afterId` is usually a row the agent read from `list_messages`, which may already have left the
+   * feed's buffer. Its `createAt` is looked up in the store then, so the wait can still tell a new
+   * arrival from one the agent has already seen.
+   */
+  private async waitForMessageForAgent(input: {
     topic?: string
     direction?: 'in' | 'out'
     contains?: string
@@ -2452,7 +2466,32 @@ export default class ConnectionsDetail extends Vue {
     timeoutMs?: number
     connectionId?: string
   }): Promise<AgentWaitResult> {
-    return this.runAgentCall('wait_for_message', input.connectionId, () => this.agentFeed.wait(input))
+    return this.runAgentCall('wait_for_message', input.connectionId, async () => {
+      const options: AgentWaitOptions = { ...input }
+      if (input.afterId) {
+        const createAt = await this.findAgentMessageCreateAt(input.afterId)
+        if (createAt) {
+          options.afterCreateAt = createAt
+        }
+      }
+      return this.agentFeed.wait(options)
+    })
+  }
+
+  /** `createAt` of a message the agent names, from the page feed or from the store. */
+  private async findAgentMessageCreateAt(id: string): Promise<string | undefined> {
+    const held = this.agentFeed.messages.find((message) => message.id === id)
+    if (held) {
+      return held.createAt
+    }
+    try {
+      const { messageService } = useServices()
+      const stored = await messageService.getOne(id)
+      return stored?.createAt
+    } catch (error) {
+      this.$log.warn(`Reading message ${id} for the agent failed: ${(error as Error).message}`)
+      return undefined
+    }
   }
 
   /** Starts a saved sequence of this connection, exactly like the run button does. */

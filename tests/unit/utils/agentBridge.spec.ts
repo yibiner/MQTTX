@@ -10,7 +10,7 @@ import {
   matchAgentMessage,
   mergeAgentMessages,
   messageFromAgent,
-  selectAgentMessages,
+  messagesAfter,
   toAgentMessage,
   AgentDisplayedMessage,
 } from '@/utils/agentBridge'
@@ -197,6 +197,25 @@ describe('agent bridge', () => {
     expect(clampWaitMs(undefined)).to.equal(10000)
   })
 
+  it('keeps arrival order when the feed is older than the stored window', () => {
+    const at = (n: number) => `2026-10-28 10:00:00:${String(n).padStart(3, '0')}`
+    // The store answers with its newest rows, the feed holds the last 200 arrivals.
+    const stored = Array.from({ length: 10 }, (unused, index) => ({
+      ...displayed(`m${240 + index}`, 'x'),
+      createAt: at(240 + index),
+    }))
+    const live = Array.from({ length: 200 }, (unused, index) => ({
+      ...displayed(`m${index}`, 'x'),
+      createAt: at(index),
+    }))
+    const merged = mergeAgentMessages(stored, live)
+    expect(merged[merged.length - 1].id).to.equal('m249')
+    expect(merged.map((item) => item.id).slice(-3)).to.deep.equal(['m247', 'm248', 'm249'])
+    // A row in both sources appears once, at its arrival position.
+    const overlapping = mergeAgentMessages(stored, [{ ...displayed('m242', 'x'), createAt: at(242) }])
+    expect(overlapping.map((item) => item.id)).to.deep.equal(stored.map((item) => item.id))
+  })
+
   describe('message feed', () => {
     it('answers a wait with the next matching arrival, not with what arrived before', async () => {
       const feed = new AgentMessageFeed()
@@ -241,9 +260,67 @@ describe('agent bridge', () => {
       feed.clear()
       expect(feed.messages).to.have.length(0)
     })
+
+    it('does not answer with a message that was already there when no afterId is given', async () => {
+      const feed = new AgentMessageFeed()
+      feed.record(displayed('m1', 'old'))
+      const pending = feed.wait({ topic: 'device/water', timeoutMs: 30 })
+      feed.record(displayed('m2', 'new'))
+      const result = await pending
+      expect(result.matched).to.equal(true)
+      expect(result.message?.id).to.equal('m2')
+    })
+
+    it('still matches a reply that arrives after the log pruned the row an agent anchored to', async () => {
+      const feed = new AgentMessageFeed()
+      for (let index = 0; index < 190; index += 1) {
+        feed.record({
+          ...displayed(`m${index}`, 'x'),
+          createAt: `2026-10-28 10:00:00:${String(index).padStart(3, '0')}`,
+        })
+      }
+      // The agent anchors at the newest row it read, then unrelated traffic churns that row out of
+      // the buffer while it waits for its own answer.
+      const pending = feed.wait({ topic: 'device/ack', afterId: 'm189', timeoutMs: 500 })
+      for (let index = 190; index < 420; index += 1) {
+        feed.record({
+          ...displayed(`m${index}`, 'x'),
+          topic: 'noise/other',
+          createAt: `2026-10-28 10:00:01:${String(index).padStart(3, '0')}`,
+        })
+      }
+      expect(feed.messages.some((message) => message.id === 'm189')).to.equal(false)
+      feed.record({ ...displayed('reply', 'ack'), topic: 'device/ack', createAt: '2026-10-28 10:00:02:000' })
+      const result = await pending
+      expect(result.matched).to.equal(true)
+      expect(result.message?.id).to.equal('reply')
+    })
+
+    it('answers at once when the anchor is gone but a newer arrival is still held', async () => {
+      const feed = new AgentMessageFeed()
+      feed.record({ ...displayed('m1', 'x'), createAt: '2026-10-28 10:00:00:001' })
+      feed.record({ ...displayed('m2', 'unread'), createAt: '2026-10-28 10:00:00:002' })
+      const result = await feed.wait({
+        afterId: 'm0',
+        afterCreateAt: '2026-10-28 10:00:00:000',
+        timeoutMs: 200,
+      })
+      expect(result.matched).to.equal(true)
+      expect(result.message?.id).to.equal('m1')
+      expect(result.waitedMs).to.equal(0)
+    })
+
+    it('treats every held arrival as newer when the anchor cannot be dated', async () => {
+      const feed = new AgentMessageFeed()
+      feed.record(displayed('m1', 'a'))
+      feed.record(displayed('m2', 'b'))
+      const result = await feed.wait({ afterId: 'gone', timeoutMs: 200 })
+      expect(result.matched).to.equal(true)
+      expect(result.message?.id).to.equal('m1')
+    })
   })
 
-  it('marks an agent publish and pages the visible messages', () => {
+  it('marks an agent publish and windows messages by afterId', () => {
     const agent = toAgentMessage(message('m2', '{"cmd":"OTA"}', true, JSON.stringify({ agent: true })))
     expect(messageFromAgent({ meta: JSON.stringify({ agent: true }) })).to.equal(true)
     expect(agent.source).to.equal('agent')
@@ -255,13 +332,13 @@ describe('agent bridge', () => {
       { ...displayed('m2', 'b'), direction: 'out' as const, source: 'agent' as const },
       displayed('m3', 'c'),
     ]
-    expect(selectAgentMessages(rows, { limit: 2 }).messages.map((item) => item.id)).to.deep.equal(['m2', 'm3'])
-    const after = selectAgentMessages(rows, { afterId: 'm1' })
+    const after = messagesAfter(rows, 'm1')
     expect(after.cursorReset).to.equal(false)
-    expect(after.messages.map((item) => item.id)).to.deep.equal(['m2', 'm3'])
-    const reset = selectAgentMessages(rows, { afterId: 'gone' })
+    expect(after.rows.map((item) => item.id)).to.deep.equal(['m2', 'm3'])
+    const reset = messagesAfter(rows, 'gone')
     expect(reset.cursorReset).to.equal(true)
-    expect(reset.messages.map((item) => item.id)).to.deep.equal(['m1', 'm2', 'm3'])
+    expect(reset.rows.map((item) => item.id)).to.deep.equal(['m1', 'm2', 'm3'])
+    expect(messagesAfter(rows).rows.map((item) => item.id)).to.deep.equal(['m1', 'm2', 'm3'])
   })
 
   it('tells the agent to use the open connection instead of keeping device state', async () => {
