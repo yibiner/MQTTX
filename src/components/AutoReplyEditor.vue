@@ -1,9 +1,19 @@
 <template>
   <div class="auto-reply-editor">
     <div class="editor-head">
-      <el-button type="text" icon="el-icon-plus" class="rule-add" @click="addRule">
+      <el-button v-if="!singleton" type="text" icon="el-icon-plus" class="rule-add" @click="addRule">
         {{ $t('connections.autoReplyAdd') }}
       </el-button>
+      <PresetPicker
+        v-if="templates.length && !singleton"
+        :items="presetOptions"
+        :title="$t('configs.autoReplyPresets')"
+        :label="$t('configs.insertPreset')"
+        :empty-text="$t('configs.autoReplyPresetsEmpty')"
+        :search-placeholder="$t('configs.presetSearchPlaceholder')"
+        manage-tab="reply"
+        @select="insertTemplateById"
+      />
       <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
         <div slot="content" class="automation-tip">
           <p>{{ $t('connections.autoReplyDesc') }}</p>
@@ -18,6 +28,7 @@
     <div v-for="(rule, index) in rules" :key="rule.id" class="reply-rule">
       <div class="rule-header">
         <el-input
+          v-if="!singleton"
           v-model="rule.name"
           size="mini"
           class="rule-name"
@@ -33,7 +44,7 @@
               @change="emitChange"
             ></el-switch>
           </el-tooltip>
-          <a href="javascript:;" class="rule-delete" @click="removeRule(index)">
+          <a v-if="!singleton" href="javascript:;" class="rule-delete" @click="removeRule(index)">
             <i class="el-icon-delete"></i>
           </a>
         </div>
@@ -211,6 +222,8 @@
 <script lang="ts">
 import { Component, Model, Prop, Vue, Watch } from 'vue-property-decorator'
 import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
+import PresetPicker from '@/components/PresetPicker.vue'
+import type { PresetOption } from '@/components/PresetPicker.vue'
 import { isValidCondition } from '@/utils/jmesPathCondition'
 
 const createId = (): string => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -235,6 +248,12 @@ const createRule = (): AutoReplyRuleModel => ({
 })
 
 /**
+ * One empty rule for the reply-preset dialog. That dialog edits exactly one rule and has no add
+ * button, so the form has to start with a row the user can type into.
+ */
+export const createBlankAutoReplyRule = (): AutoReplyRuleModel => createRule()
+
+/**
  * Editor for the automatic replies of a connection / client preset.
  *
  * A rule answers a received message without a script: the topic filter and the JMESPath condition
@@ -245,11 +264,19 @@ const createRule = (): AutoReplyRuleModel => ({
  * write a field of the received message into one (`actions`), which is how a captured device state
  * travels from one reply to the next.
  */
-@Component({ components: { TopicPresetPicker } })
+@Component({ components: { TopicPresetPicker, PresetPicker } })
 export default class AutoReplyEditor extends Vue {
   @Model('change', { type: Array }) private readonly value!: AutoReplyRuleModel[] | null | undefined
   /** Known variable names, offered by the reset picker (free text is still accepted). */
   @Prop({ required: false, default: () => [] }) private readonly variableNames!: string[]
+  /** Reply presets from preset settings. Inserting one copies it onto this list. */
+  @Prop({ required: false, default: () => [] }) private readonly templates!: AutoReplyPresetModel[]
+  /**
+   * The preset dialog edits exactly one rule, so there is no add/remove row, no preset picker and
+   * no second name field inside it. The dialog already has the preset name, and saving copies that
+   * name onto the rule.
+   */
+  @Prop({ required: false, default: false }) private readonly singleton!: boolean
 
   /** Rows being edited, incomplete ones included: they are drafts until the user types into them. */
   private rules: AutoReplyRuleModel[] = []
@@ -260,6 +287,23 @@ export default class AutoReplyEditor extends Vue {
 
   get conditionPlaceholder(): string {
     return "cmd == 'WIFI_RECONNECT_SERVICE'"
+  }
+
+  /** One row per preset: name, plus its match topic and reply mode. */
+  get presetOptions(): PresetOption[] {
+    return this.templates.map((preset) => {
+      const rule = preset.rule
+      const mode =
+        rule?.reply?.mode === 'fixed'
+          ? (this.$t('connections.autoReplyModeFixed') as string)
+          : (this.$t('connections.autoReplyModeEcho') as string)
+      const match = (rule?.matchTopic ?? '').trim()
+      return {
+        id: preset.id,
+        name: preset.name || rule?.name || preset.id,
+        summary: match ? `${match} · ${mode}` : mode,
+      }
+    })
   }
 
   /** Same light/dark choice as the other hints of the app (the tooltip must stay readable). */
@@ -352,6 +396,33 @@ export default class AutoReplyEditor extends Vue {
   private addRule() {
     this.rules.push(createRule())
     this.emitChange()
+  }
+
+  private insertTemplateById(id: string) {
+    const preset = this.templates.find((item) => item.id === id)
+    if (preset) {
+      this.insertTemplate(preset)
+    }
+  }
+
+  /**
+   * Copies a reply preset onto this list with a fresh rule id, so inserting it twice answers with
+   * two independent rules. Variables the preset needs travel to the parent, which keeps the ones
+   * the connection already defines.
+   */
+  private insertTemplate(preset: AutoReplyPresetModel) {
+    if (!preset?.rule) {
+      return
+    }
+    const created = JSON.parse(JSON.stringify(preset.rule)) as AutoReplyRuleModel
+    created.id = createId()
+    created.name = (preset.name || created.name || '').trim()
+    this.rules.push(this.clone([created])[0])
+    this.emitChange()
+    const variables = preset.variables ?? {}
+    if (Object.keys(variables).length) {
+      this.$emit('example', { variables: JSON.parse(JSON.stringify(variables)) })
+    }
   }
 
   private removeRule(index: number) {

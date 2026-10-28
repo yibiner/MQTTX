@@ -8,6 +8,7 @@
         <el-tab-pane :label="$t('configs.topicPresets')" name="topic"></el-tab-pane>
         <el-tab-pane :label="$t('configs.messagePresets')" name="message"></el-tab-pane>
         <el-tab-pane :label="$t('configs.messageSequencePresets')" name="sequence"></el-tab-pane>
+        <el-tab-pane :label="$t('configs.autoReplyPresets')" name="reply"></el-tab-pane>
         <el-tab-pane :label="$t('configs.globalVariables')" name="variable"></el-tab-pane>
       </el-tabs>
     </div>
@@ -177,6 +178,39 @@
         </el-table-column>
       </el-table>
 
+      <!-- 自动回复预设列表 -->
+      <el-table
+        v-else-if="activeTab === 'reply'"
+        key="reply"
+        :data="autoReplyPresets"
+        size="mini"
+        :empty-text="$t('configs.empty')"
+        row-key="id"
+      >
+        <el-table-column
+          :label="$t('configs.name')"
+          prop="name"
+          min-width="160"
+          show-overflow-tooltip
+        ></el-table-column>
+        <el-table-column :label="$t('connections.autoReplyMatchTopic')" min-width="200" show-overflow-tooltip>
+          <template slot-scope="{ row }">{{ replyMatchTopic(row) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('configs.replyMode')" width="110" align="center">
+          <template slot-scope="{ row }">{{ replyModeLabel(row) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('common.oper')" width="110" align="center">
+          <template slot-scope="{ row }">
+            <a href="javascript:;" class="profile-oper" @click="handleEdit(row)">
+              <i class="iconfont icon-edit"></i>
+            </a>
+            <a href="javascript:;" class="profile-oper danger" @click="handleDelete(row)">
+              <i class="iconfont icon-delete"></i>
+            </a>
+          </template>
+        </el-table-column>
+      </el-table>
+
       <!-- Topic 预设列表 -->
       <el-table
         v-else-if="activeTab === 'topic'"
@@ -254,7 +288,7 @@
       :title="editingId ? $t('configs.editProfile') : addBtnText"
       :visible.sync="dialogVisible"
       :width="dialogWidth"
-      :top="dialogType === 'message' || dialogType === 'sequence' ? '8vh' : '15vh'"
+      :top="dialogType === 'message' || dialogType === 'sequence' || dialogType === 'reply' ? '8vh' : '15vh'"
       @confirm="handleSave"
       @open="handleDialogOpen"
     >
@@ -433,14 +467,44 @@
             <AutoSubscribeEditor v-model="profileForm.autoSubscriptions" />
           </el-form-item>
           <el-form-item class="automation-field" :label="$t('connections.autoReply')">
-            <AutoReplyEditor v-model="profileForm.autoReplies" :variable-names="clientProfileVariableNames" />
+            <AutoReplyEditor
+              v-model="profileForm.autoReplies"
+              :variable-names="clientProfileVariableNames"
+              :templates="autoReplyPresets"
+              @example="applyAutomationExample"
+            />
           </el-form-item>
           <el-form-item class="automation-field" :label="$t('connections.messageSequence')">
             <MessageSequenceEditor
               v-model="profileForm.messageSequences"
               :variable-names="clientProfileVariableNames"
               :templates="messageSequencePresets"
-              @example="applySequenceExample"
+              @example="applyAutomationExample"
+            />
+          </el-form-item>
+        </template>
+
+        <template v-else-if="dialogType === 'reply'">
+          <el-form-item prop="name">
+            <template slot="label">
+              {{ $t('configs.name') }}
+              <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
+                <div slot="content">{{ $t('configs.autoReplyPresetTip') }}</div>
+                <a href="javascript:;" class="preset-help">
+                  <i class="el-icon-warning-outline"></i>
+                </a>
+              </el-tooltip>
+            </template>
+            <el-input v-model.trim="profileForm.name" clearable :placeholder="$t('configs.name')"></el-input>
+          </el-form-item>
+          <el-form-item class="automation-field" :label="$t('connections.clientVariables')">
+            <VariableEditor v-model="profileForm.variables" />
+          </el-form-item>
+          <el-form-item class="automation-field" :label="$t('connections.autoReply')">
+            <AutoReplyEditor
+              v-model="profileForm.autoReplies"
+              :variable-names="sequencePresetVariableNames"
+              singleton
             />
           </el-form-item>
         </template>
@@ -495,6 +559,9 @@ import {
   ensureMessageSequencePresets,
   saveMessageSequencePreset,
   deleteMessageSequencePreset,
+  getAutoReplyPresets,
+  saveAutoReplyPreset,
+  deleteAutoReplyPreset,
   getGlobalVariables,
   saveGlobalVariable,
   deleteGlobalVariable,
@@ -504,7 +571,7 @@ import Editor from '@/components/Editor.vue'
 import VariableEditor from '@/components/VariableEditor.vue'
 import VariableDefinitionEditor from '@/components/VariableDefinitionEditor.vue'
 import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
-import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
+import AutoReplyEditor, { createBlankAutoReplyRule } from '@/components/AutoReplyEditor.vue'
 import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
 import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import {
@@ -524,7 +591,7 @@ import { createBlankMessageSequence } from '@/utils/messageSequenceExamples'
 import isJsonPayload from '@/utils/payloadLanguage'
 import validFormatJson from '@/utils/validFormatJson'
 
-type DialogType = 'server' | 'client' | 'topic' | 'message' | 'sequence' | 'variable'
+type DialogType = 'server' | 'client' | 'topic' | 'message' | 'sequence' | 'reply' | 'variable'
 
 interface ServerProfileForm {
   id?: string
@@ -597,6 +664,19 @@ const defaultSequencePresetForm = (): SequencePresetForm => ({
   messageSequences: [createBlankMessageSequence()],
 })
 
+interface ReplyPresetForm {
+  id?: string
+  name: string
+  variables: { [name: string]: StoredVariable }
+  autoReplies: AutoReplyRuleModel[]
+}
+
+const defaultReplyPresetForm = (): ReplyPresetForm => ({
+  name: '',
+  variables: {},
+  autoReplies: [createBlankAutoReplyRule()],
+})
+
 interface VariableForm {
   id?: string
   name: string
@@ -643,6 +723,7 @@ export default class Configs extends Vue {
   private messagePresets: MessagePresetModel[] = []
   private topicPresets: TopicPresetModel[] = []
   private messageSequencePresets: MessageSequencePresetModel[] = []
+  private autoReplyPresets: AutoReplyPresetModel[] = []
   private globalVariables: GlobalVariableModel[] = []
 
   private dialogVisible = false
@@ -657,6 +738,7 @@ export default class Configs extends Vue {
     | MessagePresetForm
     | TopicPresetForm
     | SequencePresetForm
+    | ReplyPresetForm
     | VariableForm
   ) & {
     [key: string]: any
@@ -817,6 +899,7 @@ export default class Configs extends Vue {
     this.topicPresets = getTopicPresets()
     this.messagePresets = getMessagePresets()
     this.messageSequencePresets = ensureMessageSequencePresets()
+    this.autoReplyPresets = getAutoReplyPresets()
     this.globalVariables = getGlobalVariables()
   }
 
@@ -830,7 +913,7 @@ export default class Configs extends Vue {
   private applyRouteTab() {
     const query = this.$route && this.$route.query
     const tab = query && query.tab
-    const tabs: DialogType[] = ['server', 'client', 'topic', 'message', 'sequence', 'variable']
+    const tabs: DialogType[] = ['server', 'client', 'topic', 'message', 'sequence', 'reply', 'variable']
     if (typeof tab === 'string' && (tabs as string[]).includes(tab)) {
       this.activeTab = tab as DialogType
     }
@@ -853,7 +936,9 @@ export default class Configs extends Vue {
     if (this.dialogType === 'topic') {
       return '560px'
     }
-    return this.dialogType === 'client' || this.dialogType === 'sequence' ? '720px' : '460px'
+    return this.dialogType === 'client' || this.dialogType === 'sequence' || this.dialogType === 'reply'
+      ? '720px'
+      : '460px'
   }
 
   /** One line summary of the automatic subscriptions / replies of a client preset. */
@@ -886,8 +971,20 @@ export default class Configs extends Vue {
     return this.$t('connections.messageSequenceTriggerManual') as string
   }
 
-  /** A sequence template adds its variables only when the client preset does not already have them. */
-  private applySequenceExample(payload: { variables?: { [name: string]: StoredVariable } }) {
+  /** The reply mode of a reply preset, for the preset table. */
+  private replyModeLabel(preset: AutoReplyPresetModel): string {
+    return preset.rule?.reply?.mode === 'fixed'
+      ? (this.$t('connections.autoReplyModeFixed') as string)
+      : (this.$t('connections.autoReplyModeEcho') as string)
+  }
+
+  /** The match topic of a reply preset, for the preset table. */
+  private replyMatchTopic(preset: AutoReplyPresetModel): string {
+    return preset.rule?.matchTopic || '-'
+  }
+
+  /** A sequence or reply template adds its variables only when the client preset lacks them. */
+  private applyAutomationExample(payload: { variables?: { [name: string]: StoredVariable } }) {
     const incoming = payload?.variables ?? {}
     const current = { ...(this.profileForm.variables ?? {}) }
     let changed = false
@@ -1006,6 +1103,8 @@ export default class Configs extends Vue {
       this.profileForm = { name: '', value: '' }
     } else if (this.activeTab === 'sequence') {
       this.profileForm = defaultSequencePresetForm()
+    } else if (this.activeTab === 'reply') {
+      this.profileForm = defaultReplyPresetForm()
     } else {
       this.profileForm = defaultClientProfileForm()
     }
@@ -1032,6 +1131,7 @@ export default class Configs extends Vue {
       | MessagePresetModel
       | TopicPresetModel
       | MessageSequencePresetModel
+      | AutoReplyPresetModel
       | GlobalVariableModel,
   ) {
     this.dialogType = this.activeTab
@@ -1079,6 +1179,16 @@ export default class Configs extends Vue {
         name: preset.name,
         variables: { ...(preset.variables ?? {}) },
         messageSequences: [sequence],
+      }
+    } else if (this.activeTab === 'reply') {
+      const preset = row as AutoReplyPresetModel
+      const rule = JSON.parse(JSON.stringify(preset.rule)) as AutoReplyRuleModel
+      rule.name = preset.name
+      this.profileForm = {
+        id: preset.id,
+        name: preset.name,
+        variables: { ...(preset.variables ?? {}) },
+        autoReplies: [rule],
       }
     } else {
       const client = row as ClientProfileModel
@@ -1130,6 +1240,8 @@ export default class Configs extends Vue {
           deleteGlobalVariable(row.id)
         } else if (this.activeTab === 'sequence') {
           deleteMessageSequencePreset(row.id)
+        } else if (this.activeTab === 'reply') {
+          deleteAutoReplyPreset(row.id)
         } else {
           deleteClientProfile(row.id)
         }
@@ -1188,6 +1300,25 @@ export default class Configs extends Vue {
           name: this.profileForm.name,
           topic: this.profileForm.topic,
           payload: this.profileForm.payload,
+        })
+      } else if (this.dialogType === 'reply') {
+        const invalidVariables = validateStoredVariables(this.profileForm.variables, { scope: 'connection' })
+        if (invalidVariables.length) {
+          this.$message.error(this.$t('configs.variableDefinitionInvalid') as string)
+          return
+        }
+        const rule = (this.profileForm.autoReplies ?? [])[0] as AutoReplyRuleModel | undefined
+        // An empty match topic never answers anything, so a name alone is not a usable preset.
+        if (!rule || String(rule.matchTopic ?? '').trim() === '') {
+          this.$message.error(this.$t('configs.replyPresetNoMatchTopic') as string)
+          return
+        }
+        const name = String(this.profileForm.name ?? '').trim()
+        saveAutoReplyPreset({
+          id: this.editingId ?? undefined,
+          name,
+          rule: { ...rule, name },
+          variables: { ...(this.profileForm.variables ?? {}) },
         })
       } else if (this.dialogType === 'sequence') {
         const invalidVariables = validateStoredVariables(this.profileForm.variables, { scope: 'connection' })

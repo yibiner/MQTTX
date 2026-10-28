@@ -8,7 +8,8 @@ import { builtinMessageSequencePresets } from '@/utils/messageSequenceExamples'
  * - Client presets: a reusable MQTT identity (clientId / username / password / behaviour).
  * - Topic presets: a reusable topic template, selectable wherever a topic is filled in.
  * - Message presets: a reusable topic + message pair, selectable in the publish window.
- * - Message sequence presets: a reusable sequence, listed when creating a connection.
+ * - Message sequence presets: a reusable sequence, picked wherever sequences are edited.
+ * - Automatic reply presets: a reusable reply rule, picked wherever reply rules are edited.
  * - Global variables: named values referenced as `${name}` in every topic and message.
  *
  * Server/client presets are offered as pickers when creating a new connection, message
@@ -228,6 +229,37 @@ export const deleteMessageSequencePreset = (id: string): void => {
   writeList(
     MESSAGE_SEQUENCE_PRESETS_KEY,
     getMessageSequencePresets().filter((preset) => preset.id !== id),
+  )
+}
+
+const AUTO_REPLY_PRESETS_KEY = 'autoReplyPresets'
+
+/**
+ * Automatic reply presets. Unlike the sequences there is no builtin seed: a reply rule is specific
+ * to a device's protocol, and a wrong default would answer real traffic the user never meant to.
+ */
+export const getAutoReplyPresets = (): AutoReplyPresetModel[] => readList(AUTO_REPLY_PRESETS_KEY)
+
+export const getAutoReplyPreset = (id: string): AutoReplyPresetModel | undefined =>
+  getAutoReplyPresets().find((preset) => preset.id === id)
+
+export function saveAutoReplyPreset(preset: Omit<AutoReplyPresetModel, 'id'> & { id?: string }): AutoReplyPresetModel {
+  const presets = getAutoReplyPresets()
+  const saved: AutoReplyPresetModel = { ...preset, id: preset.id ?? uuidv4() }
+  const index = presets.findIndex((item) => item.id === saved.id)
+  if (index === -1) {
+    presets.unshift(saved)
+  } else {
+    presets.splice(index, 1, saved)
+  }
+  writeList(AUTO_REPLY_PRESETS_KEY, presets)
+  return saved
+}
+
+export const deleteAutoReplyPreset = (id: string): void => {
+  writeList(
+    AUTO_REPLY_PRESETS_KEY,
+    getAutoReplyPresets().filter((preset) => preset.id !== id),
   )
 }
 

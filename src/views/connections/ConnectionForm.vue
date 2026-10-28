@@ -51,6 +51,7 @@
                   size="mini"
                   v-model="serverProfileId"
                   clearable
+                  filterable
                   :placeholder="$t('configs.selectServerProfile')"
                   @change="applyServerProfile"
                 >
@@ -76,6 +77,7 @@
                     size="mini"
                     v-model="clientProfileId"
                     clearable
+                    filterable
                     :placeholder="$t('configs.selectClientProfile')"
                     @change="applyClientProfile"
                   >
@@ -345,7 +347,12 @@
         <el-card shadow="never" class="info-body item-card">
           <el-row :gutter="10">
             <el-col :span="24">
-              <AutoReplyEditor v-model="record.autoReplies" :variable-names="autoReplyVariableNames" />
+              <AutoReplyEditor
+                v-model="record.autoReplies"
+                :variable-names="autoReplyVariableNames"
+                :templates="autoReplyPresets"
+                @example="applyAutomationExample"
+              />
             </el-col>
           </el-row>
         </el-card>
@@ -360,7 +367,7 @@
                 v-model="record.messageSequences"
                 :variable-names="autoReplyVariableNames"
                 :templates="sequencePresets"
-                @example="applySequenceExample"
+                @example="applyAutomationExample"
               />
             </el-col>
           </el-row>
@@ -748,6 +755,7 @@ import { getClientId } from '@/utils/idGenerator'
 import { getMQTTProtocol, getDefaultRecord } from '@/utils/mqttUtils'
 import {
   ensureMessageSequencePresets,
+  getAutoReplyPresets,
   getClientProfiles,
   getGlobalVariables,
   getServerProfiles,
@@ -806,6 +814,9 @@ export default class ConnectionForm extends Vue {
   private clientProfiles: ClientProfileModel[] = []
   /** Sequence templates edited in preset settings. Shown as insert buttons on this form. */
   private sequencePresets: MessageSequencePresetModel[] = []
+
+  /** Reply templates edited in preset settings. Picked in the automatic-reply editor. */
+  private autoReplyPresets: AutoReplyPresetModel[] = []
 
   private serverProfileId: string | null = null
 
@@ -1155,10 +1166,10 @@ export default class ConnectionForm extends Vue {
   }
 
   /**
-   * A sequence template can bring the variables it needs. An existing value is left as it is:
-   * inserting the water template again must not put the level back to 2000.
+   * A sequence or reply template can bring the variables it needs. An existing value is left as it
+   * is: inserting the water template again must not put the level back to 2000.
    */
-  private applySequenceExample(payload: { variables?: { [name: string]: StoredVariable } }) {
+  private applyAutomationExample(payload: { variables?: { [name: string]: StoredVariable } }) {
     const incoming = payload?.variables ?? {}
     const current = { ...(this.record.variables ?? {}) }
     let changed = false
@@ -1185,8 +1196,9 @@ export default class ConnectionForm extends Vue {
       this.serverProfiles = getServerProfiles()
       this.clientProfiles = getClientProfiles()
     }
-    // Sequence buttons on this form are the templates saved in preset settings.
+    // Sequence and reply buttons on this form are the templates saved in preset settings.
     this.sequencePresets = ensureMessageSequencePresets()
+    this.autoReplyPresets = getAutoReplyPresets()
   }
 
   /**

@@ -295,6 +295,19 @@ declare global {
   }
 
   /**
+   * A reusable automatic reply rule, edited in preset settings and picked wherever reply rules are
+   * edited (the connection form, a client preset). Same shape as a sequence preset: one rule plus
+   * the variables it refers to.
+   */
+  interface AutoReplyPresetModel {
+    id: string
+    name: string
+    rule: AutoReplyRuleModel
+    /** Variables the rule refers to, copied onto the connection when it is inserted. */
+    variables?: { [name: string]: StoredVariable } | null
+  }
+
+  /**
    * A user-defined payload variable. Every message can reference it as `${name}` in its topic and
    * its payload; the value may itself contain placeholders (built-in ones, other variables, or a
    * message field in an automatic reply).

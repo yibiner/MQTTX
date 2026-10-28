@@ -18,6 +18,9 @@ import {
   deleteTopicPreset,
   getTopicPresets,
   saveTopicPreset,
+  deleteAutoReplyPreset,
+  getAutoReplyPresets,
+  saveAutoReplyPreset,
 } from '@/utils/configProfiles'
 import {
   createBlankMessageSequence,
@@ -234,5 +237,60 @@ describe('topic presets', () => {
       }
     }
     expect(getTopicPresets().some((preset) => preset.id === id)).to.equal(false)
+  })
+})
+
+describe('auto reply presets', () => {
+  const rule: AutoReplyRuleModel = {
+    id: 'rule-template',
+    name: 'WIFI 重连应答',
+    enabled: true,
+    matchTopic: 'app/+/+/device/system/post',
+    matchCondition: "cmd == 'WIFI_RECONNECT_SERVICE'",
+    reply: {
+      topic: 'app/${productType}/+/device/system/reply',
+      mode: 'echo',
+      payload: '{"code":0}',
+      qos: 0,
+      retain: false,
+      delayMs: 0,
+    },
+  }
+
+  it('saves, renames and deletes a reply preset with its variables', () => {
+    let id = ''
+    try {
+      const saved = saveAutoReplyPreset({
+        name: 'wifi ack',
+        rule,
+        variables: { productType: { kind: 'constant', value: 'A1' } },
+      })
+      id = saved.id
+      expect(getAutoReplyPresets()[0]).to.deep.equal(saved)
+      expect(saved.rule.matchTopic).to.equal('app/+/+/device/system/post')
+
+      const renamed = saveAutoReplyPreset({
+        id,
+        name: 'wifi ack v2',
+        rule: { ...rule, reply: { ...rule.reply, mode: 'fixed' } },
+        variables: saved.variables,
+      })
+      const stored = getAutoReplyPresets().filter((preset) => preset.id === id)
+      expect(stored).to.deep.equal([renamed])
+      expect(stored[0].rule.reply.mode).to.equal('fixed')
+      // One entry per id: renaming must not leave the old row behind.
+      expect(getAutoReplyPresets().filter((item) => item.id === id)).to.have.lengthOf(1)
+    } finally {
+      if (id) {
+        deleteAutoReplyPreset(id)
+      }
+    }
+    expect(getAutoReplyPresets().some((preset) => preset.id === id)).to.equal(false)
+  })
+
+  it('starts empty instead of seeding a default rule', () => {
+    const presets = getAutoReplyPresets()
+    expect(Array.isArray(presets)).to.equal(true)
+    expect(presets.every((preset) => typeof preset.rule === 'object')).to.equal(true)
   })
 })

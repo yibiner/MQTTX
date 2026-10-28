@@ -4,15 +4,16 @@
       <el-button v-if="!singleton" type="text" icon="el-icon-plus" class="sequence-add" @click="addSequence">
         {{ $t('connections.messageSequenceAdd') }}
       </el-button>
-      <el-button
-        v-for="preset in templates"
-        :key="preset.id"
-        type="text"
-        class="sequence-add"
-        @click="insertTemplate(preset)"
-      >
-        {{ preset.name }}
-      </el-button>
+      <PresetPicker
+        v-if="templates.length"
+        :items="presetOptions"
+        :title="$t('configs.messageSequencePresets')"
+        :label="$t('configs.insertPreset')"
+        :empty-text="$t('configs.messageSequencePresetsEmpty')"
+        :search-placeholder="$t('configs.presetSearchPlaceholder')"
+        manage-tab="sequence"
+        @select="insertTemplateById"
+      />
       <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
         <div slot="content" class="automation-tip">
           <p>{{ $t('connections.messageSequenceDesc') }}</p>
@@ -254,6 +255,8 @@
 <script lang="ts">
 import { Component, Model, Prop, Vue, Watch } from 'vue-property-decorator'
 import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
+import PresetPicker from '@/components/PresetPicker.vue'
+import type { PresetOption } from '@/components/PresetPicker.vue'
 import { isValidCondition } from '@/utils/jmesPathCondition'
 import { cloneMessageSequence } from '@/utils/messageSequenceExamples'
 
@@ -288,7 +291,7 @@ const createSequence = (): MessageSequenceModel => ({
  * Assignments are stored on the step and applied by the runner after that step is sent, so
  * this editor only records the template (`${water - 20}`), it does not evaluate it.
  */
-@Component({ components: { TopicPresetPicker } })
+@Component({ components: { TopicPresetPicker, PresetPicker } })
 export default class MessageSequenceEditor extends Vue {
   @Model('change', { type: Array }) private readonly value!: MessageSequenceModel[] | null | undefined
   @Prop({ required: false, default: () => [] }) private readonly variableNames!: string[]
@@ -461,10 +464,44 @@ export default class MessageSequenceEditor extends Vue {
   }
 
   /**
+   * One row per preset: name, plus what tells two similar sequences apart (trigger and step count).
+   */
+  get presetOptions(): PresetOption[] {
+    return this.templates.map((preset) => {
+      const sequence = preset.sequence
+      const steps = sequence?.steps?.length ?? 0
+      const trigger = this.triggerLabel(sequence?.trigger)
+      const loop = sequence?.loop ? ` · ${this.$t('connections.messageSequenceLoop') as string}` : ''
+      return {
+        id: preset.id,
+        name: preset.name || sequence?.name || preset.id,
+        summary: `${trigger} · ${steps} ${this.$t('configs.stepsUnit') as string}${loop}`,
+      }
+    })
+  }
+
+  private triggerLabel(trigger?: MessageSequenceTrigger): string {
+    if (trigger === 'connect') {
+      return this.$t('connections.messageSequenceTriggerConnect') as string
+    }
+    if (trigger === 'message') {
+      return this.$t('connections.messageSequenceTriggerMessage') as string
+    }
+    return this.$t('connections.messageSequenceTriggerManual') as string
+  }
+
+  /**
    * Copies a preset onto this list. The sequence gets new ids so a second insert does not
    * share a run with the first. Variables travel with the template; the parent adds any this
    * connection does not already have.
    */
+  private insertTemplateById(id: string) {
+    const preset = this.templates.find((item) => item.id === id)
+    if (preset) {
+      this.insertTemplate(preset)
+    }
+  }
+
   private insertTemplate(preset: MessageSequencePresetModel) {
     if (!preset?.sequence) {
       return

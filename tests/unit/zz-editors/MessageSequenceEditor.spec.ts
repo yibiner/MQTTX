@@ -16,6 +16,7 @@ const stubs: { [name: string]: true } = {
   'el-radio-group': true,
   'el-radio-button': true,
   TopicPresetPicker: true,
+  PresetPicker: true,
 }
 
 describe('MessageSequenceEditor.vue', () => {
@@ -86,6 +87,30 @@ describe('MessageSequenceEditor.vue', () => {
     expect(sequences[0].trigger).to.equal('message')
     expect(sequences[0].steps).to.have.lengthOf(8)
     expect(wrapper.emitted('example')).to.equal(undefined)
+  })
+
+  it('summarises each sequence preset so similar names can be told apart', () => {
+    const water = createWaterCycleSequence()
+    const preset: MessageSequencePresetModel = { id: 'water', name: water.name, sequence: water }
+    wrapper = buildWrapper(null, { templates: [preset] })
+    const options = (wrapper.vm as any).presetOptions
+    expect(options).to.have.lengthOf(1)
+    expect(options[0].name).to.equal('水量循环')
+    expect(options[0].summary).to.contain('connections.messageSequenceTriggerConnect')
+    expect(options[0].summary).to.contain('4')
+    expect(options[0].summary).to.contain('connections.messageSequenceLoop')
+  })
+
+  it('inserts a preset picked by id and ignores an unknown one', () => {
+    const sequence = createOtaSequence()
+    const preset: MessageSequencePresetModel = { id: 'ota', name: sequence.name, sequence }
+    wrapper = buildWrapper(null, { templates: [preset] })
+    ;(wrapper.vm as any).insertTemplateById('missing')
+    expect(wrapper.emitted('change')).to.equal(undefined)
+    ;(wrapper.vm as any).insertTemplateById('ota')
+    const sequences = wrapper.emitted('change').pop()[0] as MessageSequenceModel[]
+    expect(sequences).to.have.lengthOf(1)
+    expect(sequences[0].name).to.equal('OTA 进度')
   })
 
   it('emits run for a sequence that has a topic while the connection is up', () => {

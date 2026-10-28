@@ -103,47 +103,18 @@
           :effect="currentTheme !== 'light' ? 'light' : 'dark'"
           :content="$t('configs.selectMessagePreset')"
         >
-          <el-popover
-            v-model="msgPresetPanelVisible"
+          <PresetPicker
+            class="publish-msg-preset"
+            :items="messagePresetOptions"
+            :title="$t('configs.messagePresets')"
+            icon="el-icon-collection"
+            :empty-text="$t('configs.messagePresetsEmpty')"
+            :search-placeholder="$t('configs.presetSearchPlaceholder')"
+            manage-tab="message"
             placement="bottom-end"
-            :width="300"
-            trigger="click"
-            popper-class="msg-preset--popper"
             @show="loadMessagePresets"
-          >
-            <div class="msg-preset-panel">
-              <div class="msg-preset-panel-head">
-                <span>{{ $t('configs.messagePresets') }}</span>
-                <span class="msg-preset-panel-count">{{ messagePresets.length }}</span>
-              </div>
-              <div v-if="messagePresets.length === 0" class="msg-preset-panel-empty">
-                {{ $t('configs.empty') }}
-              </div>
-              <div
-                v-for="preset in messagePresets"
-                :key="preset.id"
-                class="msg-preset-panel-item"
-                @click="applyMessagePreset(preset)"
-              >
-                <i class="el-icon-collection msg-preset-panel-icon"></i>
-                <div class="msg-preset-panel-info">
-                  <div class="msg-preset-panel-name">{{ preset.name }}</div>
-                  <div class="msg-preset-panel-topic">{{ preset.topic }}</div>
-                </div>
-              </div>
-              <div class="msg-preset-panel-footer">
-                <a href="javascript:;" @click="gotoManagePresets">{{ $t('configs.managePresets') }}</a>
-              </div>
-            </div>
-            <el-button
-              slot="reference"
-              size="mini"
-              class="dropdown-btn msg-preset-btn"
-              icon="el-icon-collection"
-              :class="{ 'dropdown-btn-active': msgPresetPanelVisible }"
-            >
-            </el-button>
-          </el-popover>
+            @select="applyMessagePresetById"
+          />
         </el-tooltip>
         <el-tooltip
           placement="top"
@@ -365,6 +336,7 @@ import ClickOutside from 'vue-click-outside'
 import Editor from '@/components/Editor.vue'
 import KeyValueEditor from '@/components/KeyValueEditor.vue'
 import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
+import PresetPicker from '@/components/PresetPicker.vue'
 import convertPayload from '@/utils/convertPayload'
 import { getMessageId } from '@/utils/idGenerator'
 import _ from 'lodash'
@@ -379,6 +351,7 @@ import { getMessagePresets } from '@/utils/configProfiles'
     Editor,
     KeyValueEditor,
     TopicPresetPicker,
+    PresetPicker,
   },
   directives: {
     ClickOutside,
@@ -406,8 +379,6 @@ export default class MsgPublish extends Vue {
   private timedPanelVisible = false
 
   private newTimedInterval: number | undefined = 10
-
-  private msgPresetPanelVisible = false
 
   private messagePresets: MessagePresetModel[] = []
 
@@ -823,9 +794,14 @@ export default class MsgPublish extends Vue {
     this.timedPanelVisible = true
   }
 
-  /** Reloads the message preset list (also used as the popover's @show hook). */
+  /** Reloads the message preset list (also used as the picker's @show hook). */
   private loadMessagePresets() {
     this.messagePresets = getMessagePresets()
+  }
+
+  /** One row per message preset: the topic is the line that tells two presets apart. */
+  get messagePresetOptions(): Array<{ id: string; name: string; summary?: string }> {
+    return this.messagePresets.map((preset) => ({ id: preset.id, name: preset.name, summary: preset.topic }))
   }
 
   /** Fills only the topic. The stored template is copied as written, including `${name}`. */
@@ -839,16 +815,15 @@ export default class MsgPublish extends Vue {
   }
 
   /** Fills topic + message from a preset. QoS/retain/payloadType stay as chosen by the user. */
-  private applyMessagePreset(preset: MessagePresetModel) {
+  private applyMessagePresetById(id: string) {
+    const preset = this.messagePresets.find((item) => item.id === id)
+    if (!preset) {
+      return
+    }
     this.msgRecord.topic = preset.topic
     this.msgRecord.payload = preset.payload
-    this.msgPresetPanelVisible = false
+    this.topicRequired = false
     this.$message.success(`${this.$t('configs.selectMessagePreset')}: ${preset.name}`)
-  }
-
-  private gotoManagePresets() {
-    this.msgPresetPanelVisible = false
-    this.$router.push('/configs')
   }
 
   /** Local "HH:mm:ss" of the next scheduled send of a timed message. */
@@ -1016,6 +991,11 @@ export default class MsgPublish extends Vue {
     }
     .qos-select {
       width: 76px;
+      margin-right: 4px;
+    }
+    .publish-msg-preset {
+      flex: none;
+      line-height: 1;
       margin-right: 4px;
     }
     .dropdown-btn {
@@ -1209,64 +1189,6 @@ export default class MsgPublish extends Vue {
 
     &:hover {
       color: var(--color-minor-red);
-    }
-  }
-}
-
-.el-popover.msg-preset--popper {
-  padding: 8px 0;
-
-  .msg-preset-panel-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 4px 14px 8px;
-    font-weight: 600;
-    .msg-preset-panel-count {
-      color: var(--color-text-default);
-      font-size: 12px;
-    }
-  }
-  .msg-preset-panel-empty {
-    padding: 8px 14px 12px;
-    color: var(--color-text-default);
-    font-size: 12px;
-  }
-  .msg-preset-panel-item {
-    display: flex;
-    align-items: center;
-    padding: 7px 14px;
-    cursor: pointer;
-    &:hover {
-      background: var(--color-bg-leftbar_item);
-    }
-    .msg-preset-panel-icon {
-      margin-right: 8px;
-      color: var(--color-main-green);
-    }
-    .msg-preset-panel-info {
-      flex: 1;
-      min-width: 0;
-      .msg-preset-panel-name {
-        font-size: 13px;
-      }
-      .msg-preset-panel-topic {
-        color: var(--color-text-default);
-        font-size: 12px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-    }
-  }
-  .msg-preset-panel-footer {
-    border-top: 1px solid var(--color-border-rightbar);
-    margin-top: 6px;
-    padding: 8px 14px 4px;
-    text-align: right;
-    a {
-      font-size: 12px;
-      color: var(--color-main-green);
     }
   }
 }
