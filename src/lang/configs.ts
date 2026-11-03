@@ -1031,6 +1031,14 @@ export default {
     hu: 'Üzenet előbeállítás kiválasztása',
     ko: '메시지 프리셋 선택',
   },
+  sequenceMessagePresetTip: {
+    zh: '填入这一步的主题和报文。延时、QoS 和赋值保持不变。主题框上的 Topic 预设只更换主题。',
+    en: 'Fills this step topic and payload. Delay, QoS and assignments stay as they are. The topic preset on the topic field changes only the topic.',
+    tr: 'Bu adımın konusunu ve gövdesini doldurur. Gecikme, QoS ve atamalar aynı kalır. Konu alanındaki ön ayar yalnız konuyu değiştirir.',
+    ja: 'このステップのトピックと本文を埋めます。遅延、QoS、代入はそのままです。トピック欄のプリセットはトピックだけを変えます。',
+    hu: 'Kitölti a lépés témáját és üzenetét. A késleltetés, a QoS és az értékadás megmarad. A téma mező előbeállítása csak a témát cseréli.',
+    ko: '이 단계의 토픽과 본문을 채웁니다. 지연, QoS, 대입은 그대로입니다. 토픽 칸의 프리셋은 토픽만 바꿉니다.',
+  },
   managePresets: {
     zh: '管理预设',
     en: 'Manage presets',

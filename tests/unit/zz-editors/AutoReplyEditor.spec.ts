@@ -88,12 +88,34 @@ describe('AutoReplyEditor.vue', () => {
     const rules = wrapper.emitted('change').pop()[0] as AutoReplyRuleModel[]
     expect(rules).to.have.lengthOf(1)
     expect(rules[0].id).to.not.equal('from-preset')
-    expect(rules[0].name).to.equal('WIFI 重连应答')
+    expect(rules[0].name).to.equal('WIFI重连应答')
     expect(rules[0].matchTopic).to.equal('app/+/+/device/system/post')
     expect(rules[0].reply.mode).to.equal('echo')
 
     const example = wrapper.emitted('example').pop()[0]
     expect(example.variables.productType).to.deep.equal({ kind: 'constant', value: 'A1' })
+  })
+
+  it('inserts every rule of a reply preset', async () => {
+    const first = createRule({ id: 'from-preset', name: 'ack' })
+    const second = createRule({ id: 'other', name: 'ota', matchTopic: 'device/ota' })
+    const preset: AutoReplyPresetModel = {
+      id: 'bundle',
+      name: 'bundle',
+      rule: first,
+      rules: [first, second],
+    }
+    wrapper = buildWrapper(null, { templates: [preset] })
+    ;(wrapper.vm as any).insertTemplateById('bundle')
+    await wrapper.vm.$nextTick()
+
+    const rules = wrapper.emitted('change').pop()[0] as AutoReplyRuleModel[]
+    expect(rules).to.have.lengthOf(2)
+    expect(rules[0].id).to.not.equal('from-preset')
+    expect(rules[1].id).to.not.equal('other')
+    expect(rules[0].name).to.equal('ack')
+    expect(rules[1].name).to.equal('ota')
+    expect(rules[1].matchTopic).to.equal('device/ota')
   })
 
   it('lists one summary line per reply preset and ignores an unknown id', async () => {

@@ -264,7 +264,7 @@ declare global {
     messageSequences?: MessageSequenceModel[] | null
   }
 
-  /** Reusable topic + message preset, selectable directly in the publish window. */
+  /** Reusable topic + message pair, picked in the publish window and on a sequence step. */
   interface MessagePresetModel {
     id: string
     name: string
@@ -295,15 +295,16 @@ declare global {
   }
 
   /**
-   * A reusable automatic reply rule, edited in preset settings and picked wherever reply rules are
-   * edited (the connection form, a client preset). Same shape as a sequence preset: one rule plus
-   * the variables it refers to.
+   * A reusable set of automatic reply rules, edited in preset settings and picked wherever reply
+   * rules are edited (the connection form, a client preset). `rule` is the first rule, so a preset
+   * saved when only one rule was stored still opens. `rules` is the full list.
    */
   interface AutoReplyPresetModel {
     id: string
     name: string
     rule: AutoReplyRuleModel
-    /** Variables the rule refers to, copied onto the connection when it is inserted. */
+    rules?: AutoReplyRuleModel[]
+    /** Variables the rules refer to, copied onto the connection when the preset is inserted. */
     variables?: { [name: string]: StoredVariable } | null
   }
 

@@ -237,15 +237,36 @@ const AUTO_REPLY_PRESETS_KEY = 'autoReplyPresets'
 /**
  * Automatic reply presets. Unlike the sequences there is no builtin seed: a reply rule is specific
  * to a device's protocol, and a wrong default would answer real traffic the user never meant to.
+ *
+ * A preset holds every rule the user added. Presets saved earlier stored only `rule`; reading them
+ * still yields that one rule in `rules`.
  */
-export const getAutoReplyPresets = (): AutoReplyPresetModel[] => readList(AUTO_REPLY_PRESETS_KEY)
+export function replyPresetRules(
+  preset: Pick<AutoReplyPresetModel, 'rule' | 'rules'> | null | undefined,
+): AutoReplyRuleModel[] {
+  if (!preset) {
+    return []
+  }
+  if (Array.isArray(preset.rules) && preset.rules.length) {
+    return preset.rules
+  }
+  return preset.rule ? [preset.rule] : []
+}
+
+const normalizeReplyPreset = (preset: AutoReplyPresetModel): AutoReplyPresetModel => {
+  const rules = replyPresetRules(preset)
+  return { ...preset, rules, rule: rules[0] ?? preset.rule }
+}
+
+export const getAutoReplyPresets = (): AutoReplyPresetModel[] =>
+  readList<AutoReplyPresetModel>(AUTO_REPLY_PRESETS_KEY).map(normalizeReplyPreset)
 
 export const getAutoReplyPreset = (id: string): AutoReplyPresetModel | undefined =>
   getAutoReplyPresets().find((preset) => preset.id === id)
 
 export function saveAutoReplyPreset(preset: Omit<AutoReplyPresetModel, 'id'> & { id?: string }): AutoReplyPresetModel {
   const presets = getAutoReplyPresets()
-  const saved: AutoReplyPresetModel = { ...preset, id: preset.id ?? uuidv4() }
+  const saved = normalizeReplyPreset({ ...preset, id: preset.id ?? uuidv4() })
   const index = presets.findIndex((item) => item.id === saved.id)
   if (index === -1) {
     presets.unshift(saved)

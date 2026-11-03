@@ -113,6 +113,75 @@ describe('MessageSequenceEditor.vue', () => {
     expect(sequences[0].name).to.equal('OTA 进度')
   })
 
+  it('fills a step from a message preset and leaves its schedule', () => {
+    const value: MessageSequenceModel[] = [
+      {
+        id: 'seq-fill',
+        name: 'fill me',
+        enabled: true,
+        trigger: 'manual',
+        matchTopic: '',
+        matchCondition: '',
+        loop: false,
+        steps: [
+          {
+            id: 's0',
+            delayMs: 5000,
+            topic: 'old/topic',
+            payload: 'old',
+            qos: 1,
+            retain: true,
+            actions: { setVariables: [{ name: 'water', value: '${water - 20}' }] },
+          },
+        ],
+      },
+    ]
+    wrapper = buildWrapper(value)
+    wrapper.setData({
+      messagePresets: [
+        {
+          id: 'm1',
+          name: 'water report',
+          topic: 'device/${clientId}/water',
+          payload: '{"remaining":${water}}',
+        },
+      ],
+    })
+    const step = (wrapper.vm as any).sequences[0].steps[0]
+    ;(wrapper.vm as any).applyMessagePreset(step, 'missing')
+    expect(wrapper.emitted('change')).to.equal(undefined)
+
+    ;(wrapper.vm as any).applyMessagePreset(step, 'm1')
+    const saved = (wrapper.emitted('change').pop()[0] as MessageSequenceModel[])[0].steps[0]
+    expect(saved.topic).to.equal('device/${clientId}/water')
+    expect(saved.payload).to.equal('{"remaining":${water}}')
+    expect(saved.delayMs).to.equal(5000)
+    expect(saved.qos).to.equal(1)
+    expect(saved.retain).to.equal(true)
+    expect(saved.actions && saved.actions.setVariables).to.deep.equal([{ name: 'water', value: '${water - 20}' }])
+  })
+
+  it('lets a topic preset replace only the topic of a step', () => {
+    const value: MessageSequenceModel[] = [
+      {
+        id: 'seq-topic',
+        name: 'topic only',
+        enabled: true,
+        trigger: 'manual',
+        matchTopic: '',
+        matchCondition: '',
+        loop: false,
+        steps: [{ id: 's0', delayMs: 0, topic: 'old/topic', payload: '{"n":1}', qos: 0, retain: false }],
+      },
+    ]
+    wrapper = buildWrapper(value)
+    const step = (wrapper.vm as any).sequences[0].steps[0]
+    ;(wrapper.vm as any).applyStepTopic(step, 'app/${clientId}/state')
+    const saved = (wrapper.emitted('change').pop()[0] as MessageSequenceModel[])[0].steps[0]
+    expect(saved.topic).to.equal('app/${clientId}/state')
+    expect(saved.payload).to.equal('{"n":1}')
+  })
+
   it('emits run for a sequence that has a topic while the connection is up', () => {
     const value: MessageSequenceModel[] = [
       {

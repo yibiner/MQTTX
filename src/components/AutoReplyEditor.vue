@@ -225,6 +225,7 @@ import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import PresetPicker from '@/components/PresetPicker.vue'
 import type { PresetOption } from '@/components/PresetPicker.vue'
 import { isValidCondition } from '@/utils/jmesPathCondition'
+import { replyPresetRules } from '@/utils/configProfiles'
 
 const createId = (): string => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -292,16 +293,18 @@ export default class AutoReplyEditor extends Vue {
   /** One row per preset: name, plus its match topic and reply mode. */
   get presetOptions(): PresetOption[] {
     return this.templates.map((preset) => {
-      const rule = preset.rule
+      const rules = replyPresetRules(preset)
+      const rule = rules[0]
       const mode =
         rule?.reply?.mode === 'fixed'
           ? (this.$t('connections.autoReplyModeFixed') as string)
           : (this.$t('connections.autoReplyModeEcho') as string)
       const match = (rule?.matchTopic ?? '').trim()
+      const extra = rules.length > 1 ? ` · ${rules.length}` : ''
       return {
         id: preset.id,
         name: preset.name || rule?.name || preset.id,
-        summary: match ? `${match} · ${mode}` : mode,
+        summary: match ? `${match} · ${mode}${extra}` : `${mode}${extra}`,
       }
     })
   }
@@ -406,18 +409,22 @@ export default class AutoReplyEditor extends Vue {
   }
 
   /**
-   * Copies a reply preset onto this list with a fresh rule id, so inserting it twice answers with
-   * two independent rules. Variables the preset needs travel to the parent, which keeps the ones
-   * the connection already defines.
+   * Copies every rule of a reply preset onto this list, each with a fresh id, so inserting the
+   * preset twice does not share rules with the first copy. A rule keeps its own name. Variables
+   * travel to the parent, which keeps the ones the connection already defines.
    */
   private insertTemplate(preset: AutoReplyPresetModel) {
-    if (!preset?.rule) {
+    const source = replyPresetRules(preset)
+    if (!source.length) {
       return
     }
-    const created = JSON.parse(JSON.stringify(preset.rule)) as AutoReplyRuleModel
-    created.id = createId()
-    created.name = (preset.name || created.name || '').trim()
-    this.rules.push(this.clone([created])[0])
+    const created = source.map((rule) => {
+      const copy = JSON.parse(JSON.stringify(rule)) as AutoReplyRuleModel
+      copy.id = createId()
+      copy.name = (copy.name || preset.name || '').trim()
+      return this.clone([copy])[0]
+    })
+    this.rules.push(...created)
     this.emitChange()
     const variables = preset.variables ?? {}
     if (Object.keys(variables).length) {

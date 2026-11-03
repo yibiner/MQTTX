@@ -48,7 +48,7 @@
       native-type="button"
       :icon="icon"
       :class="['preset-picker-btn', { 'is-icon': !label && !bare, 'is-bare': bare }]"
-      :title="label ? undefined : title"
+      :title="label ? undefined : buttonTitle || title"
     >
       <span v-if="label">{{ label }}</span>
     </el-button>
@@ -82,6 +82,8 @@ export interface PresetOption {
 export default class PresetPicker extends Vue {
   @Prop({ required: true, default: () => [] }) private readonly items!: PresetOption[]
   @Prop({ required: true }) private readonly title!: string
+  /** Hover text of an icon-only button. The popover heading stays `title`, which is too long for a hint. */
+  @Prop({ type: String, default: '' }) private readonly buttonTitle!: string
   /** Text on the reference button. Without it the reference is an icon-only button. */
   @Prop({ type: String, default: '' }) private readonly label!: string
   @Prop({ type: String, default: 'el-icon-folder-opened' }) private readonly icon!: string

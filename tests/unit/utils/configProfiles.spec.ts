@@ -20,6 +20,7 @@ import {
   saveTopicPreset,
   deleteAutoReplyPreset,
   getAutoReplyPresets,
+  replyPresetRules,
   saveAutoReplyPreset,
 } from '@/utils/configProfiles'
 import {
@@ -268,6 +269,7 @@ describe('auto reply presets', () => {
       id = saved.id
       expect(getAutoReplyPresets()[0]).to.deep.equal(saved)
       expect(saved.rule.matchTopic).to.equal('app/+/+/device/system/post')
+      expect(saved.rules).to.have.lengthOf(1)
 
       const renamed = saveAutoReplyPreset({
         id,
@@ -286,6 +288,33 @@ describe('auto reply presets', () => {
       }
     }
     expect(getAutoReplyPresets().some((preset) => preset.id === id)).to.equal(false)
+  })
+
+  it('keeps every rule, and still reads a preset that was stored as one rule', () => {
+    let id = ''
+    const second: AutoReplyRuleModel = {
+      ...rule,
+      id: 'rule-ota',
+      name: 'ota',
+      matchTopic: 'app/+/+/device/ota/post',
+    }
+    try {
+      const saved = saveAutoReplyPreset({ name: 'bundle', rule, rules: [rule, second] })
+      id = saved.id
+      expect(saved.rules?.map((item) => item.matchTopic)).to.deep.equal([
+        'app/+/+/device/system/post',
+        'app/+/+/device/ota/post',
+      ])
+      expect(getAutoReplyPresets().find((preset) => preset.id === id)?.rule.matchTopic).to.equal(
+        'app/+/+/device/system/post',
+      )
+      expect(replyPresetRules({ rule })).to.have.lengthOf(1)
+      expect(replyPresetRules({ rule, rules: [rule, second] })).to.have.lengthOf(2)
+    } finally {
+      if (id) {
+        deleteAutoReplyPreset(id)
+      }
+    }
   })
 
   it('starts empty instead of seeding a default rule', () => {

@@ -504,7 +504,6 @@
             <AutoReplyEditor
               v-model="profileForm.autoReplies"
               :variable-names="sequencePresetVariableNames"
-              singleton
             />
           </el-form-item>
         </template>
@@ -562,6 +561,7 @@ import {
   getAutoReplyPresets,
   saveAutoReplyPreset,
   deleteAutoReplyPreset,
+  replyPresetRules,
   getGlobalVariables,
   saveGlobalVariable,
   deleteGlobalVariable,
@@ -973,14 +973,20 @@ export default class Configs extends Vue {
 
   /** The reply mode of a reply preset, for the preset table. */
   private replyModeLabel(preset: AutoReplyPresetModel): string {
-    return preset.rule?.reply?.mode === 'fixed'
-      ? (this.$t('connections.autoReplyModeFixed') as string)
-      : (this.$t('connections.autoReplyModeEcho') as string)
+    const labels = replyPresetRules(preset).map((rule) =>
+      rule.reply?.mode === 'fixed'
+        ? (this.$t('connections.autoReplyModeFixed') as string)
+        : (this.$t('connections.autoReplyModeEcho') as string),
+    )
+    return labels.length ? [...new Set(labels)].join(' / ') : '-'
   }
 
-  /** The match topic of a reply preset, for the preset table. */
+  /** The match topics of a reply preset, for the preset table. */
   private replyMatchTopic(preset: AutoReplyPresetModel): string {
-    return preset.rule?.matchTopic || '-'
+    const topics = replyPresetRules(preset)
+      .map((rule) => (rule.matchTopic ?? '').trim())
+      .filter((topic) => topic !== '')
+    return topics.length ? topics.join(' / ') : '-'
   }
 
   /** A sequence or reply template adds its variables only when the client preset lacks them. */
@@ -1182,13 +1188,12 @@ export default class Configs extends Vue {
       }
     } else if (this.activeTab === 'reply') {
       const preset = row as AutoReplyPresetModel
-      const rule = JSON.parse(JSON.stringify(preset.rule)) as AutoReplyRuleModel
-      rule.name = preset.name
+      const rules = replyPresetRules(preset).map((rule) => JSON.parse(JSON.stringify(rule)) as AutoReplyRuleModel)
       this.profileForm = {
         id: preset.id,
         name: preset.name,
         variables: { ...(preset.variables ?? {}) },
-        autoReplies: [rule],
+        autoReplies: rules.length ? rules : [createBlankAutoReplyRule()],
       }
     } else {
       const client = row as ClientProfileModel
@@ -1307,17 +1312,24 @@ export default class Configs extends Vue {
           this.$message.error(this.$t('configs.variableDefinitionInvalid') as string)
           return
         }
-        const rule = (this.profileForm.autoReplies ?? [])[0] as AutoReplyRuleModel | undefined
+        const rules = ((this.profileForm.autoReplies ?? []) as AutoReplyRuleModel[]).filter(
+          (rule) => String(rule?.matchTopic ?? '').trim() !== '',
+        )
         // An empty match topic never answers anything, so a name alone is not a usable preset.
-        if (!rule || String(rule.matchTopic ?? '').trim() === '') {
+        if (!rules.length) {
           this.$message.error(this.$t('configs.replyPresetNoMatchTopic') as string)
           return
         }
         const name = String(this.profileForm.name ?? '').trim()
+        const storedRules = rules.map((rule) => ({
+          ...rule,
+          name: String(rule.name ?? '').trim() || name,
+        }))
         saveAutoReplyPreset({
           id: this.editingId ?? undefined,
           name,
-          rule: { ...rule, name },
+          rule: storedRules[0],
+          rules: storedRules,
           variables: { ...(this.profileForm.variables ?? {}) },
         })
       } else if (this.dialogType === 'sequence') {

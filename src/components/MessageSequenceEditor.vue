@@ -196,15 +196,29 @@
             <TopicPresetPicker @select="applyStepTopic(step, $event)" />
           </div>
           <label>{{ $t('connections.messageSequencePayload') }}</label>
-          <el-input
-            v-model="step.payload"
-            type="textarea"
-            size="mini"
-            class="payload-input"
-            :autosize="{ minRows: 2, maxRows: 6 }"
-            placeholder='{"remaining":${water}}'
-            @input="emitChange"
-          ></el-input>
+          <div class="topic-preset-field is-area">
+            <el-input
+              v-model="step.payload"
+              type="textarea"
+              size="mini"
+              class="payload-input"
+              :autosize="{ minRows: 2, maxRows: 6 }"
+              placeholder='{"remaining":${water}}'
+              @input="emitChange"
+            ></el-input>
+            <PresetPicker
+              :items="messagePresetOptions"
+              :title="$t('configs.messagePresets')"
+              :button-title="$t('configs.sequenceMessagePresetTip')"
+              icon="el-icon-collection"
+              placement="bottom-end"
+              :empty-text="$t('configs.messagePresetsEmpty')"
+              :search-placeholder="$t('configs.presetSearchPlaceholder')"
+              manage-tab="message"
+              @show="loadMessagePresets"
+              @select="applyMessagePreset(step, $event)"
+            />
+          </div>
           <label class="with-help">
             {{ $t('connections.messageSequenceSet') }}
             <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
@@ -259,6 +273,7 @@ import PresetPicker from '@/components/PresetPicker.vue'
 import type { PresetOption } from '@/components/PresetPicker.vue'
 import { isValidCondition } from '@/utils/jmesPathCondition'
 import { cloneMessageSequence } from '@/utils/messageSequenceExamples'
+import { getMessagePresets } from '@/utils/configProfiles'
 
 const createId = (): string => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -402,6 +417,32 @@ export default class MessageSequenceEditor extends Vue {
 
   private applyStepTopic(step: MessageSequenceStepModel, topic: string) {
     step.topic = topic
+    this.emitChange()
+  }
+
+  /** Message presets copied onto a step. Reloaded when a picker opens. */
+  private messagePresets: MessagePresetModel[] = []
+
+  /** One row per message preset. The topic is what tells two payloads apart. */
+  get messagePresetOptions(): PresetOption[] {
+    return this.messagePresets.map((preset) => ({ id: preset.id, name: preset.name, summary: preset.topic }))
+  }
+
+  private loadMessagePresets() {
+    this.messagePresets = getMessagePresets()
+  }
+
+  /**
+   * A message preset fills this step's topic and payload together. Delay, QoS, retain and the
+   * assignments stay, and a later topic preset can still replace only the topic.
+   */
+  private applyMessagePreset(step: MessageSequenceStepModel, id: string) {
+    const preset = this.messagePresets.find((item) => item.id === id)
+    if (!preset) {
+      return
+    }
+    step.topic = preset.topic
+    step.payload = preset.payload
     this.emitChange()
   }
 
