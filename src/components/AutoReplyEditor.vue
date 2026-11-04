@@ -321,7 +321,7 @@ export default class AutoReplyEditor extends Vue {
     // The value that comes back is the *cleaned* copy this editor emitted: a rule the user just
     // added has no name and no topic filter yet, so it was stripped from it. Rebuilding the rules
     // from that copy would delete the rule under the user's cursor the moment it is created, which
-    // made "添加回复规则" look like a dead button.
+    // made "添加回复" look like a dead button.
     const incoming = JSON.stringify(value ?? [])
     if (incoming === this.lastEmitted || incoming === JSON.stringify(this.rules ?? [])) {
       return

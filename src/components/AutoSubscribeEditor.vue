@@ -133,7 +133,7 @@ export default class AutoSubscribeEditor extends Vue {
   private handleValueChanged(value: AutoSubscribeGroupModel[] | null | undefined) {
     // The value that comes back is the *cleaned* copy this editor emitted: the row the user just
     // added is still empty, so it was stripped from it. Rebuilding the rows from that copy would
-    // delete the row under the user's cursor the moment it is created, which made "添加一组" and
+    // delete the row under the user's cursor the moment it is created, which made "添加订阅" and
     // "添加 topic" look like dead buttons.
     const incoming = JSON.stringify(value ?? [])
     if (incoming === this.lastEmitted || incoming === JSON.stringify(this.groups ?? [])) {
