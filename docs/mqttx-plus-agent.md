@@ -41,16 +41,19 @@ Add it to your local MCP client and connect. The port is between 21883 and 21892
 was free; always use the URL the human gave you rather than assuming a port. If your client only
 speaks the older transport, use `type: "sse"` with the `/sse` URL from the same panel.
 
-Then call `get_connection` and report back before doing anything else. It returns the connection's
-name, broker, client id, whether it is connected, its subscriptions, its variables with current
-values, the rules it answers by itself, and its message sequences.
+Then call `get_connection` and report back before doing anything else. You can only use a connection
+the app has already connected. You cannot open one.
+
+With one connection connected, `get_connection` returns that connection: name, broker, client id,
+subscriptions, variables with current values, the rules it answers by itself, and its message
+sequences. With several, it returns `{ connections: [...] }`. Pass `connectionId` on later calls.
 
 ## Tools
 
 | tool | what it does | notes |
 | --- | --- | --- |
-| `get_connection` | snapshot of the open connection | no arguments; call it again whenever the human may have switched connections |
-| `publish` | send one message through the app | goes through the app's variable and script pipeline, appears in the message list marked Agent |
+| `get_connection` | connected connections | no id lists them; with one connected connection the result is that snapshot. Pass `connectionId` to read one of several. Does not connect |
+| `publish` | send one message through a connected client | variables are filled from that connection. The connection on screen also runs its publish script and schema. Appears in that connection's message list marked Agent |
 | `list_messages` | read recent messages | stored history plus what just arrived; filters: `topic`, `direction`, `contains`, `afterId`, `limit` |
 | `wait_for_message` | wait for the next matching message | use instead of polling; `timeoutMs` default 10000, max 60000 |
 | `start_sequence` | run a saved message sequence | by id or name; steps and delays stay in the app |
@@ -59,10 +62,10 @@ values, the rules it answers by itself, and its message sequences.
 `publish` replaces `${name}` placeholders using the connection's variables, the same way the publish
 panel does. Send the template, not a value you computed yourself; the app's counters advance on send.
 
-It also passes through whatever publish script or data schema the connection has configured, and the
-result is what actually reaches the broker. That is deliberate: the point is to exercise the same
-path the human would. It also means a script can drop or rewrite your message, so read the error
-instead of assuming success.
+When the connection is the one on screen, the publish also passes through that page's script or data
+schema, and the result is what reaches the broker. A script can drop or rewrite the message, so read
+the error instead of assuming success. A connected connection that is not on screen is sent as UTF-8
+text after variables are filled; its script is not applied.
 
 ### Reading messages
 
@@ -88,19 +91,19 @@ After a publish, call `wait_for_message` rather than looping on `list_messages`.
 
 ## Staying on the right connection
 
-Every tool accepts `connectionId`. Pass the id from your `get_connection`, and pass it every time.
+Every tool accepts `connectionId`. Pass the id from `get_connection`.
 
-The bridge follows the window the human is looking at. If they switch to another connection, your
-call fails with a message naming the connection that is now showing, and nothing is published to the
-wrong device. When that happens, call `get_connection` again and re-read what you are working with.
-Do not retry the same call without the fresh id.
+The bridge can use every connection that is already connected, including ones that are not on screen.
+Switching the page does not retarget your call and does not cancel a wait. When more than one is
+connected, a call without `connectionId` fails and names the connected ones. A connection that is
+not connected is refused. Do not ask the app to connect it, and do not open your own MQTT client.
 
 ## What you cannot do
 
 - **Cannot change configuration.** Subscriptions, variables, automatic replies and sequence
   definitions are read-only for you. Starting or stopping a sequence is allowed; editing one is not.
-- **Cannot reach another connection.** One bridge serves the focused window only. Two connections can
-  be online in the app, but no call reaches the one you are not looking at.
+- **Cannot open a connection.** Only a client the app has already connected can be published to,
+  read, or used to start a sequence. Ask the human to connect it.
 - **Cannot pick a payload format.** `publish` sends UTF-8 text. Hex, Base64, CBOR and MsgPack, and
   MQTT 5 properties are not available through the bridge. If the verification needs them, ask the
   human to send from the panel.
@@ -144,10 +147,10 @@ rejected the payload, or the connection changed under you.
 
 | message | meaning | what to do |
 | --- | --- | --- |
-| `The connection is not connected` | the app's client is offline | ask the human to connect; do not send from your own client |
+| `No connection is connected` / `No connected connection has id` | that client is offline, or none are | ask the human to connect; the agent cannot open a connection |
 | `Unresolved variables: a, b` | no value for those placeholders on this connection | read `get_connection`; use names the connection actually defines, or ask the human |
 | `The publish script or schema rejected the payload` | the configured transform refused it | change the payload or ask the human; the message was not sent |
-| `The open connection changed: it is now "X" (id), not Y` | the human switched connections | call `get_connection` again |
+| `connectionId is required when more than one connection is connected` | several clients are online and the call did not name one | pass `connectionId` from `get_connection` |
 | `No message sequence named "..." on this connection` | wrong id or name | use the id from `get_connection` |
 | `Open a connection in MQTTX Plus` | no connection page is open | ask the human to open the connection |
 | `MQTTX Plus did not answer in time` | the page did not respond | ask the human to check the app window |

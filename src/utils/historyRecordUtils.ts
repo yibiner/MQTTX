@@ -63,6 +63,8 @@ export const savePublishedMessageHistory = async (
     retain: boolean
     /** the payload as the user configured it, i.e. the template of a timed message */
     payload?: string
+    /** Stored on the message row, e.g. `{ "agent": true }` for a bridge publish. */
+    meta?: string
   },
   publishedPayload: string | Buffer | undefined,
   type: PayloadType,
@@ -97,6 +99,7 @@ export const savePublishedMessageHistory = async (
         payload: publishedPayload.toString(),
         qos: template.qos,
         retain: template.retain,
+        meta: template.meta,
       },
     ],
     connectionId,

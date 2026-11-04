@@ -1,18 +1,17 @@
 /**
  * The shape of the local MCP bridge, shared by the connection view and the main-process server.
  *
- * An external agent publishes and reads through the connection that is on screen. Subscriptions,
- * variables and message sequences stay in this app, so the objects below are a view of that
- * connection, never a second copy of its state.
+ * An external agent publishes and reads through connections the app has already connected.
+ * It cannot open one. Subscriptions, variables and message sequences stay in this app, so the
+ * objects below are a view of that connection, never a second copy of its state.
  *
  * Two rules shape the tool surface:
  *
- *   - Reading is independent of the view. `list_messages` answers from the stored messages plus the
- *     pages's own log, so scrolling, the direction tab, the topic filter and the search box change
- *     nothing an agent can see. A verification run must not lose a reply because the list was
- *     scrolled up.
- *   - Every call can name the connection it expects. A different one on screen is refused instead
- *     of quietly sending to another device.
+ *   - Reading is independent of which connection is on screen. `list_messages` answers from the
+ *     stored messages plus that connection's own log, so scrolling, the direction tab, the topic
+ *     filter and the search box change nothing an agent can see.
+ *   - A call names the connection by id. With one connection connected, the id can be omitted.
+ *     A connection that is not connected is refused, and the agent does not connect it.
  */
 import { matchTopicMethod } from '@/utils/topicMatch'
 
@@ -21,7 +20,7 @@ export interface AgentPublishInput {
   payload: string
   qos: 0 | 1 | 2
   retain: boolean
-  /** Optional guard: the call is refused when the open connection has another id. */
+  /** Which connected connection to use. Required when more than one is connected. */
   connectionId?: string
 }
 

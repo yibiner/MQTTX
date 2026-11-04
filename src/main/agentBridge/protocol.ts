@@ -1,9 +1,9 @@
 /**
- * MCP tool surface for the connection that is open in MQTTX Plus.
+ * MCP tool surface for the connections that are already connected in MQTTX Plus.
  *
  * The server speaks the methods both transports need (initialize, tools/list, tools/call). It does
- * not open an MQTT session of its own: every tool is answered by the window that is showing the
- * connection, which is also what puts a publish into the message list.
+ * not open an MQTT session of its own, and it cannot connect one: every tool is answered by a
+ * client the app has already connected.
  *
  * Reading is deliberately not tied to the view: `list_messages` and `wait_for_message` see the
  * stored messages of the connection plus what the page just received, so the direction tab, the
@@ -19,12 +19,12 @@ export interface AgentSequenceTarget {
   sequence?: string
   id?: string
   name?: string
-  /** Guard against acting on another connection than the one that was read. */
+  /** Which connected connection to use. Required when more than one is connected. */
   connectionId?: string
 }
 
 export interface AgentBridgeTools {
-  getConnection(): Promise<unknown>
+  getConnection(input?: { connectionId?: string }): Promise<unknown>
   publish(input: AgentPublishInput): Promise<unknown>
   listMessages(
     input: AgentMessageFilter & { limit?: number; afterId?: string; connectionId?: string },
@@ -61,30 +61,32 @@ const DEFAULT_PROTOCOL_VERSION = '2025-03-26'
 const CONNECTION_ID_PROPERTY = {
   type: 'string',
   description:
-    'Optional. The connectionId returned by get_connection. When the app is now showing another connection, the call is refused instead of sending to the wrong device.',
+    'The connectionId from get_connection. Required when more than one connection is connected. The agent can only use a connection that is already connected, and cannot open one.',
 }
 
 export const AGENT_BRIDGE_INSTRUCTIONS =
-  'You are using the MQTT connection currently open in MQTTX Plus. ' +
-  'Publish, read messages and run its saved message sequences with these tools. Subscriptions, variables, automatic replies and message sequences stay in the app; do not recreate them or open your own MQTT client. ' +
+  'You are using MQTT connections that are already connected in MQTTX Plus. ' +
+  'You cannot open a connection. Publish, read messages and run saved message sequences with these tools. Subscriptions, variables, automatic replies and message sequences stay in the app; do not recreate them or open your own MQTT client. ' +
   "A publish is shown in that connection's message list, and the tool result is the text the list shows. " +
-  'list_messages and wait_for_message see every message of the connection, independent of the filters and the scroll position of the list. ' +
-  'Pass the connectionId from get_connection on later calls: if the user switched connections meanwhile, the call fails instead of acting on another device, and you should call get_connection again.'
+  'list_messages and wait_for_message see every message of the connection you named, independent of which connection is on screen and of the filters and the scroll position of the list. ' +
+  'Call get_connection first. With one connected connection it returns that connection. With several it returns a list: pass connectionId on later calls. A connection that is not connected is refused.'
 
 const TOOLS = [
   {
     name: 'get_connection',
     description:
-      'Read the MQTT connection currently open in MQTTX Plus: name, broker, client id, whether it is connected, its subscriptions, the names and current values of its variables, the rules it answers by itself, and its message sequences (with whether one is running). This is the simulated device. Do not copy its variables or sequences, and do not connect to the broker yourself.',
+      'Read MQTT connections that are already connected in MQTTX Plus. With no connectionId: one connected connection returns its snapshot (name, broker, client id, subscriptions, variable values, automatic replies, message sequences); more than one returns { connections: [...] }. With connectionId: the snapshot of that connected connection. Does not open a connection. Do not copy its variables or sequences, and do not connect to the broker yourself.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        connectionId: CONNECTION_ID_PROPERTY,
+      },
     },
   },
   {
     name: 'publish',
     description:
-      "Publish one message through the open connection, the same way the publish panel does. The message is appended to that connection's message list and marked Agent. The result is the topic and payload the list shows, after ${name} placeholders are filled from the connection's variables. payload is UTF-8 text.",
+      "Publish one message through a connection that is already connected. The message is appended to that connection's message list and marked Agent. The result is the topic and payload after ${name} placeholders are filled from that connection's variables. payload is UTF-8 text. Does not open a connection.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -100,7 +102,7 @@ const TOOLS = [
   {
     name: 'list_messages',
     description:
-      'Read the recent messages of the open connection, oldest first, newest `limit`. This is the stored history plus what arrived a moment ago, so the direction tab, the topic filter, the search box and the scroll position of the list do not affect it. Pass afterId of the last message you saw to read only newer ones. When cursorReset is true, that id is older than the returned window and the messages are the newest page.',
+      'Read the recent messages of a connected connection, oldest first, newest `limit`. This is the stored history plus what arrived a moment ago, so which connection is on screen, and the direction tab, the topic filter, the search box and the scroll position of the list, do not affect it. Pass afterId of the last message you saw to read only newer ones. When cursorReset is true, that id is older than the returned window and the messages are the newest page.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -120,7 +122,7 @@ const TOOLS = [
   {
     name: 'wait_for_message',
     description:
-      'Wait for the next message the open connection receives or publishes that matches the filter, and return it. Use it instead of polling after a publish. Resolves with matched true as soon as one arrives; on timeout it returns matched false and a hint, and the connection is still fine.',
+      'Wait for the next message a connected connection receives or publishes that matches the filter, and return it. Use it instead of polling after a publish. Resolves with matched true as soon as one arrives; on timeout it returns matched false and a hint. Switching the connection on screen does not cancel the wait.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -144,7 +146,7 @@ const TOOLS = [
   {
     name: 'start_sequence',
     description:
-      'Start one of the message sequences saved on the open connection, by id or by name. This is the same run the user starts from the app: the steps, their delays and the variable writes stay in the app. Returns the sequence state.',
+      'Start one of the message sequences saved on a connected connection, by id or by name. This is the same run the user starts from the app: the steps, their delays and the variable writes stay in the app. Returns the sequence state. Does not open a connection.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -157,7 +159,7 @@ const TOOLS = [
   {
     name: 'stop_sequence',
     description:
-      'Stop a running message sequence of the open connection, by id or by name. Steps that have not been sent yet are dropped.',
+      'Stop a running message sequence of a connected connection, by id or by name. Steps that have not been sent yet are dropped.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -168,6 +170,15 @@ const TOOLS = [
     },
   },
 ]
+
+export function parseGetConnectionArguments(args: unknown): { connectionId?: string } {
+  if (args === undefined || args === null) {
+    return {}
+  }
+  const record = objectArguments(args, 'get_connection')
+  const connectionId = optionalString(record.connectionId, 'connectionId')
+  return connectionId ? { connectionId } : {}
+}
 
 export function parsePublishArguments(args: unknown): AgentPublishInput {
   const record = objectArguments(args, 'publish')
@@ -370,7 +381,7 @@ async function callTool(
   const args = params?.arguments
   try {
     if (name === 'get_connection') {
-      return toolText(await tools.getConnection())
+      return toolText(await tools.getConnection(parseGetConnectionArguments(args)))
     }
     if (name === 'publish') {
       return toolText(await tools.publish(parsePublishArguments(args)))

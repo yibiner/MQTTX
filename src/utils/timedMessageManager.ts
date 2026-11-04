@@ -11,6 +11,8 @@ import {
   payloadTypeSupportsVariables,
 } from '@/utils/payloadVariables'
 import { hasMessageHeaderID, savePublishedMessageHistory } from '@/utils/historyRecordUtils'
+import { toAgentMessage } from '@/utils/agentBridge'
+import { recordAgentMessages } from '@/utils/agentRegistry'
 import { setRendererScheduling } from '@/utils/rendererScheduling'
 import { DEFAULT_HISTORY_MAX_COUNT } from '@/utils/data'
 
@@ -283,7 +285,19 @@ async function publishWithoutView(connectionId: string, message: MessageModel, t
     client.publish(wireTopic, wirePayload, { qos: message.qos, retain: message.retain }, (err: Error | undefined) => {
       if (err) {
         getLog().error(`Timed message publish failed: ${err.toString()}`)
+        return
       }
+      // The connection page only renders the connection on screen, so a timed tick of another
+      // connected client would never reach that client's agent feed. Record it here on success.
+      recordAgentMessages(connectionId, [
+        toAgentMessage({
+          ...message,
+          out: true,
+          topic: wireTopic,
+          payload: wirePayload.toString(),
+          createAt: message.createAt || time.getNowDate(),
+        }),
+      ])
     })
   } catch (error) {
     getLog().error(`Timed message publish failed: ${(error as Error).toString()}`)

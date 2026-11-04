@@ -160,7 +160,10 @@
                 </p>
                 <template v-if="agentBridgeEnabled && agentBridgeConfig">
                   <pre>{{ agentBridgeConfig }}</pre>
-                  <p class="agent-bridge-sse">{{ $t('connections.agentBridgeSse', { url: agentBridgeSseUrl }) }}</p>
+                  <p class="agent-bridge-sse">
+                    <span>{{ $t('connections.agentBridgeSse') }}</span>
+                    <code>{{ agentBridgeSseUrl }}</code>
+                  </p>
                   <div class="agent-bridge-actions">
                     <el-button size="mini" native-type="button" @click="copyAgentBridgeConfig">
                       {{ $t('connections.agentBridgeCopy') }}
@@ -468,7 +471,6 @@ import { hasMessageHeaderID } from '@/utils/historyRecordUtils'
 import useServices from '@/database/useServices'
 import { getMessageId, getSubscriptionId } from '@/utils/idGenerator'
 import {
-  agentConnectionMismatch,
   clampMessageLimit,
   describeConnection,
   filterAgentMessages,
@@ -484,8 +486,19 @@ import type {
   AgentWaitOptions,
   AgentWaitResult,
 } from '@/utils/agentBridge'
-import { AgentMessageFeed } from '@/utils/agentMessageFeed'
 import { attachAgentBridge, detachAgentBridge, focusAgentBridge, AgentBridgeHandler } from '@/utils/agentBridgeClient'
+import {
+  AGENT_CHOOSE_CONNECTION,
+  agentClient,
+  agentFeedFor,
+  connectedAgentConnections,
+  forgetAgentConnection,
+  recordAgentMessages,
+  rememberAgentConnection,
+  resolveAgentConnection,
+  settleAgentWaits,
+} from '@/utils/agentRegistry'
+import { savePublishedMessageHistory } from '@/utils/historyRecordUtils'
 import getContextmenuPosition from '@/utils/getContextmenuPosition'
 import { deserializeBufferToProtobuf, printObjectAsString, serializeProtobufToBuffer } from '@/utils/protobuf'
 import { jsonStringify } from '@/utils/jsonUtils'
@@ -630,14 +643,6 @@ export default class ConnectionsDetail extends Vue {
   private agentBridgeSseUrl = ''
   private agentBridgeError = ''
   private agentBridgeHandler: AgentBridgeHandler | null = null
-  /**
-   * Every message this page handled for the connection on screen, and the agents waiting for the
-   * next one. Kept apart from `recordMsgs.list`, which is filtered by the visible tab, topic and
-   * search box and stops growing while the user scrolled up.
-   */
-  private agentFeed = new AgentMessageFeed()
-  /** Which connection the feed is recording; the view is reused when the user switches. */
-  private agentFeedConnectionId = ''
   /** Last tool call, shown in the panel so a message in the list can be matched to a call. */
   private agentBridgeLastCall: { tool: string; error: string; at: string } | null = null
   private receivedMsgType: PayloadType = this.getReceivedMsgType()
@@ -765,6 +770,7 @@ export default class ConnectionsDetail extends Vue {
       registerAutoReply(this.record.id, this.record)
       registerMessageSequences(this.record.id, this.record)
       updateConnectSubscriptions(this.record.id, this.record)
+      this.syncAgentConnection()
     }
   }
 
@@ -853,6 +859,7 @@ export default class ConnectionsDetail extends Vue {
         // view: attached here (next to the client) they keep working when the user opens another page.
         attachAutoReply(curConnectClient as MqttClient, id)
         attachMessageSequences(curConnectClient as MqttClient, id)
+        this.syncAgentConnection(curConnectClient as MqttClient)
         this.client.on('connect', (conBack) => this.onConnect(conBack, { id, client: curConnectClient, mqttVersion }))
         this.client.on('error', this.onError)
         this.client.on('reconnect', this.onReConnect)
@@ -911,6 +918,7 @@ export default class ConnectionsDetail extends Vue {
               detachConnectSubscriptions(connection.id)
               unregisterAutoReply(connection.id)
               unregisterMessageSequences(connection.id)
+              forgetAgentConnection(connection.id)
               this.removeActiveConnection({ id: connection.id })
               this.$log.info(
                 `Successfully removed MQTTX connection ${connection.name}@${connection.host} with clientID ${connection.clientId}`,
@@ -1078,13 +1086,8 @@ export default class ConnectionsDetail extends Vue {
 
   // Get current connection
   private getConnectionValue(id: string) {
-    // The page is reused across connections: the messages recorded for the previous one must not
-    // answer for this one, and an agent waiting on it must not be left hanging.
-    if (this.agentFeedConnectionId && this.agentFeedConnectionId !== id) {
-      this.agentFeed.settleAll('The connection page switched to another connection. Call get_connection again.')
-      this.agentFeed.clear()
-    }
-    this.agentFeedConnectionId = id
+    // The page is reused across connections. Each connected client keeps its own agent feed, so
+    // switching the page must not cancel a wait on another connection.
     const currentActiveConnection = this.activeConnection[id]
     const $clientInfoVisible: boolean | undefined = this.clientInfoVisibles[id]
     if ($clientInfoVisible === undefined) {
@@ -1996,11 +1999,13 @@ export default class ConnectionsDetail extends Vue {
       // Convert single message to array if needed
       if (!Array.isArray(msgs)) msgs = [msgs]
 
-      // The local agent observes the connection, not this list: record before any filter,
-      // scroll check or unread shortcut below can drop or defer the row.
-      if (id === this.curConnectionId) {
-        this.agentFeed.record(msgs.map((message) => toAgentMessage(message)))
-      }
+      // The local agent observes each connection, not this list: record before any filter,
+      // scroll check or unread shortcut below can drop or defer the row. A connection that is
+      // not on screen still feeds its own waiters.
+      recordAgentMessages(
+        id,
+        msgs.map((message) => toAgentMessage(message)),
+      )
 
       // Handle unread messages for non-current connections
       const unreadMsgIncrement = (count: number) => this.unreadMessageIncrement({ id, increasedCount: count })
@@ -2343,9 +2348,15 @@ export default class ConnectionsDetail extends Vue {
     if (typeof input.payload !== 'string') {
       return Promise.reject(new Error('payload must be a string'))
     }
-    return this.runAgentCall('publish', input.connectionId, async () => {
+    return this.runAgentCall('publish', async () => {
+      const target = resolveAgentConnection(input.connectionId)
+      // The page pipeline (publish script, schema) belongs to the connection on screen.
+      // Another connected client is published directly, with that connection's variables.
+      if (target.id !== this.curConnectionId) {
+        return this.publishToConnectedAgent(target.id, topic, input.payload, input.qos, input.retain === true)
+      }
       if (!this.client.connected || typeof this.client.publish !== 'function') {
-        throw new Error('The connection is not connected')
+        throw new Error(`The connection is not connected. The agent cannot open a connection.`)
       }
       const qos = input.qos
       const retain = input.retain === true
@@ -2399,26 +2410,46 @@ export default class ConnectionsDetail extends Vue {
     })
   }
 
-  private describeForAgent() {
-    return this.runAgentCall('get_connection', undefined, () => {
-      if (!this.record || !this.record.id) {
-        throw new Error('The connection is still loading')
+  private describeForAgent(input?: { connectionId?: string }) {
+    return this.runAgentCall('get_connection', async () => {
+      if (input?.connectionId) {
+        const target = resolveAgentConnection(input.connectionId)
+        return this.snapshotForAgent(target.id)
       }
-      return describeConnection({
-        id: this.record.id,
-        name: this.record.name,
-        clientId: this.record.clientId,
-        protocol: this.record.protocol,
-        host: this.record.host,
-        port: this.record.port,
-        path: this.record.path,
-        connected: this.client.connected === true,
-        subscriptions: this.record.subscriptions,
-        messageSequences: this.record.messageSequences,
-        runningSequenceIds: this.runningSequenceIds,
-        variables: connectionVariableSnapshot(this.record),
-        autoReplies: this.record.autoReplies,
-      })
+      const connected = connectedAgentConnections()
+      if (connected.length === 0) {
+        throw new Error('No connection is connected. The agent cannot open a connection.')
+      }
+      if (connected.length === 1) {
+        return this.snapshotForAgent(connected[0].id)
+      }
+      const connections = []
+      for (const item of connected) {
+        connections.push(await this.snapshotForAgent(item.id))
+      }
+      return { connections, hint: AGENT_CHOOSE_CONNECTION }
+    })
+  }
+
+  /** Snapshot of one connected connection. Does not connect it, and does not change which one opens next. */
+  private async snapshotForAgent(connectionId: string) {
+    const target = resolveAgentConnection(connectionId)
+    const record = await this.connectionRecordForAgent(target.id)
+    rememberAgentConnection(record.id as string, record.name, agentClient(target.id))
+    return describeConnection({
+      id: record.id,
+      name: record.name,
+      clientId: record.clientId,
+      protocol: record.protocol,
+      host: record.host,
+      port: record.port,
+      path: record.path,
+      connected: true,
+      subscriptions: record.subscriptions,
+      messageSequences: record.messageSequences,
+      runningSequenceIds: runningMessageSequenceIds(target.id),
+      variables: connectionVariableSnapshot(record),
+      autoReplies: record.autoReplies,
     })
   }
 
@@ -2438,14 +2469,15 @@ export default class ConnectionsDetail extends Vue {
     contains?: string
     connectionId?: string
   }): Promise<AgentMessagePage> {
-    return this.runAgentCall('list_messages', input.connectionId, async () => {
+    return this.runAgentCall('list_messages', async () => {
+      const target = resolveAgentConnection(input.connectionId)
       const limit = clampMessageLimit(input.limit)
       const filter: AgentMessageFilter = {}
       if (input.topic) filter.topic = input.topic
       if (input.direction) filter.direction = input.direction
       if (input.contains) filter.contains = input.contains
-      const stored = await this.readStoredAgentMessages(limit)
-      const merged = mergeAgentMessages(stored, this.agentFeed.messages)
+      const stored = await this.readStoredAgentMessages(limit, target.id)
+      const merged = mergeAgentMessages(stored, agentFeedFor(target.id)?.messages ?? [])
       const { rows, cursorReset } = messagesAfter(merged, input.afterId)
       return { messages: filterAgentMessages(rows, filter).slice(-limit), cursorReset }
     })
@@ -2466,21 +2498,26 @@ export default class ConnectionsDetail extends Vue {
     timeoutMs?: number
     connectionId?: string
   }): Promise<AgentWaitResult> {
-    return this.runAgentCall('wait_for_message', input.connectionId, async () => {
+    return this.runAgentCall('wait_for_message', async () => {
+      const target = resolveAgentConnection(input.connectionId)
+      const feed = agentFeedFor(target.id)
+      if (!feed) {
+        throw new Error(`No connected connection has id ${target.id}. The agent cannot open a connection.`)
+      }
       const options: AgentWaitOptions = { ...input }
       if (input.afterId) {
-        const createAt = await this.findAgentMessageCreateAt(input.afterId)
+        const createAt = await this.findAgentMessageCreateAt(input.afterId, feed)
         if (createAt) {
           options.afterCreateAt = createAt
         }
       }
-      return this.agentFeed.wait(options)
+      return feed.wait(options)
     })
   }
 
-  /** `createAt` of a message the agent names, from the page feed or from the store. */
-  private async findAgentMessageCreateAt(id: string): Promise<string | undefined> {
-    const held = this.agentFeed.messages.find((message) => message.id === id)
+  /** `createAt` of a message the agent names, from that connection's feed or from the store. */
+  private async findAgentMessageCreateAt(id: string, feed: { messages: AgentDisplayedMessage[] }): Promise<string | undefined> {
+    const held = feed.messages.find((message) => message.id === id)
     if (held) {
       return held.createAt
     }
@@ -2496,19 +2533,21 @@ export default class ConnectionsDetail extends Vue {
 
   /** Starts a saved sequence of this connection, exactly like the run button does. */
   private startSequenceForAgent(input: { sequence?: string; connectionId?: string }): Promise<unknown> {
-    return this.runAgentCall('start_sequence', input.connectionId, () => {
-      const sequence = this.findAgentSequence(input.sequence)
+    return this.runAgentCall('start_sequence', async () => {
+      const target = resolveAgentConnection(input.connectionId)
+      const record = await this.connectionRecordForAgent(target.id)
+      const sequence = this.findSequenceOn(record, input.sequence)
       if (!sequence) {
         throw new Error(`No message sequence named "${input.sequence}" on this connection`)
-      }
-      if (!this.client.connected) {
-        throw new Error('The connection is not connected')
       }
       if (sequence.enabled === false) {
         throw new Error(`Message sequence "${sequence.name}" is disabled`)
       }
-      const started = startMessageSequence(this.record.id as string, sequence.id)
-      this.runningSequenceIds = runningMessageSequenceIds(this.record.id as string)
+      registerMessageSequences(target.id, record)
+      const started = startMessageSequence(target.id, sequence.id)
+      if (target.id === this.curConnectionId) {
+        this.runningSequenceIds = runningMessageSequenceIds(target.id)
+      }
       if (!started) {
         throw new Error(`Message sequence "${sequence.name}" has no steps or could not start`)
       }
@@ -2523,49 +2562,130 @@ export default class ConnectionsDetail extends Vue {
   }
 
   private stopSequenceForAgent(input: { sequence?: string; connectionId?: string }): Promise<unknown> {
-    return this.runAgentCall('stop_sequence', input.connectionId, () => {
-      const sequence = this.findAgentSequence(input.sequence)
+    return this.runAgentCall('stop_sequence', async () => {
+      const target = resolveAgentConnection(input.connectionId)
+      const record = await this.connectionRecordForAgent(target.id)
+      const sequence = this.findSequenceOn(record, input.sequence)
       if (!sequence) {
         throw new Error(`No message sequence named "${input.sequence}" on this connection`)
       }
-      stopMessageSequence(this.record.id as string, sequence.id)
-      this.runningSequenceIds = runningMessageSequenceIds(this.record.id as string)
+      stopMessageSequence(target.id, sequence.id)
+      const running = runningMessageSequenceIds(target.id)
+      if (target.id === this.curConnectionId) {
+        this.runningSequenceIds = running
+      }
       return {
         sequenceId: sequence.id,
         name: sequence.name,
-        running: this.runningSequenceIds.includes(sequence.id),
+        running: running.includes(sequence.id),
         hint: 'Steps that had not been sent yet were dropped.',
       }
     })
   }
 
-  /** A sequence by id or by name; the id wins when both could match. */
-  private findAgentSequence(identifier?: string): MessageSequenceModel | undefined {
+  /** A sequence on one connection, by id or by name; the id wins when both could match. */
+  private findSequenceOn(record: ConnectionModel, identifier?: string): MessageSequenceModel | undefined {
     const wanted = (identifier || '').trim()
     if (!wanted) {
       return undefined
     }
-    const sequences = this.record?.messageSequences ?? []
+    const sequences = record.messageSequences ?? []
     return (
       sequences.find((sequence) => sequence.id === wanted) || sequences.find((sequence) => sequence.name === wanted)
     )
   }
 
   /**
-   * Runs one tool call for the panel's "last call" line and refuses it when the agent asked for a
-   * connection that is not the one on screen any more.
+   * The connection the agent is operating on.
+   * The one on screen uses the record the page is showing. Any other connected one is loaded
+   * without changing which connection the app opens next.
    */
-  private async runAgentCall<T>(
-    tool: string,
-    expectedConnectionId: string | undefined,
-    run: () => Promise<T> | T,
-  ): Promise<T> {
-    const mismatch = agentConnectionMismatch(expectedConnectionId, this.record)
-    const at = time.getNowDate('HH:mm:ss')
-    if (mismatch) {
-      this.agentBridgeLastCall = { tool, error: this.$t('connections.agentBridgeCallRefused') as string, at }
-      throw new Error(mismatch)
+  private async connectionRecordForAgent(connectionId: string): Promise<ConnectionModel> {
+    if (connectionId === this.curConnectionId && this.record?.id === connectionId) {
+      return this.record
     }
+    return this.recordForAgent(connectionId)
+  }
+
+  /** The saved connection, without changing which connection the app opens next. */
+  private async recordForAgent(connectionId: string): Promise<ConnectionModel> {
+    const { connectionService } = useServices()
+    const record = await connectionService.findModel(connectionId)
+    if (!record?.id) {
+      throw new Error(`No connected connection has id ${connectionId}. The agent cannot open a connection.`)
+    }
+    return record
+  }
+
+  /**
+   * Publishes through a connected client that is not the one on screen.
+   * Variables are filled from that connection. Its publish script stays on the page, so this path
+   * sends the filled UTF-8 text.
+   */
+  private async publishToConnectedAgent(
+    connectionId: string,
+    topic: string,
+    payload: string,
+    qos: 0 | 1 | 2,
+    retain: boolean,
+  ): Promise<AgentDisplayedMessage> {
+    const client = agentClient(connectionId)
+    if (!client?.connected || typeof client.publish !== 'function') {
+      throw new Error(`No connected connection has id ${connectionId}. The agent cannot open a connection.`)
+    }
+    const { connectionService } = useServices()
+    const source = await connectionService.getVariableSource(connectionId)
+    const variableOptions = connectionVariableOptions(source)
+    const unresolved = this.findUnresolvedVariables(variableOptions, topic, payload, 'Plaintext')
+    if (unresolved.length) {
+      throw new Error(`Unresolved variables: ${unresolved.join(', ')}`)
+    }
+    const resolver = createPayloadVariableResolver(variableOptions)
+    const publishTopic = resolver.resolve(topic)
+    const filledPayload = resolver.resolve(payload)
+    await new Promise<void>((resolve, reject) => {
+      client.publish!(publishTopic, filledPayload, { qos, retain }, (error?: Error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+        resolve()
+      })
+    })
+    resolver.commit()
+    const published: MessageModel = {
+      id: getMessageId(),
+      out: true,
+      createAt: time.getNowDate(),
+      topic: publishTopic,
+      payload: filledPayload,
+      qos,
+      retain,
+      meta: JSON.stringify({ agent: true }),
+    }
+    recordAgentMessages(connectionId, [toAgentMessage(published)])
+    this.unreadMessageIncrement({ id: connectionId, increasedCount: 1 })
+    await savePublishedMessageHistory(connectionId, published, filledPayload, 'Plaintext', publishTopic)
+    return toAgentMessage(published)
+  }
+
+  /** Keeps the agent table pointed at the client of the connection this page last connected. */
+  private syncAgentConnection(client?: MqttClient) {
+    const id = this.record?.id
+    if (!id) {
+      return
+    }
+    const active = this.activeConnection[id]?.client
+    const chosen = client && typeof client.publish === 'function' ? client : active
+    rememberAgentConnection(id, this.record.name, chosen)
+  }
+
+  /**
+   * Runs one tool call for the panel's "last call" line.
+   * Which connection is used is decided inside `run`, from the connections that are already up.
+   */
+  private async runAgentCall<T>(tool: string, run: () => Promise<T> | T): Promise<T> {
+    const at = time.getNowDate('HH:mm:ss')
     try {
       const result = await run()
       this.agentBridgeLastCall = { tool, error: '', at }
@@ -2576,9 +2696,9 @@ export default class ConnectionsDetail extends Vue {
     }
   }
 
-  /** The stored messages of the connection, oldest first, newest `limit`. */
-  private async readStoredAgentMessages(limit: number): Promise<AgentDisplayedMessage[]> {
-    const id = this.record?.id
+  /** The stored messages of one connection, oldest first, newest `limit`. */
+  private async readStoredAgentMessages(limit: number, connectionId: string): Promise<AgentDisplayedMessage[]> {
+    const id = connectionId
     if (!id) {
       return []
     }
@@ -2599,7 +2719,7 @@ export default class ConnectionsDetail extends Vue {
       return
     }
     const handler: AgentBridgeHandler = {
-      getConnection: () => this.describeForAgent(),
+      getConnection: (input) => this.describeForAgent(input),
       publish: (input) => this.publishFromAgent(input),
       listMessages: (input) => this.listMessagesForAgent(input),
       waitForMessage: (input) => this.waitForMessageForAgent(input),
@@ -3035,6 +3155,10 @@ export default class ConnectionsDetail extends Vue {
       // A client no longer carries only this view's listeners: the automatic replies subscribe to
       // `message` on the client itself (see autoReplyEngine.attachAutoReply), so "the client has no
       // message listener" would wrongly mean "this view is already rendering it". Ask this view.
+      if (client.connected && typeof client.publish === 'function') {
+        const name = connectionID === this.record?.id ? this.record.name : ''
+        rememberAgentConnection(connectionID, name, client)
+      }
       if (client.connected && !this.messageListenerSubscriptions.has(connectionID)) {
         this.onMessageArrived(client, connectionID)
       }
@@ -3201,8 +3325,8 @@ export default class ConnectionsDetail extends Vue {
       detachAgentBridge(this.agentBridgeHandler)
       this.agentBridgeHandler = null
     }
-    // An agent still waiting for a message of this page must be told, not left on a dead channel.
-    this.agentFeed.settleAll('The connection page was closed. Open the connection again in MQTTX Plus.')
+    // Waits belong to each connection. Closing this page drops the handler that answers them.
+    settleAgentWaits('The connection page was closed. Open the connection again in MQTTX Plus.')
   }
 
   private onAgentBridgeWindowFocus() {
@@ -3438,7 +3562,9 @@ export default class ConnectionsDetail extends Vue {
   .agent-bridge-panel {
     font-size: 12px;
     font-weight: 400;
-    line-height: 1.5;
+    line-height: 1.6;
+    letter-spacing: 0;
+    word-spacing: normal;
     color: var(--color-text-default);
   }
   .agent-bridge-row {
@@ -3446,11 +3572,32 @@ export default class ConnectionsDetail extends Vue {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    font-size: 13px;
   }
-  .agent-bridge-tip,
-  .agent-bridge-sse {
-    margin: 8px 0 0;
+  .agent-bridge-tip {
+    margin: 6px 0 0;
     color: var(--color-text-light);
+    line-height: 1.6;
+  }
+  .agent-bridge-sse {
+    margin: 10px 0 12px;
+    color: var(--color-text-light);
+    line-height: 1.6;
+    letter-spacing: 0;
+    word-spacing: normal;
+    span {
+      display: block;
+    }
+    code {
+      display: block;
+      margin-top: 4px;
+      font-family: Menlo, Monaco, Consolas, 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      letter-spacing: 0;
+      color: var(--color-text-default);
+      white-space: nowrap;
+    }
   }
   .agent-bridge-error {
     margin: 8px 0 0;
@@ -3467,16 +3614,19 @@ export default class ConnectionsDetail extends Vue {
     }
   }
   pre {
-    margin: 8px 0;
-    padding: 8px;
+    margin: 8px 0 0;
+    padding: 10px 12px;
     max-height: 180px;
     overflow: auto;
     background: var(--color-bg-primary);
     border-radius: 4px;
+    font-family: Menlo, Monaco, Consolas, 'Courier New', monospace;
     font-size: 12px;
-    line-height: 1.4;
+    line-height: 1.55;
+    letter-spacing: 0;
     white-space: pre-wrap;
-    word-break: break-all;
+    word-break: normal;
+    overflow-wrap: anywhere;
     user-select: text;
   }
   .agent-bridge-actions {

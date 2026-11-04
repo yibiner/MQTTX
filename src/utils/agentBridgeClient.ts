@@ -56,7 +56,7 @@ function ensureListening(): void {
 
 async function dispatch(current: AgentBridgeHandler, method: string, params: unknown): Promise<unknown> {
   if (method === 'get_connection') {
-    return current.getConnection()
+    return current.getConnection((params || {}) as { connectionId?: string })
   }
   if (method === 'publish') {
     return current.publish(params as AgentPublishInput)

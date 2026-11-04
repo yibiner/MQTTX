@@ -398,8 +398,11 @@ export default class ConnectionService {
     return query as ConnectionModel
   }
 
-  // cascade get
-  public async get(id: string): Promise<ConnectionModel | undefined> {
+  /**
+   * The connection row, without remembering it as the one to open next.
+   * Agent calls use this so reading another connected client does not change `leatestId`.
+   */
+  public async findModel(id: string): Promise<ConnectionModel | undefined> {
     const query: ConnectionEntity | undefined = await this.connectionRepository
       .createQueryBuilder('cn')
       .where('cn.id = :id', { id })
@@ -410,8 +413,16 @@ export default class ConnectionService {
     if (query === undefined) {
       return undefined
     }
-    electronStore.set('leatestId', id)
     return ConnectionService.entityToModel(query)
+  }
+
+  // cascade get
+  public async get(id: string): Promise<ConnectionModel | undefined> {
+    const model = await this.findModel(id)
+    if (model) {
+      electronStore.set('leatestId', id)
+    }
+    return model
   }
 
   /**
