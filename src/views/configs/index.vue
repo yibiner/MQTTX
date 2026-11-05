@@ -527,6 +527,9 @@
           <el-form-item class="automation-field" :label="$t('connections.autoSubscribe')">
             <AutoSubscribeEditor v-model="profileForm.autoSubscriptions" />
           </el-form-item>
+          <el-form-item class="automation-field" :label="$t('connections.connectReports')">
+            <ConnectReportEditor v-model="profileForm.connectReports" />
+          </el-form-item>
           <el-form-item class="automation-field" :label="$t('connections.timedReports')">
             <TimedReportEditor v-model="profileForm.timedReports" />
           </el-form-item>
@@ -652,6 +655,7 @@ import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor, { createBlankAutoReplyRule } from '@/components/AutoReplyEditor.vue'
 import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
 import TimedReportEditor from '@/components/TimedReportEditor.vue'
+import ConnectReportEditor from '@/components/ConnectReportEditor.vue'
 import BehaviorClientOptions from '@/components/BehaviorClientOptions.vue'
 import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import {
@@ -730,6 +734,7 @@ const defaultBehaviorForm = () => ({
   session: null as BehaviorSessionConfig | null,
   will: null as BehaviorWillConfig | null,
   autoSubscriptions: [] as AutoSubscribeGroupModel[],
+  connectReports: [] as ConnectReportModel[],
   timedReports: [] as TimedReportModel[],
   autoReplies: [] as AutoReplyRuleModel[],
   messageSequences: [] as MessageSequenceModel[],
@@ -811,6 +816,7 @@ const kindLabelKey = (kind: VariableKind): string =>
     AutoReplyEditor,
     MessageSequenceEditor,
     TimedReportEditor,
+    ConnectReportEditor,
     BehaviorClientOptions,
     TopicPresetPicker,
   },
@@ -959,9 +965,15 @@ export default class Configs extends Vue {
         }
       })
     })
+    resolved.connectReports.forEach((report) => {
+      if (report.topic) {
+        const delay = Number.isFinite(Number(report.delay)) && Number(report.delay) >= 0 ? Number(report.delay) : 0
+        lines.push(`${this.$t('connections.connectReports')} ${delay}s ${report.topic}`)
+      }
+    })
     resolved.timedReports.forEach((report) => {
       if (report.topic) {
-        lines.push(`${report.interval}s ${report.topic}`)
+        lines.push(`${this.$t('connections.timedReports')} ${report.interval}s ${report.topic}`)
       }
     })
     resolved.autoReplies.forEach((rule) => lines.push(rule.name || rule.matchTopic))
@@ -990,11 +1002,15 @@ export default class Configs extends Vue {
   private describeBehaviorOwn(template: BehaviorTemplateModel): string {
     const parts: string[] = []
     const subs = (template.autoSubscriptions ?? []).reduce((count, group) => count + (group.topics?.length ?? 0), 0)
+    const connectReports = (template.connectReports ?? []).length
     const reports = (template.timedReports ?? []).length
     const replies = (template.autoReplies ?? []).length
     const sequences = (template.messageSequences ?? []).length
     if (subs) {
       parts.push(`${this.$t('connections.autoSubscribe')} ${subs}`)
+    }
+    if (connectReports) {
+      parts.push(`${this.$t('connections.connectReports')} ${connectReports}`)
     }
     if (reports) {
       parts.push(`${this.$t('connections.timedReports')} ${reports}`)
@@ -1433,6 +1449,7 @@ export default class Configs extends Vue {
         passwordFrom: template.passwordFrom || '',
         variables: { ...(template.variables ?? {}) },
         autoSubscriptions: JSON.parse(JSON.stringify(template.autoSubscriptions ?? [])),
+        connectReports: JSON.parse(JSON.stringify(template.connectReports ?? [])),
         timedReports: JSON.parse(JSON.stringify(template.timedReports ?? [])),
         autoReplies: JSON.parse(JSON.stringify(template.autoReplies ?? [])),
         messageSequences: JSON.parse(JSON.stringify(template.messageSequences ?? [])),
@@ -1621,6 +1638,7 @@ export default class Configs extends Vue {
           passwordFrom: this.profileForm.passwordFrom || null,
           variables: { ...(this.profileForm.variables ?? {}) },
           autoSubscriptions: this.profileForm.autoSubscriptions ?? [],
+          connectReports: this.profileForm.connectReports ?? [],
           timedReports: this.profileForm.timedReports ?? [],
           autoReplies: this.profileForm.autoReplies ?? [],
           messageSequences: this.profileForm.messageSequences ?? [],

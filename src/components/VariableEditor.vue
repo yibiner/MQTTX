@@ -97,6 +97,7 @@ interface VariableRow {
  * can be applied to many connections) the runtime parts are hidden: there is no value to show yet.
  *
  * Rows without a name are dropped on the way out, i.e. they simply do not exist as variables.
+ * An empty map shows only the add button; a row appears when the user adds one.
  */
 @Component({ components: { VariableDefinitionEditor } })
 export default class VariableEditor extends Vue {
@@ -108,9 +109,9 @@ export default class VariableEditor extends Vue {
   @Prop({ required: false, default: '' }) private connectionId!: string
   @Model('change', { type: Object }) private readonly value!: { [name: string]: StoredVariable } | null | undefined
 
-  private rows: VariableRow[] = [{ name: '', stored: '' }]
+  private rows: VariableRow[] = []
   /** The row whose definition is expanded, or null when every row is compact. */
-  private expandedIndex: number | null = 0
+  private expandedIndex: number | null = null
   /** The row whose current value is being edited, or null. */
   private editingValueIndex: number | null = null
   private editingValue = ''
@@ -128,9 +129,9 @@ export default class VariableEditor extends Vue {
       return
     }
     const rows = Object.keys(value ?? {}).map((name) => ({ name, stored: value?.[name] ?? '' }))
-    this.rows = rows.length ? rows : [{ name: '', stored: '' }]
+    this.rows = rows
     if (this.expandedIndex !== null) {
-      this.expandedIndex = Math.min(this.expandedIndex, this.rows.length - 1)
+      this.expandedIndex = this.rows.length ? Math.min(this.expandedIndex, this.rows.length - 1) : null
     }
     this.editingValueIndex = null
   }
@@ -173,7 +174,10 @@ export default class VariableEditor extends Vue {
   private handleRemove(index: number) {
     this.rows.splice(index, 1)
     if (!this.rows.length) {
-      this.rows.push({ name: '', stored: '' })
+      this.expandedIndex = null
+      this.editingValueIndex = null
+      this.handleChange()
+      return
     }
     if (this.expandedIndex !== null) {
       this.expandedIndex = this.expandedIndex === index ? null : Math.min(this.expandedIndex, this.rows.length - 1)

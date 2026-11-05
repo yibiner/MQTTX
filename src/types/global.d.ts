@@ -216,6 +216,22 @@ declare global {
   }
 
   /**
+   * One publish sent after the connection succeeds. `delay` is seconds from that moment;
+   * 0 sends immediately. It does not repeat.
+   */
+  interface ConnectReportModel {
+    id: string
+    delay: number
+    topic: string
+    payload: string
+    qos?: QoS
+    retain?: boolean
+    payloadType?: PayloadType
+    /** false keeps the row but does not send it after connecting */
+    enabled?: boolean
+  }
+
+  /**
    * A publish prepared ahead of time. After the connection succeeds it is started through the
    * same timed-message runner as a send started from the publish panel.
    */
@@ -303,6 +319,8 @@ declare global {
     will?: BehaviorWillConfig | null
     variables?: { [name: string]: StoredVariable } | null
     autoSubscriptions?: AutoSubscribeGroupModel[] | null
+    /** One-shot publishes after connect. Appended along the template chain. */
+    connectReports?: ConnectReportModel[] | null
     timedReports?: TimedReportModel[] | null
     autoReplies?: AutoReplyRuleModel[] | null
     messageSequences?: MessageSequenceModel[] | null
@@ -547,6 +565,8 @@ declare global {
      * resolves its templates at send time, then applies its variable assignments.
      */
     messageSequences?: MessageSequenceModel[] | null
+    /** One-shot publishes after this connection succeeds. */
+    connectReports?: ConnectReportModel[] | null
     /** Publishes started after this connection succeeds. */
     timedReports?: TimedReportModel[] | null
   }

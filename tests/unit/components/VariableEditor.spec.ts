@@ -48,19 +48,20 @@ describe('VariableEditor', () => {
     resetAllVariableStates()
   })
 
-  it('renders one row per variable and a blank row otherwise', () => {
-    const wrapper = createWrapper({ productType: 'SN0106', sn: 'AF0201' })
+  it('renders one row per variable and nothing when the map is empty', () => {
+    const wrapper = createWrapper({ productType: 'SN0106', sn: 'SN0201' })
     expect(wrapper.findAll('.variable-row')).to.have.lengthOf(2)
     expect((wrapper.findAll('.variable-name input').at(0).element as HTMLInputElement).value).to.equal('productType')
+    expect(wrapper.find('.variable-definition').exists()).to.equal(false)
 
     const empty = createWrapper()
-    expect(empty.findAll('.variable-row')).to.have.lengthOf(1)
-    expect((empty.find('.variable-name input').element as HTMLInputElement).value).to.equal('')
-    expect(empty.find('.variable-definition').exists()).to.equal(true)
+    expect(empty.findAll('.variable-row')).to.have.lengthOf(0)
+    expect(empty.find('.variable-add').exists()).to.equal(true)
   })
 
   it('emits the variables as a stored-variable map', () => {
     const wrapper = createWrapper()
+    wrapper.find('.variable-add').trigger('click')
     typeInto(wrapper, '.variable-name input', 0, 'productType')
     typeInto(wrapper, '.variable-value input', 0, 'SN0106')
 
@@ -76,9 +77,8 @@ describe('VariableEditor', () => {
     expect(wrapper.findAll('.variable-row')).to.have.lengthOf(1)
     expect(lastChange(wrapper)).to.deep.equal({})
 
-    // The last row is kept as a blank draft instead of disappearing.
     wrapper.find('.variable-delete').trigger('click')
-    expect(wrapper.findAll('.variable-row')).to.have.lengthOf(1)
+    expect(wrapper.findAll('.variable-row')).to.have.lengthOf(0)
   })
 
   it('does not drop the row that is being typed in', async () => {
@@ -104,6 +104,7 @@ describe('VariableEditor', () => {
   it('points out a duplicated name', () => {
     const wrapper = createWrapper()
     wrapper.find('.variable-add').trigger('click')
+    wrapper.find('.variable-add').trigger('click')
     typeInto(wrapper, '.variable-name input', 0, 'sn')
     typeInto(wrapper, '.variable-name input', 1, 'sn')
 
@@ -117,18 +118,19 @@ describe('VariableEditor', () => {
     await localVue.nextTick()
 
     expect(wrapper.findAll('.variable-row')).to.have.lengthOf(2)
+    wrapper.find('.variable-expand').trigger('click')
     expect((wrapper.findAll('.variable-value input').at(0).element as HTMLInputElement).value).to.equal('SN0116')
   })
 
   it('expands one row to edit its definition inline', () => {
     const wrapper = createWrapper({ productType: 'SN0106' })
-    expect(wrapper.find('.variable-definition').exists()).to.equal(true)
-
-    wrapper.find('.variable-expand').trigger('click')
     expect(wrapper.find('.variable-definition').exists()).to.equal(false)
 
     wrapper.find('.variable-expand').trigger('click')
     expect(wrapper.find('.variable-definition').exists()).to.equal(true)
+
+    wrapper.find('.variable-expand').trigger('click')
+    expect(wrapper.find('.variable-definition').exists()).to.equal(false)
   })
 
   it('shows the kind and a compact summary of a stateful variable', () => {

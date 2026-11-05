@@ -5,7 +5,8 @@ import useServices from '@/database/useServices'
 import { connectionVariableOptions, onConnectionEstablished } from '@/utils/payloadVariables'
 import { ConnectSubscriptionBatch, ConnectSubscriptionTopic, planConnectSubscriptions } from '@/utils/autoSubscribe'
 import { buildRowSubscribeOptions } from '@/utils/subscribeOptions'
-import { syncSavedTimedReports } from '@/utils/timedMessageManager'
+import { publishPreparedMessage, syncSavedTimedReports } from '@/utils/timedMessageManager'
+import { connectReportDelaySeconds, pendingConnectReports } from '@/utils/connectReports'
 import { getSubscriptionId } from '@/utils/idGenerator'
 import { getRandomColor } from '@/utils/colors'
 import time from '@/utils/time'
@@ -130,6 +131,31 @@ export const attachConnectSubscriptions = (client: MqttClient, connectionId: str
           )
         }, batch.delayMs),
       )
+    })
+    // One-shot reports. Delay 0 sends now, so `${connectedAt}` is already set. A later delay
+    // shares the timers that close/offline/end already cancel. Sends for one connection run
+    // one after another, so a sequence variable in two rows is not read twice at once.
+    pendingConnectReports(source?.connectReports).forEach((report) => {
+      const send = () => {
+        publishPreparedMessage(
+          connectionId,
+          {
+            createAt: time.getNowDate(),
+            out: true,
+            topic: report.topic.trim(),
+            payload: report.payload ?? '',
+            qos: report.qos ?? 0,
+            retain: Boolean(report.retain),
+          },
+          report.payloadType ?? 'JSON',
+        ).catch((error) => getLog().error(`Connect report publish failed: ${(error as Error).toString()}`))
+      }
+      const delayMs = Math.round((connectReportDelaySeconds(report.delay) ?? 0) * 1000)
+      if (delayMs <= 0) {
+        send()
+        return
+      }
+      entry.timers.push(setTimeout(send, delayMs))
     })
     // Saved timed reports are an action prepared on the connection. Each successful connect
     // starts them through the same runner a manual timed send uses. A report already running

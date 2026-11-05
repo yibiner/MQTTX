@@ -209,7 +209,7 @@ export default class AutoSubscribeEditor extends Vue {
   font-size: 12px;
 
   // The head row holds the add button and the hint. 32px matches a small form label, so in the
-  // preset dialog the button sits on the same line as 「自动订阅」 instead of dropping below it.
+  // preset dialog the button sits on the same line as 「连接后订阅」 instead of dropping below it.
   // The hint stays next to the button; pushing it to the far edge left it detached from both.
   .editor-head {
     display: flex;

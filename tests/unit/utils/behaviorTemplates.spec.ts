@@ -13,10 +13,12 @@ import {
   restoreBehaviorBaseline,
 } from '@/utils/behaviorTemplates'
 import { pendingTimedReports } from '@/utils/timedReports'
+import { connectReportDelaySeconds, pendingConnectReports } from '@/utils/connectReports'
 
 const template = (partial: Partial<BehaviorTemplateModel> & { id: string; name: string }): BehaviorTemplateModel => ({
   variables: {},
   autoSubscriptions: [],
+  connectReports: [],
   timedReports: [],
   autoReplies: [],
   messageSequences: [],
@@ -64,6 +66,7 @@ describe('behavior templates', () => {
       defaultServerId: 'server-a',
       variables: { productType: 'BASE' },
       autoSubscriptions: [sub('base/sub')],
+      connectReports: [{ id: 'info', delay: 0, topic: 'base/info', payload: '{}', enabled: true }],
       timedReports: [report('base/post', 60)],
     })
     const advanced = template({
@@ -92,6 +95,7 @@ describe('behavior templates', () => {
       parentId: 'base',
       password: 'water-secret',
       variables: { water: '2000' },
+      connectReports: [{ id: 'status', delay: 2, topic: 'water/status', payload: '{}', enabled: true }],
       autoReplies: [
         {
           id: 'cal',
@@ -110,6 +114,7 @@ describe('behavior templates', () => {
     expect(resolved?.autoSubscriptions.map((group) => group.topics[0].topic)).to.deep.equal(['base/sub'])
     expect(resolved?.autoReplies.map((rule) => rule.name)).to.deep.equal(['校准'])
     expect(resolved?.timedReports.map((item) => item.topic)).to.deep.equal(['base/post'])
+    expect(resolved?.connectReports.map((item) => item.topic)).to.deep.equal(['base/info', 'water/status'])
     expect(resolved?.password).to.equal('water-secret')
     expect(resolved?.username).to.equal('category')
     expect(resolved?.defaultServerId).to.equal('server-a')
@@ -313,5 +318,29 @@ describe('pending timed reports', () => {
 
   it('starts a stopped report again because its id is no longer running', () => {
     expect(pendingTimedReports(new Set(), [row('a')]).map((item) => item.id)).to.deep.equal(['a'])
+  })
+})
+
+describe('pending connect reports', () => {
+  const row = (id: string, topic = 'app/info', delay = 0): ConnectReportModel => ({
+    id,
+    delay,
+    topic,
+    payload: '{}',
+    enabled: true,
+  })
+
+  it('keeps a zero delay and skips a disabled, blank or negative row', () => {
+    const reports = [
+      row('now', 'app/info', 0),
+      row('later', 'app/status', 2),
+      { ...row('off'), enabled: false },
+      { ...row('blank'), topic: '  ' },
+      { ...row('bad'), delay: -1 },
+      { ...row('empty'), delay: undefined as unknown as number },
+    ]
+    expect(pendingConnectReports(reports).map((item) => item.id)).to.deep.equal(['now', 'later', 'empty'])
+    expect(connectReportDelaySeconds(undefined)).to.equal(0)
+    expect(connectReportDelaySeconds(-1)).to.equal(null)
   })
 })

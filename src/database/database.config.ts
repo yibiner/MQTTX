@@ -60,6 +60,7 @@ import { autoSubscribeAndReply1792001000003 } from './migration/1792001000003-au
 import { subscriptionAutoSubscribed1792001000004 } from './migration/1792001000004-subscriptionAutoSubscribed'
 import { messageSequences1792001000005 } from './migration/1792001000005-messageSequences'
 import { timedReports1792001000006 } from './migration/1792001000006-timedReports'
+import { connectReports1792001000007 } from './migration/1792001000007-connectReports'
 
 // Get store path; fall back when running in CLI (no Electron app)
 let STORE_PATH: string
@@ -130,6 +131,7 @@ const ORMConfig = {
     subscriptionAutoSubscribed1792001000004,
     messageSequences1792001000005,
     timedReports1792001000006,
+    connectReports1792001000007,
   ],
   migrationsTableName: 'temp_migration_table',
   entities: [

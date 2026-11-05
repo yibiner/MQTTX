@@ -113,6 +113,10 @@ export default class ConnectionEntity {
   @Column({ type: 'simple-json', nullable: true, default: null })
   messageSequences?: MessageSequenceModel[] | null
 
+  // One-shot publishes after the connection succeeds, see ConnectionModel['connectReports']
+  @Column({ type: 'simple-json', nullable: true, default: null })
+  connectReports?: ConnectReportModel[] | null
+
   // Publishes started after the connection succeeds, see ConnectionModel['timedReports']
   @Column({ type: 'simple-json', nullable: true, default: null })
   timedReports?: TimedReportModel[] | null

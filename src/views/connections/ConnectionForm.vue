@@ -365,6 +365,17 @@
           </el-card>
 
           <div class="info-header">
+            <h3>{{ $t('connections.connectReports') }}</h3>
+          </div>
+          <el-card shadow="never" class="info-body item-card">
+            <el-row :gutter="10">
+              <el-col :span="24">
+                <ConnectReportEditor v-model="record.connectReports" />
+              </el-col>
+            </el-row>
+          </el-card>
+
+          <div class="info-header">
             <h3>{{ $t('connections.timedReports') }}</h3>
           </div>
           <el-card shadow="never" class="info-body item-card">
@@ -816,6 +827,7 @@ import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
 import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
 import TimedReportEditor from '@/components/TimedReportEditor.vue'
+import ConnectReportEditor from '@/components/ConnectReportEditor.vue'
 import VariablesHelp from '@/components/VariablesHelp.vue'
 import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import Editor from '@/components/Editor.vue'
@@ -832,6 +844,7 @@ import { sortConnectionTree } from '@/utils/connections'
     AutoReplyEditor,
     MessageSequenceEditor,
     TimedReportEditor,
+    ConnectReportEditor,
     VariablesHelp,
     TopicPresetPicker,
   },
@@ -1387,6 +1400,7 @@ export default class ConnectionForm extends Vue {
     }
     const lists = copyBehaviorLists(resolved)
     this.record.autoSubscriptions = lists.autoSubscriptions
+    this.record.connectReports = lists.connectReports
     this.record.timedReports = lists.timedReports
     this.record.autoReplies = lists.autoReplies
     this.record.messageSequences = lists.messageSequences

@@ -26,6 +26,7 @@ export interface ResolvedBehavior {
   will: BehaviorWillConfig
   variables: { [name: string]: StoredVariable }
   autoSubscriptions: AutoSubscribeGroupModel[]
+  connectReports: ConnectReportModel[]
   timedReports: TimedReportModel[]
   autoReplies: AutoReplyRuleModel[]
   messageSequences: MessageSequenceModel[]
@@ -45,6 +46,11 @@ const freshReport = (report: TimedReportModel): TimedReportModel => ({
   id: uuidv4(),
 })
 
+const freshConnectReport = (report: ConnectReportModel): ConnectReportModel => ({
+  ...clone(report),
+  id: uuidv4(),
+})
+
 const freshReply = (rule: AutoReplyRuleModel): AutoReplyRuleModel => ({
   ...clone(rule),
   id: uuidv4(),
@@ -52,9 +58,16 @@ const freshReply = (rule: AutoReplyRuleModel): AutoReplyRuleModel => ({
 
 /** New ids, so two connections (or a detached template and its former parent) do not share a run. */
 export const copyBehaviorLists = (
-  behavior: Pick<ResolvedBehavior, 'autoSubscriptions' | 'timedReports' | 'autoReplies' | 'messageSequences'>,
-): Pick<ResolvedBehavior, 'autoSubscriptions' | 'timedReports' | 'autoReplies' | 'messageSequences'> => ({
+  behavior: Pick<
+    ResolvedBehavior,
+    'autoSubscriptions' | 'connectReports' | 'timedReports' | 'autoReplies' | 'messageSequences'
+  >,
+): Pick<
+  ResolvedBehavior,
+  'autoSubscriptions' | 'connectReports' | 'timedReports' | 'autoReplies' | 'messageSequences'
+> => ({
   autoSubscriptions: behavior.autoSubscriptions.map(freshGroup),
+  connectReports: behavior.connectReports.map(freshConnectReport),
   timedReports: behavior.timedReports.map(freshReport),
   autoReplies: behavior.autoReplies.map(freshReply),
   messageSequences: behavior.messageSequences.map((sequence) => cloneMessageSequence(sequence)),
@@ -162,6 +175,7 @@ export interface BehaviorFormBaseline {
   password: string
   variables: { [name: string]: StoredVariable }
   autoSubscriptions: AutoSubscribeGroupModel[]
+  connectReports: ConnectReportModel[]
   timedReports: TimedReportModel[]
   autoReplies: AutoReplyRuleModel[]
   messageSequences: MessageSequenceModel[]
@@ -190,6 +204,7 @@ export const captureBehaviorBaseline = (
   password: record.password ?? '',
   variables: clone(record.variables ?? {}),
   autoSubscriptions: clone(record.autoSubscriptions ?? []),
+  connectReports: clone(record.connectReports ?? []),
   timedReports: clone(record.timedReports ?? []),
   autoReplies: clone(record.autoReplies ?? []),
   messageSequences: clone(record.messageSequences ?? []),
@@ -215,6 +230,7 @@ export const restoreBehaviorBaseline = (record: ConnectionModel, baseline: Behav
   record.password = baseline.password
   record.variables = clone(baseline.variables)
   record.autoSubscriptions = clone(baseline.autoSubscriptions)
+  record.connectReports = clone(baseline.connectReports)
   record.timedReports = clone(baseline.timedReports)
   record.autoReplies = clone(baseline.autoReplies)
   record.messageSequences = clone(baseline.messageSequences)
@@ -316,6 +332,7 @@ export const resolveBehaviorFrom = (templates: BehaviorTemplateModel[], id: stri
     session: {},
     will: {},
     autoSubscriptions: [],
+    connectReports: [],
     timedReports: [],
     autoReplies: [],
     messageSequences: [],
@@ -333,6 +350,7 @@ export const resolveBehaviorFrom = (templates: BehaviorTemplateModel[], id: stri
       resolved.variables[name] = clone(stored)
     })
     resolved.autoSubscriptions.push(...(template.autoSubscriptions ?? []).map((group) => clone(group)))
+    resolved.connectReports.push(...(template.connectReports ?? []).map((report) => clone(report)))
     resolved.timedReports.push(...(template.timedReports ?? []).map((report) => clone(report)))
     resolved.autoReplies.push(...(template.autoReplies ?? []).map((rule) => clone(rule)))
     resolved.messageSequences.push(...(template.messageSequences ?? []).map((sequence) => clone(sequence)))

@@ -306,6 +306,141 @@ function syncBackgroundThrottling(): void {
   setRendererScheduling('timed-messages', entries.length > 0)
 }
 
+/**
+ * One chain per connection, so two connect-reports (including two that are both due immediately)
+ * resolve sequence variables one after another instead of both reading the value from before either
+ * commit.
+ */
+const preparedChains = new Map<string, Promise<void>>()
+
+/**
+ * Sends one prepared message through the connection view when it is open, otherwise through
+ * the global client. Used for a report that fires once after connect.
+ *
+ * Calls for the same connection run in order. The returned promise settles when this report has
+ * been handed to the broker, or when it was skipped.
+ */
+export function publishPreparedMessage(
+  connectionId: string,
+  message: MessageModel,
+  type: PayloadType = 'JSON',
+): Promise<void> {
+  const prepared: MessageModel = { ...message, id: message.id || getMessageId(), out: true }
+  const previous = preparedChains.get(connectionId) ?? Promise.resolve()
+  const run = previous.then(() => deliverPreparedMessage(connectionId, prepared, type))
+  const settled = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  preparedChains.set(connectionId, settled)
+  void settled.then(() => {
+    if (preparedChains.get(connectionId) === settled) {
+      preparedChains.delete(connectionId)
+    }
+  })
+  return run
+}
+
+async function deliverPreparedMessage(connectionId: string, message: MessageModel, type: PayloadType): Promise<void> {
+  const publisher = publishers.get(connectionId)
+  if (publisher) {
+    await publisher(message, type)
+    return
+  }
+  await publishPreparedWithoutView(connectionId, message, type)
+}
+
+/**
+ * Publishes one connect-report while its connection page is closed.
+ *
+ * Unlike a timed tick, a missing client is not treated as "delete every timed message": the
+ * report is simply skipped. An empty payload is published, and the row is written to the
+ * message list, because this send happens only once per connect.
+ */
+async function publishPreparedWithoutView(
+  connectionId: string,
+  message: MessageModel,
+  type: PayloadType,
+): Promise<void> {
+  const activeConnection = (store.state as any).app?.activeConnection?.[connectionId]
+  const client = activeConnection?.client
+  if (!activeConnection || !client) {
+    getLog().warn(`Connect report skipped: connection ${connectionId} no longer exists`)
+    return
+  }
+  if (!client.connected) {
+    getLog().warn(`Connect report skipped: connection ${connectionId} is not connected`)
+    return
+  }
+  const { connectionService, messageService } = useServices()
+  const source = await connectionService.getVariableSource(connectionId)
+  const variableOptions = connectionVariableOptions(source)
+  const texts = payloadTypeSupportsVariables(type) ? [message.topic, message.payload as string] : [message.topic]
+  const unresolved = collectUnresolvedVariables({}, texts, variableOptions)
+  if (unresolved.length) {
+    getLog().warn(`Connect report skipped: unresolved variables ${unresolved.join(', ')} (connection ${connectionId})`)
+    return
+  }
+  const resolver = createPayloadVariableResolver(variableOptions)
+  const wireTopic = resolver.resolve(message.topic)
+  let filledPayload: string | Buffer | undefined = message.payload ?? ''
+  if (filledPayload && payloadTypeSupportsVariables(type)) {
+    filledPayload = resolver.resolve(filledPayload as string)
+  }
+  resolver.commit()
+  const wirePayload =
+    filledPayload === undefined || filledPayload === null ? '' : convertPayloadForFallback(filledPayload, type)
+  if (wirePayload === undefined) {
+    return
+  }
+  const published = await new Promise<boolean>((resolve) => {
+    client.publish(wireTopic, wirePayload, { qos: message.qos, retain: message.retain }, (error?: Error) => {
+      if (error) {
+        getLog().error(`Connect report publish failed: ${error.toString()}`)
+        resolve(false)
+        return
+      }
+      resolve(true)
+    })
+  })
+  if (!published) {
+    return
+  }
+  const publishedText = wirePayload.toString()
+  await savePublishedMessageHistory(connectionId, message, publishedText, type, wireTopic)
+  // The history helper keeps an empty body out of the message list. A connect-report may send
+  // an empty payload on purpose (for example to clear a retained message), so store that row.
+  if (publishedText === '' && !ignoreQoS0Message(message.qos)) {
+    await messageService.pushMsgsToConnection(
+      [
+        {
+          id: message.id,
+          out: true,
+          createAt: message.createAt || time.getNowDate(),
+          topic: wireTopic,
+          payload: '',
+          qos: message.qos,
+          retain: message.retain,
+        },
+      ],
+      connectionId,
+    )
+  }
+  recordAgentMessages(connectionId, [
+    toAgentMessage({
+      ...message,
+      out: true,
+      topic: wireTopic,
+      payload: publishedText,
+      createAt: message.createAt || time.getNowDate(),
+    }),
+  ])
+  const currentId = (store.state as { app?: { currentConnectionId?: string } }).app?.currentConnectionId
+  if (currentId !== connectionId) {
+    void store.dispatch('UNREAD_MESSAGE_COUNT_INCREMENT', { id: connectionId, increasedCount: 1 })
+  }
+}
+
 function fireTimedMessage(entry: TimedMessageEntry): void {
   entry.nextSendAt = Date.now() + entry.interval * 1000
   notify(entry.connectionId)
