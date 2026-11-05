@@ -446,6 +446,8 @@ import {
   startTimedMessage,
   stopTimedMessage,
   stopAllTimedMessages,
+  stopManualTimedMessages,
+  syncSavedTimedReports,
   timedMessagesNeedViewPipeline,
   unregisterTimedMessagePublisher,
 } from '@/utils/timedMessageManager'
@@ -637,6 +639,9 @@ export default class ConnectionsDetail extends Vue {
   /** Tells this view about the replies the engine published, so they show up in the conversation. */
   private unsubAutoReplyPublished: (() => void) | null = null
   private sendTimedMessageCount = 0
+  /** Last timed-report rows seen for this connection, so a reload does not restart a panel stop. */
+  private timedReportsSnapshotId = ''
+  private timedReportsSnapshot = ''
   private agentBridgeVisible = false
   private agentBridgeEnabled = false
   private agentBridgeConfig = ''
@@ -770,6 +775,19 @@ export default class ConnectionsDetail extends Vue {
       registerAutoReply(this.record.id, this.record)
       registerMessageSequences(this.record.id, this.record)
       updateConnectSubscriptions(this.record.id, this.record)
+      // An edit saved while this client is connected replaces a changed or removed timed report
+      // immediately. The first time this connection is shown, connect already started the rows,
+      // and a reload of the same rows must not restart one the user stopped from the panel.
+      const timedReportsSnapshot = JSON.stringify(this.record.timedReports ?? [])
+      if (
+        this.client?.connected &&
+        this.timedReportsSnapshotId === this.record.id &&
+        timedReportsSnapshot !== this.timedReportsSnapshot
+      ) {
+        syncSavedTimedReports(this.record.id, this.record.timedReports)
+      }
+      this.timedReportsSnapshotId = this.record.id
+      this.timedReportsSnapshot = timedReportsSnapshot
       this.syncAgentConnection()
     }
   }
@@ -932,7 +950,7 @@ export default class ConnectionsDetail extends Vue {
       })
   }
 
-  // Stops every running timed message of this connection (panel, topbar, disconnect, error).
+  // Stops every running timed message of this connection (panel, topbar, disconnect).
   public stopTimedSend() {
     const stopped = stopAllTimedMessages(this.curConnectionId)
     this.sendTimedMessageCount = 0
@@ -2516,7 +2534,10 @@ export default class ConnectionsDetail extends Vue {
   }
 
   /** `createAt` of a message the agent names, from that connection's feed or from the store. */
-  private async findAgentMessageCreateAt(id: string, feed: { messages: AgentDisplayedMessage[] }): Promise<string | undefined> {
+  private async findAgentMessageCreateAt(
+    id: string,
+    feed: { messages: AgentDisplayedMessage[] },
+  ): Promise<string | undefined> {
     const held = feed.messages.find((message) => message.id === id)
     if (held) {
       return held.createAt
@@ -2842,7 +2863,12 @@ export default class ConnectionsDetail extends Vue {
   private handleErrorOnPublish(error: Error) {
     const errorMsg = error.toString()
     this.notifyMsgWithCopilot(errorMsg)
-    this.stopTimedSend()
+    // A failed publish used to stop every timed send, including saved reports, until the next
+    // connect. Saved reports stay on their interval and retry the next tick.
+    const stoppedManual = stopManualTimedMessages(this.curConnectionId)
+    if (stoppedManual > 0) {
+      this.sendTimedMessageCount = 0
+    }
     this.$log.error(
       `Failed to publish message for ${this.record.name}@${this.record.host}. Error: ${errorMsg}. Stack trace: ${error.stack}`,
     )

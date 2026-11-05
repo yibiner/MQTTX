@@ -15,6 +15,7 @@ import { toAgentMessage } from '@/utils/agentBridge'
 import { recordAgentMessages } from '@/utils/agentRegistry'
 import { setRendererScheduling } from '@/utils/rendererScheduling'
 import { DEFAULT_HISTORY_MAX_COUNT } from '@/utils/data'
+import { pendingTimedReports } from '@/utils/timedReports'
 
 /**
  * Global registry of running timed messages, keyed by connection.
@@ -46,6 +47,8 @@ export interface StartTimedMessageOptions {
    * view is closed and resumes when the user comes back.
    */
   requiresViewPipeline?: boolean
+  /** Set for a report that was saved on the connection, so a later connect does not start it twice. */
+  reportId?: string
 }
 
 interface TimedMessageEntry extends TimedMessageRuntime {
@@ -56,6 +59,8 @@ interface TimedMessageEntry extends TimedMessageRuntime {
   requiresViewPipeline: boolean
   /** Whether the user has already been told that this task is paused. */
   degradedNotified: boolean
+  /** The saved timed report this run came from, when it was started from one. */
+  reportId?: string
 }
 
 const MAX_TIMED_MESSAGES_PER_CONNECTION = 10
@@ -165,6 +170,7 @@ export function startTimedMessage(
     type,
     requiresViewPipeline: Boolean(options.requiresViewPipeline),
     degradedNotified: false,
+    reportId: options.reportId,
     timeId: undefined as any,
   }
   entry.timeId = setInterval(() => fireTimedMessage(entry), interval * 1000)
@@ -173,6 +179,74 @@ export function startTimedMessage(
   syncBackgroundThrottling()
   getLog().info(`Timed message for connection ${connectionId} started with a frequency of ${interval} seconds.`)
   return 'ok'
+}
+
+const sameSavedReport = (entry: TimedMessageEntry, report: TimedReportModel): boolean =>
+  entry.interval === Number(report.interval) &&
+  entry.type === (report.payloadType ?? 'JSON') &&
+  entry.message.topic === String(report.topic ?? '').trim() &&
+  entry.message.payload === (report.payload ?? '') &&
+  (entry.message.qos ?? 0) === (report.qos ?? 0) &&
+  Boolean(entry.message.retain) === Boolean(report.retain)
+
+/**
+ * Makes the running saved reports match the rows stored on the connection.
+ *
+ * A row that was removed, disabled, or edited is stopped. Rows that are not running yet are
+ * started. A manual timed send (no saved row) is left running. Called on connect and when a
+ * connected connection is saved, so an edit takes effect without waiting for a disconnect.
+ */
+export function syncSavedTimedReports(connectionId: string, reports: TimedReportModel[] | null | undefined): void {
+  const list = Array.isArray(reports) ? reports : []
+  const byId = new Map(list.filter((report) => report?.id).map((report) => [report.id, report]))
+  entries
+    .filter((entry) => entry.connectionId === connectionId && entry.reportId)
+    .forEach((entry) => {
+      const next = byId.get(entry.reportId as string)
+      const topic = String(next?.topic ?? '').trim()
+      const interval = Number(next?.interval)
+      const stillWanted =
+        !!next &&
+        next.enabled !== false &&
+        !!topic &&
+        Number.isFinite(interval) &&
+        interval >= 1 &&
+        sameSavedReport(entry, next)
+      if (!stillWanted) {
+        stopTimedMessage(connectionId, entry.id)
+      }
+    })
+  startSavedTimedReports(connectionId, reports)
+}
+
+/** Starts saved rows that are not already running. A panel stop leaves the id absent, so the next connect starts it. */
+export function startSavedTimedReports(connectionId: string, reports: TimedReportModel[] | null | undefined): void {
+  const running = new Set(
+    entries
+      .filter((entry) => entry.connectionId === connectionId && entry.reportId)
+      .map((entry) => entry.reportId as string),
+  )
+  const pending = pendingTimedReports(running, reports)
+  for (const report of pending) {
+    const message: MessageModel = {
+      createAt: time.getNowDate(),
+      out: true,
+      topic: report.topic.trim(),
+      payload: report.payload ?? '',
+      qos: report.qos ?? 0,
+      retain: Boolean(report.retain),
+    }
+    const result = startTimedMessage(connectionId, Number(report.interval), message, report.payloadType ?? 'JSON', {
+      reportId: report.id,
+    })
+    if (result === 'limit') {
+      getLog().warn(`Timed report not started: connection ${connectionId} already has the maximum number running`)
+      return
+    }
+    if (report.id) {
+      running.add(report.id)
+    }
+  }
 }
 
 export function stopTimedMessage(connectionId: string, id: number): void {
@@ -184,6 +258,25 @@ export function stopTimedMessage(connectionId: string, id: number): void {
   entries.splice(index, 1)
   notify(connectionId)
   syncBackgroundThrottling()
+}
+
+/**
+ * Stops timed sends the user started from the panel. Saved reports keep their interval:
+ * one failed publish must not silence them for the rest of the connection.
+ */
+export function stopManualTimedMessages(connectionId: string): number {
+  const stopped = entries.filter((entry) => entry.connectionId === connectionId && !entry.reportId)
+  stopped.forEach((entry) => clearInterval(entry.timeId))
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].connectionId === connectionId && !entries[i].reportId) {
+      entries.splice(i, 1)
+    }
+  }
+  if (stopped.length) {
+    notify(connectionId)
+    syncBackgroundThrottling()
+  }
+  return stopped.length
 }
 
 /** Stops every timed message of one connection; returns how many were running. */

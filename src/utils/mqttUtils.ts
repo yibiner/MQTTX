@@ -198,6 +198,7 @@ export const getDefaultRecord = (): ConnectionModel => {
     autoSubscriptions: [],
     autoReplies: [],
     messageSequences: [],
+    timedReports: [],
     unreadMessageCount: 0,
     will: {
       lastWillTopic: '',

@@ -5,6 +5,7 @@ import useServices from '@/database/useServices'
 import { connectionVariableOptions, onConnectionEstablished } from '@/utils/payloadVariables'
 import { ConnectSubscriptionBatch, ConnectSubscriptionTopic, planConnectSubscriptions } from '@/utils/autoSubscribe'
 import { buildRowSubscribeOptions } from '@/utils/subscribeOptions'
+import { syncSavedTimedReports } from '@/utils/timedMessageManager'
 import { getSubscriptionId } from '@/utils/idGenerator'
 import { getRandomColor } from '@/utils/colors'
 import time from '@/utils/time'
@@ -130,6 +131,11 @@ export const attachConnectSubscriptions = (client: MqttClient, connectionId: str
         }, batch.delayMs),
       )
     })
+    // Saved timed reports are an action prepared on the connection. Each successful connect
+    // starts them through the same runner a manual timed send uses. A report already running
+    // with the same row is left running; one the user stopped, or one whose row changed,
+    // is started from the saved row.
+    syncSavedTimedReports(connectionId, source?.timedReports)
     if (plan.batches.length) {
       getLog().info(
         `Subscriptions after connecting for connection ${connectionId}: ` +

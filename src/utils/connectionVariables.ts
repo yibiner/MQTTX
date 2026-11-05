@@ -21,7 +21,7 @@ import type { VariableGuideEntry } from '@/utils/variables'
  *
  * A variable is either a constant or a stateful definition. The scope also decides where its
  * current value lives: a global variable has one shared value (`g:<id>`), a client variable has one
- * value per connection (`c:<connection id>:<name>`), so two devices can count independently.
+ * value per connection (`c:<connection id>:<name>`), so two clients can count independently.
  */
 export type ConnectionVariableSource = Partial<
   Pick<ConnectionModel, 'id' | 'variables' | 'clientId' | 'username' | 'name' | 'host' | 'port'>

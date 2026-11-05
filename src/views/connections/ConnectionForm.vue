@@ -38,708 +38,746 @@
       </div>
     </div>
 
-    <el-form ref="form" label-position="right" label-width="160px" :model="record" :rules="rules">
-      <div class="client-create__body">
-        <div class="info-header">
-          <h3>{{ $t('settings.general') }}</h3>
-        </div>
-        <el-card shadow="never" class="info-body item-card">
-          <el-row v-if="oper === 'create'" :gutter="10">
-            <el-col :span="11">
-              <el-form-item label-width="93px" :label="$t('configs.profiles')">
-                <el-select
-                  size="mini"
-                  v-model="serverProfileId"
-                  clearable
-                  filterable
-                  :placeholder="$t('configs.selectServerProfile')"
-                  @change="applyServerProfile"
-                >
-                  <el-option v-for="p in serverProfiles" :key="p.id" :label="p.alias" :value="p.id">
-                    <span style="float: left">{{ p.alias }}</span>
-                    <span style="float: right; color: #8492a6; font-size: 12px; margin-left: 12px">
-                      {{ p.protocol }}://{{ p.host }}:{{ p.port }}
-                    </span>
-                  </el-option>
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="11">
-              <el-tooltip
-                placement="top"
-                :effect="theme !== 'light' ? 'light' : 'dark'"
-                :open-delay="500"
-                :offset="80"
-                :content="$t('configs.applyTips')"
-              >
-                <el-form-item label-width="0">
+    <div class="connection-form__body">
+      <el-form ref="form" label-position="right" label-width="160px" :model="record" :rules="rules">
+        <div class="client-create__body">
+          <div class="info-header">
+            <h3>{{ $t('settings.general') }}</h3>
+          </div>
+          <el-card shadow="never" class="info-body item-card">
+            <el-row v-if="oper === 'create'" :gutter="10">
+              <el-col :span="11">
+                <el-form-item label-width="93px" :label="$t('configs.profiles')">
                   <el-select
                     size="mini"
-                    v-model="clientProfileId"
+                    v-model="serverProfileId"
                     clearable
                     filterable
-                    :placeholder="$t('configs.selectClientProfile')"
-                    @change="applyClientProfile"
+                    :placeholder="$t('configs.selectServerProfile')"
+                    @change="applyServerProfile"
                   >
-                    <el-option v-for="p in clientProfiles" :key="p.id" :label="p.alias" :value="p.id">
+                    <el-option v-for="p in serverProfiles" :key="p.id" :label="p.alias" :value="p.id">
                       <span style="float: left">{{ p.alias }}</span>
                       <span style="float: right; color: #8492a6; font-size: 12px; margin-left: 12px">
-                        {{ p.clientId }}
+                        {{ p.protocol }}://{{ p.host }}:{{ p.port }}
                       </span>
                     </el-option>
                   </el-select>
                 </el-form-item>
-              </el-tooltip>
-            </el-col>
-          </el-row>
-          <el-row :gutter="10">
-            <el-col :span="15">
-              <el-form-item label-width="93px" :label="$t('connections.name')" prop="name">
-                <el-autocomplete
-                  v-if="oper === 'create'"
-                  size="mini"
-                  v-model.trim="record.name"
-                  value-key="name"
-                  :fetch-suggestions="querySearchName"
-                  @select="handleSelectName"
-                >
-                </el-autocomplete>
-                <el-input v-else size="mini" v-model.trim="record.name"></el-input>
-              </el-form-item>
-            </el-col>
-            <el-col :span="7">
-              <el-form-item label-width="0" prop="parentId">
-                <el-select
-                  size="mini"
-                  filterable
-                  clearable
-                  v-model="record.parentId"
-                  :placeholder="$t('connections.collection')"
-                  :aria-label="$t('connections.collection')"
-                  @visible-change="$event && loadCollectionOptions()"
-                >
-                  <el-option
-                    v-for="collection in collectionOptions"
-                    :key="collection.id"
-                    :label="collection.label"
-                    :value="collection.id"
-                  ></el-option>
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="2">
-              <el-tooltip
-                v-if="oper === 'create'"
-                placement="top"
-                :effect="theme !== 'light' ? 'light' : 'dark'"
-                :open-delay="500"
-                :offset="80"
-                :content="$t('connections.nameTip')"
-              >
-                <a href="javascript:;" class="icon-oper">
-                  <i class="el-icon-warning-outline"></i>
-                </a>
-              </el-tooltip>
-            </el-col>
-            <el-col :span="22">
-              <el-form-item class="host-item" label-width="93px" :label="$t('connections.brokerIP')" prop="host">
-                <el-col :span="6">
-                  <el-select size="mini" v-model="record.protocol" @change="handleProtocol">
-                    <el-option label="mqtt://" value="mqtt"></el-option>
-                    <el-option label="mqtts://" value="mqtts"></el-option>
-                    <el-option label="ws://" value="ws"></el-option>
-                    <el-option label="wss://" value="wss"></el-option>
-                  </el-select>
-                </el-col>
-                <el-col :span="18">
-                  <el-input size="mini" v-model.trim="record.host"> </el-input>
-                </el-col>
-              </el-form-item>
-            </el-col>
-            <el-col :span="2"></el-col>
-            <el-col :span="22">
-              <el-form-item label-width="93px" :label="$t('connections.brokerPort')" prop="port">
-                <el-input-number
-                  size="mini"
-                  type="number"
-                  :min="0"
-                  :max="65535"
-                  v-model="record.port"
-                  controls-position="right"
-                >
-                </el-input-number>
-              </el-form-item>
-            </el-col>
-            <el-col :span="22">
-              <el-form-item label-width="93px" label="Client ID" prop="clientId">
-                <el-input size="mini" v-model="record.clientId" clearable></el-input>
-              </el-form-item>
-            </el-col>
-            <el-col :span="1">
-              <a href="javascript:;" class="icon-oper" @click="setClientID">
-                <i class="el-icon-refresh-right"></i>
-              </a>
-            </el-col>
-            <!-- add clientID timestamp check icon -->
-            <el-col :span="1">
-              <el-tooltip
-                placement="top"
-                :effect="theme !== 'light' ? 'light' : 'dark'"
-                :open-delay="500"
-                :offset="80"
-                :content="$t('connections.clientIdWithTimeTip')"
-              >
-                <a
-                  href="javascript:;"
-                  class="icon-oper-pure"
-                  @click="reverseClientIDWithTime"
-                  :class="{ 'icon-oper-active': clientIdWithTime }"
-                >
-                  <i class="el-icon-time"></i>
-                </a>
-              </el-tooltip>
-            </el-col>
-            <template v-if="record.protocol === 'ws' || record.protocol === 'wss'">
-              <el-col :span="22">
-                <el-form-item label-width="93px" label="Path" prop="path">
-                  <el-input size="mini" v-model="record.path"></el-input>
-                </el-form-item>
               </el-col>
-              <el-col :span="2"></el-col>
-            </template>
-
-            <el-col :span="2"></el-col>
-            <el-col :span="22">
-              <el-form-item label-width="93px" :label="$t('connections.username')" prop="username">
-                <el-input size="mini" clearable v-model.trim="record.username"></el-input>
-              </el-form-item>
-            </el-col>
-            <el-col :span="2"></el-col>
-            <el-col :span="22">
-              <el-form-item label-width="93px" :label="$t('connections.password')" prop="password">
-                <el-input type="password" clearable size="mini" v-model.trim="record.password"></el-input>
-              </el-form-item>
-            </el-col>
-            <el-col :span="2"></el-col>
-            <el-col :span="22">
-              <el-form-item label-width="93px" label="SSL/TLS" prop="ssl">
-                <el-switch v-model="record.ssl" active-color="#13ce66" inactive-color="#A2A9B0" @change="handleSSL">
-                </el-switch>
-              </el-form-item>
-            </el-col>
-            <el-col :span="2"></el-col>
-            <template v-if="record.ssl">
-              <el-col :span="22">
-                <el-form-item
-                  class="item-secure"
-                  :label="$t('connections.strictValidateCertificate')"
-                  label-width="93px"
-                  prop="rejectUnauthorized"
+              <el-col :span="11">
+                <el-tooltip
+                  placement="top"
+                  :effect="theme !== 'light' ? 'light' : 'dark'"
+                  :open-delay="500"
+                  :offset="80"
+                  :content="$t('configs.applyTips')"
                 >
-                  <el-switch v-model="record.rejectUnauthorized" active-color="#13ce66" inactive-color="#A2A9B0">
-                  </el-switch>
-                  <el-tooltip
-                    class="tooltip-secure"
-                    placement="top"
-                    :effect="theme !== 'light' ? 'light' : 'dark'"
-                    :open-delay="500"
-                    :offset="80"
-                    :content="$t('connections.secureTip')"
+                  <el-form-item label-width="0">
+                    <el-select
+                      size="mini"
+                      v-model="clientProfileId"
+                      clearable
+                      filterable
+                      :placeholder="$t('configs.selectClientProfile')"
+                      @change="applyClientProfile"
+                    >
+                      <el-option v-for="p in clientProfiles" :key="p.id" :label="p.alias" :value="p.id">
+                        <span style="float: left">{{ p.alias }}</span>
+                        <span style="float: right; color: #8492a6; font-size: 12px; margin-left: 12px">
+                          {{ p.clientId }}
+                        </span>
+                      </el-option>
+                    </el-select>
+                  </el-form-item>
+                </el-tooltip>
+              </el-col>
+            </el-row>
+            <el-row v-if="oper === 'create'" :gutter="10">
+              <el-col :span="11">
+                <el-form-item label-width="93px" :label="$t('configs.behaviorTemplates')">
+                  <el-select
+                    size="mini"
+                    v-model="behaviorTemplateId"
+                    clearable
+                    filterable
+                    :placeholder="$t('configs.selectBehaviorTemplate')"
+                    @change="applyBehaviorTemplate"
                   >
-                    <a href="javascript:;" class="icon-oper">
-                      <i class="el-icon-warning-outline"></i>
-                    </a>
-                  </el-tooltip>
+                    <el-option v-for="item in behaviorTemplates" :key="item.id" :label="item.name" :value="item.id">
+                    </el-option>
+                  </el-select>
                 </el-form-item>
               </el-col>
-              <el-col :span="2"></el-col>
-              <el-col :span="22">
-                <el-form-item label-width="93px" label="ALPN" prop="ALPNProtocols">
-                  <el-input size="mini" clearable v-model.trim="record.ALPNProtocols"></el-input>
+              <el-col v-if="credentialFromDevice" :span="11">
+                <el-form-item label-width="0">
+                  <el-checkbox v-model="rememberOnDevice">{{ $t('connections.rememberDevice') }}</el-checkbox>
                 </el-form-item>
               </el-col>
-              <el-col :span="2"></el-col>
-              <el-col :span="22">
-                <el-form-item label-width="93px" :label="$t('connections.certType')" prop="certType">
-                  <el-radio-group v-model="record.certType">
-                    <el-radio label="server">CA signed server certificate</el-radio>
-                    <el-radio label="self">CA or Self signed certificates</el-radio>
-                  </el-radio-group>
-                </el-form-item>
-              </el-col>
-              <el-col :span="2"></el-col>
-            </template>
-          </el-row>
-        </el-card>
-
-        <!-- SSL -->
-        <transition-group name="el-zoom-in-top">
-          <template v-if="record.certType === 'self'">
-            <div key="title" class="info-header">
-              <h3>Certificates</h3>
-            </div>
-            <el-card key="content" shadow="never" class="info-body item-card">
-              <el-row :gutter="10">
-                <el-col :span="22">
-                  <el-form-item :label="$t('connections.ca')" prop="ca">
-                    <el-input size="mini" v-model="record.ca" clearable></el-input>
-                  </el-form-item>
-                </el-col>
-                <el-col :span="2">
-                  <a href="javascript:;" class="icon-oper" @click="getFileContent('ca')">
-                    <i class="el-icon-folder-opened"></i>
-                  </a>
-                </el-col>
-                <el-col :span="22">
-                  <el-form-item :label="$t('connections.cert')" prop="cert">
-                    <el-input size="mini" v-model="record.cert" clearable></el-input>
-                  </el-form-item>
-                </el-col>
-                <el-col :span="2">
-                  <a href="javascript:;" class="icon-oper" @click="getFileContent('cert')">
-                    <i class="el-icon-folder-opened"></i>
-                  </a>
-                </el-col>
-                <el-col :span="22">
-                  <el-form-item :label="$t('connections.key')" prop="key">
-                    <el-input size="mini" v-model="record.key" clearable></el-input>
-                  </el-form-item>
-                </el-col>
-                <el-col :span="2">
-                  <a href="javascript:;" class="icon-oper" @click="getFileContent('key')">
-                    <i class="el-icon-folder-opened"></i>
-                  </a>
-                </el-col>
-              </el-row>
-            </el-card>
-          </template>
-        </transition-group>
-
-        <div class="info-header">
-          <h3 class="section-title">
-            {{ $t('connections.clientVariables') }}
-            <VariablesHelp />
-          </h3>
-        </div>
-        <el-card shadow="never" class="info-body item-card">
-          <el-row :gutter="10">
-            <el-col :span="24">
-              <!-- The connection id unlocks the current value / reset actions of stateful variables. -->
-              <VariableEditor v-model="record.variables" :connection-id="record.id" />
-            </el-col>
-          </el-row>
-        </el-card>
-
-        <div class="info-header">
-          <h3>{{ $t('connections.autoSubscribe') }}</h3>
-        </div>
-        <el-card shadow="never" class="info-body item-card">
-          <el-row :gutter="10">
-            <el-col :span="24">
-              <AutoSubscribeEditor v-model="record.autoSubscriptions" />
-            </el-col>
-          </el-row>
-        </el-card>
-
-        <div class="info-header">
-          <h3>{{ $t('connections.autoReply') }}</h3>
-        </div>
-        <el-card shadow="never" class="info-body item-card">
-          <el-row :gutter="10">
-            <el-col :span="24">
-              <AutoReplyEditor
-                v-model="record.autoReplies"
-                :variable-names="autoReplyVariableNames"
-                :templates="autoReplyPresets"
-                @example="applyAutomationExample"
-              />
-            </el-col>
-          </el-row>
-        </el-card>
-
-        <div class="info-header">
-          <h3>{{ $t('connections.messageSequence') }}</h3>
-        </div>
-        <el-card shadow="never" class="info-body item-card">
-          <el-row :gutter="10">
-            <el-col :span="24">
-              <MessageSequenceEditor
-                v-model="record.messageSequences"
-                :variable-names="autoReplyVariableNames"
-                :templates="sequencePresets"
-                @example="applyAutomationExample"
-              />
-            </el-col>
-          </el-row>
-        </el-card>
-
-        <div class="info-header">
-          <h3>
-            {{ $t('settings.advanced') }}
-            <a
-              :class="['collapse-btn', advancedVisible ? 'top' : 'bottom']"
-              href="javascript:;"
-              @click="handleCollapse('advanced')"
-            >
-              <i class="el-icon-caret-top"></i>
-            </a>
-          </h3>
-        </div>
-        <el-collapse-transition>
-          <el-card v-show="advancedVisible" shadow="never" class="info-body item-card">
+            </el-row>
             <el-row :gutter="10">
-              <el-col :span="22">
-                <el-form-item :label="$t('connections.mqttVersion')" prop="mqttVersion">
-                  <el-select size="mini" v-model="record.mqttVersion">
-                    <el-option value="3.1" label="3.1"></el-option>
-                    <el-option value="3.1.1" label="3.1.1"></el-option>
-                    <el-option value="5.0" label="5.0"></el-option>
+              <el-col :span="15">
+                <el-form-item label-width="93px" :label="$t('connections.name')" prop="name">
+                  <el-autocomplete
+                    v-if="oper === 'create'"
+                    size="mini"
+                    v-model.trim="record.name"
+                    value-key="name"
+                    :fetch-suggestions="querySearchName"
+                    @select="handleSelectName"
+                  >
+                  </el-autocomplete>
+                  <el-input v-else size="mini" v-model.trim="record.name"></el-input>
+                </el-form-item>
+              </el-col>
+              <el-col :span="7">
+                <el-form-item label-width="0" prop="parentId">
+                  <el-select
+                    size="mini"
+                    filterable
+                    clearable
+                    v-model="record.parentId"
+                    :placeholder="$t('connections.collection')"
+                    :aria-label="$t('connections.collection')"
+                    @visible-change="$event && loadCollectionOptions()"
+                  >
+                    <el-option
+                      v-for="collection in collectionOptions"
+                      :key="collection.id"
+                      :label="collection.label"
+                      :value="collection.id"
+                    ></el-option>
                   </el-select>
                 </el-form-item>
               </el-col>
+              <el-col :span="2">
+                <el-tooltip
+                  v-if="oper === 'create'"
+                  placement="top"
+                  :effect="theme !== 'light' ? 'light' : 'dark'"
+                  :open-delay="500"
+                  :offset="80"
+                  :content="$t('connections.nameTip')"
+                >
+                  <a href="javascript:;" class="icon-oper">
+                    <i class="el-icon-warning-outline"></i>
+                  </a>
+                </el-tooltip>
+              </el-col>
+              <el-col :span="22">
+                <el-form-item class="host-item" label-width="93px" :label="$t('connections.brokerIP')" prop="host">
+                  <el-col :span="6">
+                    <el-select size="mini" v-model="record.protocol" @change="handleProtocol">
+                      <el-option label="mqtt://" value="mqtt"></el-option>
+                      <el-option label="mqtts://" value="mqtts"></el-option>
+                      <el-option label="ws://" value="ws"></el-option>
+                      <el-option label="wss://" value="wss"></el-option>
+                    </el-select>
+                  </el-col>
+                  <el-col :span="18">
+                    <el-input size="mini" v-model.trim="record.host"> </el-input>
+                  </el-col>
+                </el-form-item>
+              </el-col>
               <el-col :span="2"></el-col>
               <el-col :span="22">
-                <el-form-item :label="$t('connections.connectionTimeout')" prop="connectTimeout">
+                <el-form-item label-width="93px" :label="$t('connections.brokerPort')" prop="port">
                   <el-input-number
                     size="mini"
                     type="number"
                     :min="0"
-                    v-model="record.connectTimeout"
+                    :max="65535"
+                    v-model="record.port"
                     controls-position="right"
                   >
                   </el-input-number>
                 </el-form-item>
               </el-col>
-              <el-col :span="2"
-                ><div class="unit">({{ $t('common.unitS') }})</div></el-col
-              >
               <el-col :span="22">
-                <el-form-item label="Keep Alive" prop="keepalive">
-                  <el-input-number
-                    size="mini"
-                    type="number"
-                    :min="0"
-                    v-model="record.keepalive"
-                    controls-position="right"
+                <el-form-item label-width="93px" label="Client ID" prop="clientId">
+                  <el-input size="mini" v-model="record.clientId" clearable></el-input>
+                </el-form-item>
+              </el-col>
+              <el-col :span="1">
+                <a href="javascript:;" class="icon-oper" @click="setClientID">
+                  <i class="el-icon-refresh-right"></i>
+                </a>
+              </el-col>
+              <!-- add clientID timestamp check icon -->
+              <el-col :span="1">
+                <el-tooltip
+                  placement="top"
+                  :effect="theme !== 'light' ? 'light' : 'dark'"
+                  :open-delay="500"
+                  :offset="80"
+                  :content="$t('connections.clientIdWithTimeTip')"
+                >
+                  <a
+                    href="javascript:;"
+                    class="icon-oper-pure"
+                    @click="reverseClientIDWithTime"
+                    :class="{ 'icon-oper-active': clientIdWithTime }"
                   >
-                  </el-input-number>
-                </el-form-item>
+                    <i class="el-icon-time"></i>
+                  </a>
+                </el-tooltip>
               </el-col>
-              <el-col :span="2"
-                ><div class="unit">({{ $t('common.unitS') }})</div></el-col
-              >
-              <el-col :span="22">
-                <el-form-item :label="$t('connections.autoReconnect')" prop="reconnect">
-                  <el-switch v-model="record.reconnect" active-color="#13ce66" inactive-color="#A2A9B0"> </el-switch>
-                </el-form-item>
-              </el-col>
-              <el-col :span="2"></el-col>
-              <template v-if="record.reconnect">
+              <template v-if="record.protocol === 'ws' || record.protocol === 'wss'">
                 <el-col :span="22">
-                  <el-form-item :label="$t('connections.reconnectPeriod')" prop="reconnectPeriod">
-                    <el-input-number
-                      size="mini"
-                      type="number"
-                      :min="1"
-                      v-model="record.reconnectPeriod"
-                      controls-position="right"
-                    >
-                    </el-input-number>
+                  <el-form-item label-width="93px" label="Path" prop="path">
+                    <el-input size="mini" v-model="record.path"></el-input>
                   </el-form-item>
                 </el-col>
-                <el-col :span="2">
-                  <div class="unit">({{ $t('common.unitMS') }})</div>
-                </el-col>
+                <el-col :span="2"></el-col>
               </template>
+
+              <el-col :span="2"></el-col>
               <el-col :span="22">
-                <el-form-item :label="record.mqttVersion === '5.0' ? 'Clean Start' : 'Clean Session'" prop="clean">
-                  <el-switch
-                    v-model="record.clean"
-                    active-color="#13ce66"
-                    inactive-color="#A2A9B0"
-                    @change="handleClean"
-                  >
+                <el-form-item label-width="93px" :label="$t('connections.username')" prop="username">
+                  <el-input size="mini" clearable v-model.trim="record.username"></el-input>
+                </el-form-item>
+              </el-col>
+              <el-col :span="2"></el-col>
+              <el-col :span="22">
+                <el-form-item label-width="93px" :label="$t('connections.password')" prop="password">
+                  <el-input type="password" clearable size="mini" v-model.trim="record.password"></el-input>
+                </el-form-item>
+              </el-col>
+              <el-col :span="2"></el-col>
+              <el-col :span="22">
+                <el-form-item label-width="93px" label="SSL/TLS" prop="ssl">
+                  <el-switch v-model="record.ssl" active-color="#13ce66" inactive-color="#A2A9B0" @change="handleSSL">
                   </el-switch>
                 </el-form-item>
               </el-col>
               <el-col :span="2"></el-col>
-              <template v-if="record.mqttVersion === '5.0'">
+              <template v-if="record.ssl">
                 <el-col :span="22">
-                  <el-form-item :label="$t('connections.sessionExpiryInterval')" prop="sessionExpiryInterval">
-                    <el-input
-                      size="mini"
-                      type="number"
-                      :min="0"
-                      :placeholder="$t('common.neverExpire')"
-                      clearable
-                      v-model.number="record.properties.sessionExpiryInterval"
-                    >
-                    </el-input>
-                  </el-form-item>
-                </el-col>
-                <el-col :span="2">
-                  <div class="unit">({{ $t('common.unitS') }})</div>
-                </el-col>
-              </template>
-
-              <!-- MQTT v5.0 -->
-              <template v-if="record.mqttVersion === '5.0'">
-                <el-col :span="22">
-                  <el-form-item :label="$t('connections.receiveMaximum')" prop="receiveMaximum">
-                    <el-input
-                      size="mini"
-                      type="number"
-                      :min="1"
-                      clearable
-                      v-model.number="record.properties.receiveMaximum"
-                    >
-                    </el-input>
-                  </el-form-item>
-                </el-col>
-                <el-col :span="2"></el-col>
-                <el-col :span="22">
-                  <el-form-item :label="$t('connections.maximumPacketSize')" prop="maximumPacketSize">
-                    <el-input
-                      size="mini"
-                      type="number"
-                      :min="100"
-                      clearable
-                      v-model.number="record.properties.maximumPacketSize"
-                    >
-                    </el-input>
-                  </el-form-item>
-                </el-col>
-                <el-col :span="2"></el-col>
-                <el-col :span="22">
-                  <el-form-item :label="$t('connections.topicAliasMaximum')" prop="topicAliasMaximum">
-                    <el-input
-                      size="mini"
-                      type="number"
-                      :min="1"
-                      clearable
-                      v-model.number="record.properties.topicAliasMaximum"
-                    >
-                    </el-input>
-                  </el-form-item>
-                </el-col>
-                <el-col :span="2"></el-col>
-                <el-col :span="22">
-                  <el-form-item :label="$t('connections.requestResponseInformation')" prop="requestResponseInformation">
-                    <el-switch
-                      v-model="record.properties.requestResponseInformation"
-                      active-color="#13ce66"
-                      inactive-color="#A2A9B0"
-                    >
+                  <el-form-item
+                    class="item-secure"
+                    :label="$t('connections.strictValidateCertificate')"
+                    label-width="93px"
+                    prop="rejectUnauthorized"
+                  >
+                    <el-switch v-model="record.rejectUnauthorized" active-color="#13ce66" inactive-color="#A2A9B0">
                     </el-switch>
+                    <el-tooltip
+                      class="tooltip-secure"
+                      placement="top"
+                      :effect="theme !== 'light' ? 'light' : 'dark'"
+                      :open-delay="500"
+                      :offset="80"
+                      :content="$t('connections.secureTip')"
+                    >
+                      <a href="javascript:;" class="icon-oper">
+                        <i class="el-icon-warning-outline"></i>
+                      </a>
+                    </el-tooltip>
                   </el-form-item>
                 </el-col>
                 <el-col :span="2"></el-col>
                 <el-col :span="22">
-                  <el-form-item :label="$t('connections.requestProblemInformation')" prop="requestProblemInformation">
-                    <el-switch
-                      v-model="record.properties.requestProblemInformation"
-                      active-color="#13ce66"
-                      inactive-color="#A2A9B0"
-                    >
-                    </el-switch>
+                  <el-form-item label-width="93px" label="ALPN" prop="ALPNProtocols">
+                    <el-input size="mini" clearable v-model.trim="record.ALPNProtocols"></el-input>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="2"></el-col>
+                <el-col :span="22">
+                  <el-form-item label-width="93px" :label="$t('connections.certType')" prop="certType">
+                    <el-radio-group v-model="record.certType">
+                      <el-radio label="server">CA signed server certificate</el-radio>
+                      <el-radio label="self">CA or Self signed certificates</el-radio>
+                    </el-radio-group>
                   </el-form-item>
                 </el-col>
                 <el-col :span="2"></el-col>
               </template>
             </el-row>
           </el-card>
-        </el-collapse-transition>
 
-        <!-- Enhanced Authentication for MQTT 5.0 -->
-        <el-card v-if="record.mqttVersion === '5.0' && advancedVisible" shadow="never" class="info-body item-card">
-          <el-row :gutter="10">
-            <el-col :span="22">
-              <el-form-item :label="$t('connections.authenticationMethod')" prop="authenticationMethod">
-                <el-select size="mini" v-model="record.properties.authenticationMethod" clearable>
-                  <el-option label="SCRAM-SHA-1" value="SCRAM-SHA-1"></el-option>
-                  <el-option label="SCRAM-SHA-256" value="SCRAM-SHA-256"></el-option>
-                  <el-option label="SCRAM-SHA-512" value="SCRAM-SHA-512"></el-option>
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="2"></el-col>
-          </el-row>
-        </el-card>
+          <!-- SSL -->
+          <transition-group name="el-zoom-in-top">
+            <template v-if="record.certType === 'self'">
+              <div key="title" class="info-header">
+                <h3>Certificates</h3>
+              </div>
+              <el-card key="content" shadow="never" class="info-body item-card">
+                <el-row :gutter="10">
+                  <el-col :span="22">
+                    <el-form-item :label="$t('connections.ca')" prop="ca">
+                      <el-input size="mini" v-model="record.ca" clearable></el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2">
+                    <a href="javascript:;" class="icon-oper" @click="getFileContent('ca')">
+                      <i class="el-icon-folder-opened"></i>
+                    </a>
+                  </el-col>
+                  <el-col :span="22">
+                    <el-form-item :label="$t('connections.cert')" prop="cert">
+                      <el-input size="mini" v-model="record.cert" clearable></el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2">
+                    <a href="javascript:;" class="icon-oper" @click="getFileContent('cert')">
+                      <i class="el-icon-folder-opened"></i>
+                    </a>
+                  </el-col>
+                  <el-col :span="22">
+                    <el-form-item :label="$t('connections.key')" prop="key">
+                      <el-input size="mini" v-model="record.key" clearable></el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2">
+                    <a href="javascript:;" class="icon-oper" @click="getFileContent('key')">
+                      <i class="el-icon-folder-opened"></i>
+                    </a>
+                  </el-col>
+                </el-row>
+              </el-card>
+            </template>
+          </transition-group>
 
-        <el-card v-if="record.mqttVersion === '5.0' && advancedVisible" shadow="never" class="info-body item-card">
-          <el-row :gutter="20">
-            <el-col :span="22">
-              <KeyValueEditor :title="$t('connections.userProperties')" v-model="record.properties.userProperties" />
-            </el-col>
-          </el-row>
-        </el-card>
-
-        <!-- Last-Will Message -->
-        <div class="info-header">
-          <h3>
-            {{ $t('connections.willMessage') }}
-            <a
-              :class="['collapse-btn', willMessageVisible ? 'top' : 'bottom']"
-              href="javascript:;"
-              @click="handleCollapse('willMessage')"
-            >
-              <i class="el-icon-caret-top"></i>
-            </a>
-          </h3>
-        </div>
-        <el-collapse-transition>
-          <el-card v-show="willMessageVisible" shadow="never" class="info-body item-card">
+          <div class="info-header">
+            <h3 class="section-title">
+              {{ $t('connections.clientVariables') }}
+              <VariablesHelp />
+            </h3>
+          </div>
+          <el-card shadow="never" class="info-body item-card">
             <el-row :gutter="10">
-              <el-col :span="22">
-                <el-form-item label-width="160px" :label="$t('connections.willTopic')" prop="will.lastWillTopic">
-                  <div class="topic-preset-field">
-                    <el-input size="mini" v-model="record.will.lastWillTopic"></el-input>
-                    <TopicPresetPicker @select="applyWillTopic" />
-                  </div>
-                </el-form-item>
+              <el-col :span="24">
+                <!-- The connection id unlocks the current value / reset actions of stateful variables. -->
+                <VariableEditor v-model="record.variables" :connection-id="record.id" />
               </el-col>
-              <el-col :span="2"></el-col>
-              <el-col :span="22">
-                <el-form-item label-width="160px" :label="$t('connections.willQos')" prop="will.lastWillQos">
-                  <el-radio-group v-model="record.will.lastWillQos">
-                    <el-radio :label="0"></el-radio>
-                    <el-radio :label="1"></el-radio>
-                    <el-radio :label="2"></el-radio>
-                  </el-radio-group>
-                </el-form-item>
-              </el-col>
-              <el-col :span="2"></el-col>
-              <el-col :span="22">
-                <el-form-item label-width="160px" :label="$t('connections.willRetain')" prop="will.lastWillRetain">
-                  <el-switch v-model="record.will.lastWillRetain" active-color="#13ce66" inactive-color="#A2A9B0">
-                  </el-switch>
-                </el-form-item>
-              </el-col>
-              <el-col :span="2"></el-col>
-              <el-col :span="22">
-                <el-form-item
-                  class="will-payload-box"
-                  label-width="160px"
-                  :label="$t('connections.willPayload')"
-                  prop="will.lastWillPayload"
-                >
-                  <div class="last-will-payload">
-                    <Editor
-                      ref="lastWillPayload"
-                      id="lastWillPayload"
-                      :lang="payloadType"
-                      :fontSize="12"
-                      v-model="record.will.lastWillPayload"
-                      scrollbar-status="auto"
-                    />
-                  </div>
-                  <div class="lang-type">
-                    <el-radio-group v-model="payloadType">
-                      <el-radio label="json">JSON</el-radio>
-                      <el-radio label="plaintext">Plaintext</el-radio>
-                    </el-radio-group>
-                  </div>
-                </el-form-item>
-              </el-col>
-              <el-col :span="2"></el-col>
+            </el-row>
+          </el-card>
 
-              <!-- MQTT v5.0 -->
-              <template v-if="record.mqttVersion === '5.0'">
+          <div class="info-header">
+            <h3>{{ $t('connections.autoSubscribe') }}</h3>
+          </div>
+          <el-card shadow="never" class="info-body item-card">
+            <el-row :gutter="10">
+              <el-col :span="24">
+                <AutoSubscribeEditor v-model="record.autoSubscriptions" />
+              </el-col>
+            </el-row>
+          </el-card>
+
+          <div class="info-header">
+            <h3>{{ $t('connections.timedReports') }}</h3>
+          </div>
+          <el-card shadow="never" class="info-body item-card">
+            <el-row :gutter="10">
+              <el-col :span="24">
+                <TimedReportEditor v-model="record.timedReports" />
+              </el-col>
+            </el-row>
+          </el-card>
+
+          <div class="info-header">
+            <h3>{{ $t('connections.autoReply') }}</h3>
+          </div>
+          <el-card shadow="never" class="info-body item-card">
+            <el-row :gutter="10">
+              <el-col :span="24">
+                <AutoReplyEditor
+                  v-model="record.autoReplies"
+                  :variable-names="autoReplyVariableNames"
+                  :templates="autoReplyPresets"
+                  @example="applyAutomationExample"
+                />
+              </el-col>
+            </el-row>
+          </el-card>
+
+          <div class="info-header">
+            <h3>{{ $t('connections.messageSequence') }}</h3>
+          </div>
+          <el-card shadow="never" class="info-body item-card">
+            <el-row :gutter="10">
+              <el-col :span="24">
+                <MessageSequenceEditor
+                  v-model="record.messageSequences"
+                  :variable-names="autoReplyVariableNames"
+                  :templates="sequencePresets"
+                  @example="applyAutomationExample"
+                />
+              </el-col>
+            </el-row>
+          </el-card>
+
+          <div class="info-header">
+            <h3>
+              {{ $t('settings.advanced') }}
+              <a
+                :class="['collapse-btn', advancedVisible ? 'top' : 'bottom']"
+                href="javascript:;"
+                @click="handleCollapse('advanced')"
+              >
+                <i class="el-icon-caret-top"></i>
+              </a>
+            </h3>
+          </div>
+          <el-collapse-transition>
+            <el-card v-show="advancedVisible" shadow="never" class="info-body item-card">
+              <el-row :gutter="10">
                 <el-col :span="22">
-                  <el-form-item
-                    label-width="175px"
-                    :label="$t('connections.payloadFormatIndicator')"
-                    prop="payloadFormatIndicator"
-                  >
-                    <el-switch
-                      v-model="record.will.properties.payloadFormatIndicator"
-                      active-color="#13ce66"
-                      inactive-color="#A2A9B0"
-                    >
-                    </el-switch>
+                  <el-form-item :label="$t('connections.mqttVersion')" prop="mqttVersion">
+                    <el-select size="mini" v-model="record.mqttVersion">
+                      <el-option value="3.1" label="3.1"></el-option>
+                      <el-option value="3.1.1" label="3.1.1"></el-option>
+                      <el-option value="5.0" label="5.0"></el-option>
+                    </el-select>
                   </el-form-item>
                 </el-col>
                 <el-col :span="2"></el-col>
                 <el-col :span="22">
-                  <el-form-item
-                    label-width="175px"
-                    :label="$t('connections.willDelayInterval')"
-                    prop="willDelayInterval"
-                  >
-                    <el-input
+                  <el-form-item :label="$t('connections.connectionTimeout')" prop="connectTimeout">
+                    <el-input-number
                       size="mini"
                       type="number"
                       :min="0"
-                      clearable
-                      v-model.number="record.will.properties.willDelayInterval"
+                      v-model="record.connectTimeout"
+                      controls-position="right"
                     >
-                    </el-input>
+                    </el-input-number>
                   </el-form-item>
                 </el-col>
                 <el-col :span="2"
                   ><div class="unit">({{ $t('common.unitS') }})</div></el-col
                 >
                 <el-col :span="22">
-                  <el-form-item
-                    label-width="175px"
-                    :label="$t('connections.messageExpiryInterval')"
-                    props="messageExpiryInterval"
-                  >
-                    <el-input
+                  <el-form-item label="Keep Alive" prop="keepalive">
+                    <el-input-number
                       size="mini"
                       type="number"
                       :min="0"
-                      clearable
-                      v-model.number="record.will.properties.messageExpiryInterval"
+                      v-model="record.keepalive"
+                      controls-position="right"
                     >
-                    </el-input>
+                    </el-input-number>
                   </el-form-item>
                 </el-col>
-                <el-col :span="2">
-                  <div class="unit">({{ $t('common.unitS') }})</div>
-                </el-col>
+                <el-col :span="2"
+                  ><div class="unit">({{ $t('common.unitS') }})</div></el-col
+                >
                 <el-col :span="22">
-                  <el-form-item
-                    class="content-type-item"
-                    label-width="175px"
-                    :label="$t('connections.contentType')"
-                    prop="contentType"
-                  >
-                    <el-input size="mini" clearable v-model="record.will.properties.contentType"> </el-input>
+                  <el-form-item :label="$t('connections.autoReconnect')" prop="reconnect">
+                    <el-switch v-model="record.reconnect" active-color="#13ce66" inactive-color="#A2A9B0"> </el-switch>
                   </el-form-item>
                 </el-col>
                 <el-col :span="2"></el-col>
+                <template v-if="record.reconnect">
+                  <el-col :span="22">
+                    <el-form-item :label="$t('connections.reconnectPeriod')" prop="reconnectPeriod">
+                      <el-input-number
+                        size="mini"
+                        type="number"
+                        :min="1"
+                        v-model="record.reconnectPeriod"
+                        controls-position="right"
+                      >
+                      </el-input-number>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2">
+                    <div class="unit">({{ $t('common.unitMS') }})</div>
+                  </el-col>
+                </template>
                 <el-col :span="22">
-                  <el-form-item
-                    class="content-type-item"
-                    label-width="175px"
-                    :label="$t('connections.responseTopic')"
-                    prop="responseTopic"
-                  >
+                  <el-form-item :label="record.mqttVersion === '5.0' ? 'Clean Start' : 'Clean Session'" prop="clean">
+                    <el-switch
+                      v-model="record.clean"
+                      active-color="#13ce66"
+                      inactive-color="#A2A9B0"
+                      @change="handleClean"
+                    >
+                    </el-switch>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="2"></el-col>
+                <template v-if="record.mqttVersion === '5.0'">
+                  <el-col :span="22">
+                    <el-form-item :label="$t('connections.sessionExpiryInterval')" prop="sessionExpiryInterval">
+                      <el-input
+                        size="mini"
+                        type="number"
+                        :min="0"
+                        :placeholder="$t('common.neverExpire')"
+                        clearable
+                        v-model.number="record.properties.sessionExpiryInterval"
+                      >
+                      </el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2">
+                    <div class="unit">({{ $t('common.unitS') }})</div>
+                  </el-col>
+                </template>
+
+                <!-- MQTT v5.0 -->
+                <template v-if="record.mqttVersion === '5.0'">
+                  <el-col :span="22">
+                    <el-form-item :label="$t('connections.receiveMaximum')" prop="receiveMaximum">
+                      <el-input
+                        size="mini"
+                        type="number"
+                        :min="1"
+                        clearable
+                        v-model.number="record.properties.receiveMaximum"
+                      >
+                      </el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2"></el-col>
+                  <el-col :span="22">
+                    <el-form-item :label="$t('connections.maximumPacketSize')" prop="maximumPacketSize">
+                      <el-input
+                        size="mini"
+                        type="number"
+                        :min="100"
+                        clearable
+                        v-model.number="record.properties.maximumPacketSize"
+                      >
+                      </el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2"></el-col>
+                  <el-col :span="22">
+                    <el-form-item :label="$t('connections.topicAliasMaximum')" prop="topicAliasMaximum">
+                      <el-input
+                        size="mini"
+                        type="number"
+                        :min="1"
+                        clearable
+                        v-model.number="record.properties.topicAliasMaximum"
+                      >
+                      </el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2"></el-col>
+                  <el-col :span="22">
+                    <el-form-item
+                      :label="$t('connections.requestResponseInformation')"
+                      prop="requestResponseInformation"
+                    >
+                      <el-switch
+                        v-model="record.properties.requestResponseInformation"
+                        active-color="#13ce66"
+                        inactive-color="#A2A9B0"
+                      >
+                      </el-switch>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2"></el-col>
+                  <el-col :span="22">
+                    <el-form-item :label="$t('connections.requestProblemInformation')" prop="requestProblemInformation">
+                      <el-switch
+                        v-model="record.properties.requestProblemInformation"
+                        active-color="#13ce66"
+                        inactive-color="#A2A9B0"
+                      >
+                      </el-switch>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2"></el-col>
+                </template>
+              </el-row>
+            </el-card>
+          </el-collapse-transition>
+
+          <!-- Enhanced Authentication for MQTT 5.0 -->
+          <el-card v-if="record.mqttVersion === '5.0' && advancedVisible" shadow="never" class="info-body item-card">
+            <el-row :gutter="10">
+              <el-col :span="22">
+                <el-form-item :label="$t('connections.authenticationMethod')" prop="authenticationMethod">
+                  <el-select size="mini" v-model="record.properties.authenticationMethod" clearable>
+                    <el-option label="SCRAM-SHA-1" value="SCRAM-SHA-1"></el-option>
+                    <el-option label="SCRAM-SHA-256" value="SCRAM-SHA-256"></el-option>
+                    <el-option label="SCRAM-SHA-512" value="SCRAM-SHA-512"></el-option>
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="2"></el-col>
+            </el-row>
+          </el-card>
+
+          <el-card v-if="record.mqttVersion === '5.0' && advancedVisible" shadow="never" class="info-body item-card">
+            <el-row :gutter="20">
+              <el-col :span="22">
+                <KeyValueEditor :title="$t('connections.userProperties')" v-model="record.properties.userProperties" />
+              </el-col>
+            </el-row>
+          </el-card>
+
+          <!-- Last-Will Message -->
+          <div class="info-header">
+            <h3>
+              {{ $t('connections.willMessage') }}
+              <a
+                :class="['collapse-btn', willMessageVisible ? 'top' : 'bottom']"
+                href="javascript:;"
+                @click="handleCollapse('willMessage')"
+              >
+                <i class="el-icon-caret-top"></i>
+              </a>
+            </h3>
+          </div>
+          <el-collapse-transition>
+            <el-card v-show="willMessageVisible" shadow="never" class="info-body item-card">
+              <el-row :gutter="10">
+                <el-col :span="22">
+                  <el-form-item label-width="160px" :label="$t('connections.willTopic')" prop="will.lastWillTopic">
                     <div class="topic-preset-field">
-                      <el-input size="mini" clearable v-model="record.will.properties.responseTopic"></el-input>
-                      <TopicPresetPicker @select="applyWillResponseTopic" />
+                      <el-input size="mini" v-model="record.will.lastWillTopic"></el-input>
+                      <TopicPresetPicker @select="applyWillTopic" />
                     </div>
                   </el-form-item>
                 </el-col>
                 <el-col :span="2"></el-col>
                 <el-col :span="22">
-                  <el-form-item
-                    class="content-type-item"
-                    label-width="175px"
-                    :label="$t('connections.correlationData')"
-                    prop="correlationData"
-                  >
-                    <el-input size="mini" clearable v-model="record.will.properties.correlationData"> </el-input>
+                  <el-form-item label-width="160px" :label="$t('connections.willQos')" prop="will.lastWillQos">
+                    <el-radio-group v-model="record.will.lastWillQos">
+                      <el-radio :label="0"></el-radio>
+                      <el-radio :label="1"></el-radio>
+                      <el-radio :label="2"></el-radio>
+                    </el-radio-group>
                   </el-form-item>
                 </el-col>
                 <el-col :span="2"></el-col>
-              </template>
-            </el-row>
-          </el-card>
-        </el-collapse-transition>
-      </div>
-    </el-form>
+                <el-col :span="22">
+                  <el-form-item label-width="160px" :label="$t('connections.willRetain')" prop="will.lastWillRetain">
+                    <el-switch v-model="record.will.lastWillRetain" active-color="#13ce66" inactive-color="#A2A9B0">
+                    </el-switch>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="2"></el-col>
+                <el-col :span="22">
+                  <el-form-item
+                    class="will-payload-box"
+                    label-width="160px"
+                    :label="$t('connections.willPayload')"
+                    prop="will.lastWillPayload"
+                  >
+                    <div class="last-will-payload">
+                      <Editor
+                        ref="lastWillPayload"
+                        id="lastWillPayload"
+                        :lang="payloadType"
+                        :fontSize="12"
+                        v-model="record.will.lastWillPayload"
+                        scrollbar-status="auto"
+                      />
+                    </div>
+                    <div class="lang-type">
+                      <el-radio-group v-model="payloadType">
+                        <el-radio label="json">JSON</el-radio>
+                        <el-radio label="plaintext">Plaintext</el-radio>
+                      </el-radio-group>
+                    </div>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="2"></el-col>
+
+                <!-- MQTT v5.0 -->
+                <template v-if="record.mqttVersion === '5.0'">
+                  <el-col :span="22">
+                    <el-form-item
+                      label-width="175px"
+                      :label="$t('connections.payloadFormatIndicator')"
+                      prop="payloadFormatIndicator"
+                    >
+                      <el-switch
+                        v-model="record.will.properties.payloadFormatIndicator"
+                        active-color="#13ce66"
+                        inactive-color="#A2A9B0"
+                      >
+                      </el-switch>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2"></el-col>
+                  <el-col :span="22">
+                    <el-form-item
+                      label-width="175px"
+                      :label="$t('connections.willDelayInterval')"
+                      prop="willDelayInterval"
+                    >
+                      <el-input
+                        size="mini"
+                        type="number"
+                        :min="0"
+                        clearable
+                        v-model.number="record.will.properties.willDelayInterval"
+                      >
+                      </el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2"
+                    ><div class="unit">({{ $t('common.unitS') }})</div></el-col
+                  >
+                  <el-col :span="22">
+                    <el-form-item
+                      label-width="175px"
+                      :label="$t('connections.messageExpiryInterval')"
+                      props="messageExpiryInterval"
+                    >
+                      <el-input
+                        size="mini"
+                        type="number"
+                        :min="0"
+                        clearable
+                        v-model.number="record.will.properties.messageExpiryInterval"
+                      >
+                      </el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2">
+                    <div class="unit">({{ $t('common.unitS') }})</div>
+                  </el-col>
+                  <el-col :span="22">
+                    <el-form-item
+                      class="content-type-item"
+                      label-width="175px"
+                      :label="$t('connections.contentType')"
+                      prop="contentType"
+                    >
+                      <el-input size="mini" clearable v-model="record.will.properties.contentType"> </el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2"></el-col>
+                  <el-col :span="22">
+                    <el-form-item
+                      class="content-type-item"
+                      label-width="175px"
+                      :label="$t('connections.responseTopic')"
+                      prop="responseTopic"
+                    >
+                      <div class="topic-preset-field">
+                        <el-input size="mini" clearable v-model="record.will.properties.responseTopic"></el-input>
+                        <TopicPresetPicker @select="applyWillResponseTopic" />
+                      </div>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2"></el-col>
+                  <el-col :span="22">
+                    <el-form-item
+                      class="content-type-item"
+                      label-width="175px"
+                      :label="$t('connections.correlationData')"
+                      prop="correlationData"
+                    >
+                      <el-input size="mini" clearable v-model="record.will.properties.correlationData"> </el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="2"></el-col>
+                </template>
+              </el-row>
+            </el-card>
+          </el-collapse-transition>
+        </div>
+      </el-form>
+    </div>
   </div>
 </template>
 
@@ -756,15 +794,28 @@ import { getMQTTProtocol, getDefaultRecord } from '@/utils/mqttUtils'
 import {
   ensureMessageSequencePresets,
   getAutoReplyPresets,
+  getBehaviorTemplates,
+  getClientProfile,
   getClientProfiles,
   getGlobalVariables,
   getServerProfiles,
+  saveClientProfile,
 } from '@/utils/configProfiles'
+import {
+  applyBehaviorAccount,
+  applyBehaviorClientOptions,
+  captureBehaviorBaseline,
+  copyBehaviorLists,
+  restoreBehaviorBaseline,
+  resolveBehaviorTemplate,
+  BehaviorFormBaseline,
+} from '@/utils/behaviorTemplates'
 import VariableEditor from '@/components/VariableEditor.vue'
 import { onConnectionVariablesChanged, validateStoredVariables } from '@/utils/payloadVariables'
 import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
 import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
+import TimedReportEditor from '@/components/TimedReportEditor.vue'
 import VariablesHelp from '@/components/VariablesHelp.vue'
 import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import Editor from '@/components/Editor.vue'
@@ -780,6 +831,7 @@ import { sortConnectionTree } from '@/utils/connections'
     AutoSubscribeEditor,
     AutoReplyEditor,
     MessageSequenceEditor,
+    TimedReportEditor,
     VariablesHelp,
     TopicPresetPicker,
   },
@@ -821,6 +873,24 @@ export default class ConnectionForm extends Vue {
   private serverProfileId: string | null = null
 
   private clientProfileId: string | null = null
+
+  private behaviorTemplates: BehaviorTemplateModel[] = []
+
+  private behaviorTemplateId: string | null = null
+
+  /**
+   * Form fields from before the current behaviour template was applied.
+   * The next template, or clearing the select, restores this and then applies the new choice.
+   */
+  private behaviorBaseline: BehaviorFormBaseline | null = null
+
+  /** True when the selected template takes the username or the password from the client. */
+  private credentialFromDevice = false
+
+  private rememberOnDevice = false
+
+  /** Name last filled from a client, so a later client replaces it and a hand-edited name stays. */
+  private lastAppliedDeviceName = ''
 
   @Watch('oper')
   private handleCreateNewConnection(val: string) {
@@ -941,6 +1011,9 @@ export default class ConnectionForm extends Vue {
       this.$message.error(msgError)
       this.$log.error(msgError)
       return
+    }
+    if (this.oper === 'create' && this.rememberOnDevice && this.credentialFromDevice) {
+      this.rememberDeviceAccount()
     }
 
     const variablesChanged = JSON.stringify(this.record.variables ?? {}) !== this.variablesSnapshot
@@ -1145,6 +1218,9 @@ export default class ConnectionForm extends Vue {
     const { id } = this.$route.params
     if (this.oper === 'create') {
       this.record = _.cloneDeep(this.defaultRecord)
+      this.behaviorBaseline = null
+      this.behaviorTemplateId = null
+      this.credentialFromDevice = false
       this.handleDefaultCollectionChange()
     } else if (this.oper === 'edit' && id !== '0') {
       await this.loadDetail(id)
@@ -1195,6 +1271,7 @@ export default class ConnectionForm extends Vue {
     if (this.oper === 'create') {
       this.serverProfiles = getServerProfiles()
       this.clientProfiles = getClientProfiles()
+      this.behaviorTemplates = getBehaviorTemplates()
     }
     // Sequence and reply buttons on this form are the templates saved in preset settings.
     this.sequencePresets = ensureMessageSequencePresets()
@@ -1227,19 +1304,31 @@ export default class ConnectionForm extends Vue {
     }
   }
 
-  /** Fills clientId / username / password and client behaviour from a client profile, still editable afterwards. */
+  /**
+   * Fills the form from a saved client. Session fields are copied only when the client still
+   * has them (profiles saved before the client form was shortened). A selected behaviour template
+   * is applied again so its topics and credentials land on top of this identity.
+   */
   private applyClientProfile(id: string | null) {
     if (!id) {
       return
     }
-    const profile = getClientProfiles().find((item) => item.id === id)
+    const profile = getClientProfile(id)
     if (!profile) {
       return
     }
+    // Drop the previous template first, so this client's session is what the next apply captures.
+    if (this.behaviorBaseline) {
+      this.restoreAppliedBehavior()
+      this.behaviorBaseline = null
+    }
     this.record.clientId = profile.clientId
+    if (!this.record.name || this.record.name === this.lastAppliedDeviceName) {
+      this.record.name = profile.alias
+    }
+    this.lastAppliedDeviceName = profile.alias
     this.record.username = profile.username || ''
     this.record.password = profile.password || ''
-    // Legacy profiles saved before these fields existed stay undefined — keep the form's values then.
     if (profile.mqttVersion) {
       this.record.mqttVersion = profile.mqttVersion
     }
@@ -1258,14 +1347,79 @@ export default class ConnectionForm extends Vue {
     if (profile.clean !== undefined) {
       this.record.clean = profile.clean
     }
-    // The preset describes everything the device does after connecting, so its automatic
-    // subscriptions and replies come along; the connection can still tune them afterwards.
-    this.record.autoSubscriptions = JSON.parse(JSON.stringify(profile.autoSubscriptions ?? []))
-    this.record.autoReplies = JSON.parse(JSON.stringify(profile.autoReplies ?? []))
-    this.record.messageSequences = JSON.parse(JSON.stringify(profile.messageSequences ?? []))
-    // The variables describe the client the preset belongs to, so they come along into the
-    // "客户端变量" of the connection that is being created from it.
-    this.record.variables = { ...(profile.variables ?? {}) }
+    this.record.variables = {
+      ...(this.record.variables ?? {}),
+      ...(profile.variables ?? {}),
+    }
+    if (this.behaviorTemplateId) {
+      this.applyBehaviorTemplate(this.behaviorTemplateId)
+    }
+  }
+
+  /**
+   * Copies a behaviour template onto the form. The connection keeps its own copy; later edits of
+   * the template do not change it. Variables stored on the client, and the client account when
+   * the template asks for it, win over the template.
+   */
+  private restoreAppliedBehavior() {
+    if (!this.behaviorBaseline) {
+      return
+    }
+    restoreBehaviorBaseline(this.record, this.behaviorBaseline)
+    this.serverProfileId = this.behaviorBaseline.serverProfileId
+  }
+
+  private applyBehaviorTemplate(id: string | null) {
+    if (!id) {
+      this.restoreAppliedBehavior()
+      this.behaviorBaseline = null
+      this.credentialFromDevice = false
+      return
+    }
+    const resolved = resolveBehaviorTemplate(id)
+    if (!resolved) {
+      return
+    }
+    if (this.behaviorBaseline) {
+      this.restoreAppliedBehavior()
+    } else {
+      this.behaviorBaseline = captureBehaviorBaseline(this.record, this.serverProfileId)
+    }
+    const lists = copyBehaviorLists(resolved)
+    this.record.autoSubscriptions = lists.autoSubscriptions
+    this.record.timedReports = lists.timedReports
+    this.record.autoReplies = lists.autoReplies
+    this.record.messageSequences = lists.messageSequences
+    const device = this.clientProfileId ? getClientProfile(this.clientProfileId) : undefined
+    this.record.variables = {
+      ...resolved.variables,
+      ...(device?.variables ?? {}),
+    }
+    if (resolved.defaultServerId) {
+      this.serverProfileId = resolved.defaultServerId
+      this.applyServerProfile(resolved.defaultServerId)
+    }
+    this.credentialFromDevice = applyBehaviorAccount(this.record, resolved, device)
+    applyBehaviorClientOptions(this.record, resolved.session, resolved.will)
+  }
+
+  /** Writes the account typed for this client back onto the client record. */
+  private rememberDeviceAccount() {
+    const clientId = this.record.clientId.trim()
+    if (!clientId) {
+      return
+    }
+    const existing =
+      (this.clientProfileId ? getClientProfile(this.clientProfileId) : undefined) ??
+      getClientProfiles().find((profile) => profile.clientId === clientId)
+    saveClientProfile({
+      ...(existing ?? {}),
+      id: existing?.id,
+      alias: this.record.name || existing?.alias || clientId,
+      clientId,
+      username: this.record.username || undefined,
+      password: this.record.password || undefined,
+    })
   }
 }
 </script>
@@ -1274,7 +1428,15 @@ export default class ConnectionForm extends Vue {
 @import '~@/assets/scss/mixins.scss';
 
 .connection-form {
+  height: 100%;
   padding: 0 16px;
+  // The form scrolls inside this pane. Scrolling the window instead repaints the fixed
+  // connection list on the left; that flash shows up while moving through the MQTT 5 fields.
+  .connection-form__body {
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
   .topbar {
     -webkit-app-region: drag;
     a {

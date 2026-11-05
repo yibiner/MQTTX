@@ -284,6 +284,45 @@ export const deleteAutoReplyPreset = (id: string): void => {
   )
 }
 
+const BEHAVIOR_TEMPLATES_KEY = 'behaviorTemplates'
+
+/**
+ * Behaviour templates ("行为模板"). A template stores only what it adds. Inherited behaviour is
+ * resolved from `parentId` when a connection is created or when the template is shown; it is not
+ * copied until the user stops syncing with the parent.
+ */
+export const getBehaviorTemplates = (): BehaviorTemplateModel[] => readList(BEHAVIOR_TEMPLATES_KEY)
+
+export const getBehaviorTemplate = (id: string): BehaviorTemplateModel | undefined =>
+  getBehaviorTemplates().find((template) => template.id === id)
+
+export function saveBehaviorTemplate(
+  template: Omit<BehaviorTemplateModel, 'id'> & { id?: string },
+): BehaviorTemplateModel {
+  const templates = getBehaviorTemplates()
+  const saved: BehaviorTemplateModel = {
+    ...template,
+    id: template.id ?? uuidv4(),
+    name: String(template.name ?? '').trim(),
+    parentId: template.parentId || null,
+  }
+  const index = templates.findIndex((item) => item.id === saved.id)
+  if (index === -1) {
+    templates.unshift(saved)
+  } else {
+    templates.splice(index, 1, saved)
+  }
+  writeList(BEHAVIOR_TEMPLATES_KEY, templates)
+  return saved
+}
+
+export const deleteBehaviorTemplate = (id: string): void => {
+  writeList(
+    BEHAVIOR_TEMPLATES_KEY,
+    getBehaviorTemplates().filter((template) => template.id !== id),
+  )
+}
+
 const GLOBAL_VARIABLES_KEY = 'globalVariables'
 
 /**

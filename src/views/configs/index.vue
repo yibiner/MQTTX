@@ -5,6 +5,7 @@
       <el-tabs v-model="activeTab">
         <el-tab-pane :label="$t('configs.serverProfiles')" name="server"></el-tab-pane>
         <el-tab-pane :label="$t('configs.clientProfiles')" name="client"></el-tab-pane>
+        <el-tab-pane :label="$t('configs.behaviorTemplates')" name="behavior"></el-tab-pane>
         <el-tab-pane :label="$t('configs.topicPresets')" name="topic"></el-tab-pane>
         <el-tab-pane :label="$t('configs.messagePresets')" name="message"></el-tab-pane>
         <el-tab-pane :label="$t('configs.messageSequencePresets')" name="sequence"></el-tab-pane>
@@ -79,11 +80,40 @@
         <el-table-column :label="$t('connections.password')" width="110" align="center">
           <template slot-scope="{ row }">{{ row.password ? '••••••' : '-' }}</template>
         </el-table-column>
-        <el-table-column :label="$t('connections.clientVariables')" min-width="170" show-overflow-tooltip>
+        <el-table-column :label="$t('connections.clientVariables')" min-width="180" show-overflow-tooltip>
           <template slot-scope="{ row }">{{ describeVariables(row.variables) }}</template>
         </el-table-column>
-        <el-table-column :label="$t('connections.automation')" min-width="150" show-overflow-tooltip>
-          <template slot-scope="{ row }">{{ describeAutomation(row) }}</template>
+        <el-table-column :label="$t('common.oper')" width="110" align="center">
+          <template slot-scope="{ row }">
+            <a href="javascript:;" class="profile-oper" @click="handleEdit(row)">
+              <i class="iconfont icon-edit"></i>
+            </a>
+            <a href="javascript:;" class="profile-oper danger" @click="handleDelete(row)">
+              <i class="iconfont icon-delete"></i>
+            </a>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-table
+        v-else-if="activeTab === 'behavior'"
+        key="behavior"
+        :data="behaviorTemplates"
+        size="mini"
+        :empty-text="$t('configs.empty')"
+        row-key="id"
+      >
+        <el-table-column
+          :label="$t('configs.name')"
+          prop="name"
+          min-width="160"
+          show-overflow-tooltip
+        ></el-table-column>
+        <el-table-column :label="$t('configs.behaviorParent')" min-width="140" show-overflow-tooltip>
+          <template slot-scope="{ row }">{{ behaviorParentName(row) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('configs.behaviorOwn')" min-width="220" show-overflow-tooltip>
+          <template slot-scope="{ row }">{{ describeBehaviorOwn(row) }}</template>
         </el-table-column>
         <el-table-column :label="$t('common.oper')" width="110" align="center">
           <template slot-scope="{ row }">
@@ -288,7 +318,11 @@
       :title="editingId ? $t('configs.editProfile') : addBtnText"
       :visible.sync="dialogVisible"
       :width="dialogWidth"
-      :top="dialogType === 'message' || dialogType === 'sequence' || dialogType === 'reply' ? '8vh' : '15vh'"
+      :top="
+        dialogType === 'message' || dialogType === 'sequence' || dialogType === 'reply' || dialogType === 'behavior'
+          ? '8vh'
+          : '15vh'
+      "
       @confirm="handleSave"
       @open="handleDialogOpen"
     >
@@ -411,65 +445,95 @@
           <el-form-item :label="$t('connections.password')">
             <el-input v-model.trim="profileForm.password" show-password clearable></el-input>
           </el-form-item>
-          <el-form-item :label="$t('connections.mqttVersion')">
-            <el-select v-model="profileForm.mqttVersion" style="width: 100%">
-              <el-option value="3.1" label="3.1"></el-option>
-              <el-option value="3.1.1" label="3.1.1"></el-option>
-              <el-option value="5.0" label="5.0"></el-option>
+          <el-form-item class="automation-field" :label="$t('connections.clientVariables')">
+            <VariableEditor v-model="profileForm.variables" />
+          </el-form-item>
+        </template>
+
+        <template v-else-if="dialogType === 'behavior'">
+          <el-form-item :label="$t('configs.name')" prop="name">
+            <el-input v-model.trim="profileForm.name" clearable></el-input>
+          </el-form-item>
+          <el-form-item :label="$t('configs.behaviorParent')">
+            <el-select
+              v-model="profileForm.parentId"
+              clearable
+              style="width: 100%"
+              :placeholder="$t('configs.behaviorNoParent')"
+            >
+              <el-option
+                v-for="item in behaviorParentOptions"
+                :key="item.id"
+                :label="item.name"
+                :value="item.id"
+              ></el-option>
             </el-select>
           </el-form-item>
-          <el-form-item :label="$t('connections.connectionTimeout')">
-            <el-input-number
-              v-model="profileForm.connectTimeout"
-              controls-position="right"
-              :min="0"
-              class="client-profile-number"
-            ></el-input-number>
-            <span class="client-profile-unit">({{ $t('common.unitS') }})</span>
+          <div v-if="profileForm.parentId" class="behavior-inherited">
+            <p class="behavior-inherited-title">{{ $t('configs.behaviorInherited') }}</p>
+            <ul v-if="inheritedBehaviorLines.length" class="behavior-inherited-list">
+              <li v-for="(line, index) in inheritedBehaviorLines" :key="index">{{ line }}</li>
+            </ul>
+            <p v-else class="behavior-inherited-empty">-</p>
+            <el-button size="mini" @click="detachBehaviorParent">{{ $t('configs.behaviorDetach') }}</el-button>
+          </div>
+          <el-form-item :label="$t('configs.defaultServer')">
+            <el-select
+              v-model="profileForm.defaultServerId"
+              clearable
+              style="width: 100%"
+              :placeholder="serverSourcePlaceholder"
+            >
+              <el-option
+                v-for="server in serverProfiles"
+                :key="server.id"
+                :label="server.alias"
+                :value="server.id"
+              ></el-option>
+            </el-select>
           </el-form-item>
-          <el-form-item label="Keep Alive">
-            <el-input-number
-              v-model="profileForm.keepalive"
-              controls-position="right"
-              :min="0"
-              class="client-profile-number"
-            ></el-input-number>
-            <span class="client-profile-unit">({{ $t('common.unitS') }})</span>
+          <el-form-item :label="$t('configs.credentialUsername')">
+            <el-select
+              v-model="profileForm.usernameFrom"
+              clearable
+              style="width: 100%"
+              :placeholder="credentialSourcePlaceholder"
+            >
+              <el-option :label="$t('configs.credentialTemplate')" value="template"></el-option>
+              <el-option :label="$t('configs.credentialDevice')" value="device"></el-option>
+            </el-select>
           </el-form-item>
-          <el-form-item :label="$t('connections.autoReconnect')">
-            <el-switch v-model="profileForm.reconnect" active-color="#13ce66" inactive-color="#A2A9B0"> </el-switch>
+          <el-form-item v-if="profileForm.usernameFrom === 'template'" :label="$t('connections.username')">
+            <el-input v-model.trim="profileForm.username" clearable></el-input>
           </el-form-item>
-          <el-form-item v-if="profileForm.reconnect" :label="$t('connections.reconnectPeriod')">
-            <el-input-number
-              v-model="profileForm.reconnectPeriod"
-              controls-position="right"
-              :min="1"
-              class="client-profile-number"
-            ></el-input-number>
-            <span class="client-profile-unit">({{ $t('common.unitMS') }})</span>
+          <el-form-item :label="$t('configs.credentialPassword')">
+            <el-select
+              v-model="profileForm.passwordFrom"
+              clearable
+              style="width: 100%"
+              :placeholder="credentialSourcePlaceholder"
+            >
+              <el-option :label="$t('configs.credentialTemplate')" value="template"></el-option>
+              <el-option :label="$t('configs.credentialDevice')" value="device"></el-option>
+            </el-select>
           </el-form-item>
-          <el-form-item :label="profileForm.mqttVersion === '5.0' ? 'Clean Start' : 'Clean Session'">
-            <el-switch v-model="profileForm.clean" active-color="#13ce66" inactive-color="#A2A9B0"> </el-switch>
+          <el-form-item v-if="profileForm.passwordFrom === 'template'" :label="$t('connections.password')">
+            <el-input v-model.trim="profileForm.password" show-password clearable></el-input>
           </el-form-item>
-          <el-form-item class="automation-field">
-            <template slot="label">
-              {{ $t('connections.clientVariables') }}
-              <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
-                <div slot="content">{{ $t('configs.clientVariablesProfileTip') }}</div>
-                <a href="javascript:;" class="preset-help">
-                  <i class="el-icon-warning-outline"></i>
-                </a>
-              </el-tooltip>
-            </template>
+          <p class="behavior-own-title">{{ $t('configs.behaviorOwn') }}</p>
+          <el-form-item class="automation-field" :label="$t('connections.clientVariables')">
             <VariableEditor v-model="profileForm.variables" />
           </el-form-item>
           <el-form-item class="automation-field" :label="$t('connections.autoSubscribe')">
             <AutoSubscribeEditor v-model="profileForm.autoSubscriptions" />
           </el-form-item>
+          <el-form-item class="automation-field" :label="$t('connections.timedReports')">
+            <TimedReportEditor v-model="profileForm.timedReports" />
+          </el-form-item>
           <el-form-item class="automation-field" :label="$t('connections.autoReply')">
             <AutoReplyEditor
               v-model="profileForm.autoReplies"
-              :variable-names="clientProfileVariableNames"
+              :variable-names="behaviorVariableNames"
               :templates="autoReplyPresets"
               @example="applyAutomationExample"
             />
@@ -477,11 +541,18 @@
           <el-form-item class="automation-field" :label="$t('connections.messageSequence')">
             <MessageSequenceEditor
               v-model="profileForm.messageSequences"
-              :variable-names="clientProfileVariableNames"
+              :variable-names="behaviorVariableNames"
               :templates="messageSequencePresets"
               @example="applyAutomationExample"
             />
           </el-form-item>
+          <BehaviorClientOptions
+            :value="{ session: profileForm.session, will: profileForm.will }"
+            :inherited-session="inheritedBehaviorSession"
+            :inherited-will="inheritedBehaviorWill"
+            :parent-linked="!!profileForm.parentId"
+            @change="setBehaviorClientOptions"
+          />
         </template>
 
         <template v-else-if="dialogType === 'reply'">
@@ -501,10 +572,7 @@
             <VariableEditor v-model="profileForm.variables" />
           </el-form-item>
           <el-form-item class="automation-field" :label="$t('connections.autoReply')">
-            <AutoReplyEditor
-              v-model="profileForm.autoReplies"
-              :variable-names="sequencePresetVariableNames"
-            />
+            <AutoReplyEditor v-model="profileForm.autoReplies" :variable-names="sequencePresetVariableNames" />
           </el-form-item>
         </template>
 
@@ -565,7 +633,17 @@ import {
   getGlobalVariables,
   saveGlobalVariable,
   deleteGlobalVariable,
+  getBehaviorTemplates,
+  saveBehaviorTemplate,
+  deleteBehaviorTemplate,
 } from '@/utils/configProfiles'
+import {
+  behaviorParentChoices,
+  behaviorTemplateHasChildren,
+  compactBehaviorConfig,
+  detachBehaviorContent,
+  resolveBehaviorTemplate,
+} from '@/utils/behaviorTemplates'
 import VariablesHelp from '@/components/VariablesHelp.vue'
 import Editor from '@/components/Editor.vue'
 import VariableEditor from '@/components/VariableEditor.vue'
@@ -573,6 +651,8 @@ import VariableDefinitionEditor from '@/components/VariableDefinitionEditor.vue'
 import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor, { createBlankAutoReplyRule } from '@/components/AutoReplyEditor.vue'
 import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
+import TimedReportEditor from '@/components/TimedReportEditor.vue'
+import BehaviorClientOptions from '@/components/BehaviorClientOptions.vue'
 import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import {
   normalizeGlobalVariables,
@@ -591,7 +671,7 @@ import { createBlankMessageSequence } from '@/utils/messageSequenceExamples'
 import isJsonPayload from '@/utils/payloadLanguage'
 import validFormatJson from '@/utils/validFormatJson'
 
-type DialogType = 'server' | 'client' | 'topic' | 'message' | 'sequence' | 'reply' | 'variable'
+type DialogType = 'server' | 'client' | 'behavior' | 'topic' | 'message' | 'sequence' | 'reply' | 'variable'
 
 interface ServerProfileForm {
   id?: string
@@ -636,6 +716,23 @@ const defaultClientProfileForm = (): ClientProfileForm => ({
   autoSubscriptions: [],
   autoReplies: [],
   messageSequences: [],
+})
+
+const defaultBehaviorForm = () => ({
+  name: '',
+  parentId: '',
+  defaultServerId: '',
+  username: '',
+  password: '',
+  usernameFrom: '',
+  passwordFrom: '',
+  variables: {} as { [name: string]: StoredVariable },
+  session: null as BehaviorSessionConfig | null,
+  will: null as BehaviorWillConfig | null,
+  autoSubscriptions: [] as AutoSubscribeGroupModel[],
+  timedReports: [] as TimedReportModel[],
+  autoReplies: [] as AutoReplyRuleModel[],
+  messageSequences: [] as MessageSequenceModel[],
 })
 
 interface MessagePresetForm {
@@ -713,6 +810,8 @@ const kindLabelKey = (kind: VariableKind): string =>
     AutoSubscribeEditor,
     AutoReplyEditor,
     MessageSequenceEditor,
+    TimedReportEditor,
+    BehaviorClientOptions,
     TopicPresetPicker,
   },
 })
@@ -720,6 +819,7 @@ export default class Configs extends Vue {
   private activeTab: DialogType = 'server'
   private serverProfiles: ServerProfileModel[] = []
   private clientProfiles: ClientProfileModel[] = []
+  private behaviorTemplates: BehaviorTemplateModel[] = []
   private messagePresets: MessagePresetModel[] = []
   private topicPresets: TopicPresetModel[] = []
   private messageSequencePresets: MessageSequencePresetModel[] = []
@@ -792,6 +892,144 @@ export default class Configs extends Vue {
       }
     })
     return names
+  }
+
+  /** Same names, for the behaviour template's own reply and sequence editors. */
+  private get behaviorVariableNames(): string[] {
+    return this.clientProfileVariableNames
+  }
+
+  private get behaviorParentOptions(): BehaviorTemplateModel[] {
+    return behaviorParentChoices(this.behaviorTemplates, this.editingId)
+  }
+
+  private get credentialSourcePlaceholder(): string {
+    return (
+      this.profileForm.parentId ? this.$t('configs.credentialInherit') : this.$t('configs.credentialTemplate')
+    ) as string
+  }
+
+  private get serverSourcePlaceholder(): string {
+    return (
+      this.profileForm.parentId ? this.$t('configs.credentialInherit') : this.$t('configs.behaviorNoParent')
+    ) as string
+  }
+
+  /** Advanced fields inherited from the parent chain, not including this template's own overrides. */
+  private get inheritedBehaviorSession(): BehaviorSessionConfig {
+    const parentId = this.profileForm.parentId as string
+    if (!parentId) {
+      return {}
+    }
+    return resolveBehaviorTemplate(parentId)?.session ?? {}
+  }
+
+  /** Will fields inherited from the parent chain, not including this template's own overrides. */
+  private get inheritedBehaviorWill(): BehaviorWillConfig {
+    const parentId = this.profileForm.parentId as string
+    if (!parentId) {
+      return {}
+    }
+    return resolveBehaviorTemplate(parentId)?.will ?? {}
+  }
+
+  private setBehaviorClientOptions(value: {
+    session?: BehaviorSessionConfig | null
+    will?: BehaviorWillConfig | null
+  }) {
+    this.profileForm.session = value.session ?? null
+    this.profileForm.will = value.will ?? null
+  }
+
+  /** One line per inherited subscription, report, reply, sequence and variable. */
+  private get inheritedBehaviorLines(): string[] {
+    const parentId = this.profileForm.parentId as string
+    if (!parentId) {
+      return []
+    }
+    const resolved = resolveBehaviorTemplate(parentId)
+    if (!resolved) {
+      return []
+    }
+    const lines: string[] = []
+    resolved.autoSubscriptions.forEach((group) => {
+      group.topics.forEach((topic) => {
+        if (topic.topic) {
+          lines.push(topic.topic)
+        }
+      })
+    })
+    resolved.timedReports.forEach((report) => {
+      if (report.topic) {
+        lines.push(`${report.interval}s ${report.topic}`)
+      }
+    })
+    resolved.autoReplies.forEach((rule) => lines.push(rule.name || rule.matchTopic))
+    resolved.messageSequences.forEach((sequence) => {
+      if (sequence.name) {
+        lines.push(sequence.name)
+      }
+    })
+    Object.keys(resolved.variables).forEach((name) => lines.push(`${name}`))
+    if (resolved.session.mqttVersion) {
+      lines.push(`MQTT ${resolved.session.mqttVersion}`)
+    }
+    if (resolved.will.lastWillTopic) {
+      lines.push(resolved.will.lastWillTopic)
+    }
+    return lines
+  }
+
+  private behaviorParentName(template: BehaviorTemplateModel): string {
+    if (!template.parentId) {
+      return this.$t('configs.behaviorNoParent') as string
+    }
+    return this.behaviorTemplates.find((item) => item.id === template.parentId)?.name || '-'
+  }
+
+  private describeBehaviorOwn(template: BehaviorTemplateModel): string {
+    const parts: string[] = []
+    const subs = (template.autoSubscriptions ?? []).reduce((count, group) => count + (group.topics?.length ?? 0), 0)
+    const reports = (template.timedReports ?? []).length
+    const replies = (template.autoReplies ?? []).length
+    const sequences = (template.messageSequences ?? []).length
+    if (subs) {
+      parts.push(`${this.$t('connections.autoSubscribe')} ${subs}`)
+    }
+    if (reports) {
+      parts.push(`${this.$t('connections.timedReports')} ${reports}`)
+    }
+    if (replies) {
+      parts.push(`${this.$t('connections.autoReply')} ${replies}`)
+    }
+    if (sequences) {
+      parts.push(`${this.$t('connections.messageSequence')} ${sequences}`)
+    }
+    if (template.session && Object.keys(template.session).length) {
+      parts.push(this.$t('settings.advanced') as string)
+    }
+    if (template.will && Object.keys(template.will).length) {
+      parts.push(this.$t('connections.willMessage') as string)
+    }
+    return parts.length ? parts.join(' / ') : '-'
+  }
+
+  /** Copies the inherited behaviour into this template and clears the parent. One way. */
+  private detachBehaviorParent() {
+    const snapshot = detachBehaviorContent(this.profileForm as BehaviorTemplateModel, this.behaviorTemplates)
+    this.profileForm = {
+      ...this.profileForm,
+      ...snapshot,
+      parentId: '',
+      defaultServerId: snapshot.defaultServerId || '',
+      usernameFrom: snapshot.usernameFrom || '',
+      passwordFrom: snapshot.passwordFrom || '',
+    } as typeof this.profileForm
+    if (this.editingId) {
+      saveBehaviorTemplate({ ...snapshot, id: this.editingId })
+      this.loadData()
+    }
+    this.$message.success(this.$t('configs.behaviorDetachDone') as string)
   }
 
   /**
@@ -896,6 +1134,7 @@ export default class Configs extends Vue {
   private loadData() {
     this.serverProfiles = getServerProfiles()
     this.clientProfiles = getClientProfiles()
+    this.behaviorTemplates = getBehaviorTemplates()
     this.topicPresets = getTopicPresets()
     this.messagePresets = getMessagePresets()
     this.messageSequencePresets = ensureMessageSequencePresets()
@@ -913,7 +1152,7 @@ export default class Configs extends Vue {
   private applyRouteTab() {
     const query = this.$route && this.$route.query
     const tab = query && query.tab
-    const tabs: DialogType[] = ['server', 'client', 'topic', 'message', 'sequence', 'reply', 'variable']
+    const tabs: DialogType[] = ['server', 'client', 'behavior', 'topic', 'message', 'sequence', 'reply', 'variable']
     if (typeof tab === 'string' && (tabs as string[]).includes(tab)) {
       this.activeTab = tab as DialogType
     }
@@ -936,27 +1175,12 @@ export default class Configs extends Vue {
     if (this.dialogType === 'topic') {
       return '560px'
     }
-    return this.dialogType === 'client' || this.dialogType === 'sequence' || this.dialogType === 'reply'
+    return this.dialogType === 'client' ||
+      this.dialogType === 'sequence' ||
+      this.dialogType === 'reply' ||
+      this.dialogType === 'behavior'
       ? '720px'
       : '460px'
-  }
-
-  /** One line summary of the automatic subscriptions / replies of a client preset. */
-  private describeAutomation(profile: ClientProfileModel): string {
-    const groups = (profile.autoSubscriptions ?? []).filter((group) => group.enabled !== false).length
-    const rules = (profile.autoReplies ?? []).filter((rule) => rule.enabled !== false).length
-    const sequences = (profile.messageSequences ?? []).filter((sequence) => sequence.enabled !== false).length
-    const parts: string[] = []
-    if (groups) {
-      parts.push(`${this.$t('connections.autoSubscribe')} ${groups}`)
-    }
-    if (rules) {
-      parts.push(`${this.$t('connections.autoReply')} ${rules}`)
-    }
-    if (sequences) {
-      parts.push(`${this.$t('connections.messageSequence')} ${sequences}`)
-    }
-    return parts.length ? parts.join(' / ') : '-'
   }
 
   /** The label of a sequence preset's trigger, for the preset table. */
@@ -1111,6 +1335,8 @@ export default class Configs extends Vue {
       this.profileForm = defaultSequencePresetForm()
     } else if (this.activeTab === 'reply') {
       this.profileForm = defaultReplyPresetForm()
+    } else if (this.activeTab === 'behavior') {
+      this.profileForm = defaultBehaviorForm()
     } else {
       this.profileForm = defaultClientProfileForm()
     }
@@ -1138,6 +1364,7 @@ export default class Configs extends Vue {
       | TopicPresetModel
       | MessageSequencePresetModel
       | AutoReplyPresetModel
+      | BehaviorTemplateModel
       | GlobalVariableModel,
   ) {
     this.dialogType = this.activeTab
@@ -1195,6 +1422,21 @@ export default class Configs extends Vue {
         variables: { ...(preset.variables ?? {}) },
         autoReplies: rules.length ? rules : [createBlankAutoReplyRule()],
       }
+    } else if (this.activeTab === 'behavior') {
+      const template = row as BehaviorTemplateModel
+      this.profileForm = {
+        ...defaultBehaviorForm(),
+        ...JSON.parse(JSON.stringify(template)),
+        parentId: template.parentId || '',
+        defaultServerId: template.defaultServerId || '',
+        usernameFrom: template.usernameFrom || '',
+        passwordFrom: template.passwordFrom || '',
+        variables: { ...(template.variables ?? {}) },
+        autoSubscriptions: JSON.parse(JSON.stringify(template.autoSubscriptions ?? [])),
+        timedReports: JSON.parse(JSON.stringify(template.timedReports ?? [])),
+        autoReplies: JSON.parse(JSON.stringify(template.autoReplies ?? [])),
+        messageSequences: JSON.parse(JSON.stringify(template.messageSequences ?? [])),
+      }
     } else {
       const client = row as ClientProfileModel
       this.profileForm = {
@@ -1204,7 +1446,6 @@ export default class Configs extends Vue {
         clientId: client.clientId,
         username: client.username,
         password: client.password,
-        // legacy profiles may not carry these fields yet — fall back to app defaults
         mqttVersion: client.mqttVersion ?? '5.0',
         connectTimeout: client.connectTimeout ?? 10,
         keepalive: client.keepalive ?? 60,
@@ -1212,9 +1453,6 @@ export default class Configs extends Vue {
         reconnectPeriod: client.reconnectPeriod ?? 4000,
         clean: client.clean ?? true,
         variables: { ...(client.variables ?? {}) },
-        autoSubscriptions: JSON.parse(JSON.stringify(client.autoSubscriptions ?? [])),
-        autoReplies: JSON.parse(JSON.stringify(client.autoReplies ?? [])),
-        messageSequences: JSON.parse(JSON.stringify(client.messageSequences ?? [])),
       }
     }
     this.dialogVisible = true
@@ -1228,8 +1466,13 @@ export default class Configs extends Vue {
       | MessagePresetModel
       | TopicPresetModel
       | MessageSequencePresetModel
+      | BehaviorTemplateModel
       | GlobalVariableModel,
   ) {
+    if (this.activeTab === 'behavior' && behaviorTemplateHasChildren(row.id)) {
+      this.$message.warning(this.$t('configs.behaviorParentInUse') as string)
+      return
+    }
     this.$confirm(this.$t('configs.deleteConfirm') as string, this.$tc('common.warning'), {
       type: 'warning',
     })
@@ -1247,6 +1490,8 @@ export default class Configs extends Vue {
           deleteMessageSequencePreset(row.id)
         } else if (this.activeTab === 'reply') {
           deleteAutoReplyPreset(row.id)
+        } else if (this.activeTab === 'behavior') {
+          deleteBehaviorTemplate(row.id)
         } else {
           deleteClientProfile(row.id)
         }
@@ -1351,28 +1596,54 @@ export default class Configs extends Vue {
           sequence: { ...sequence, name },
           variables: { ...(this.profileForm.variables ?? {}) },
         })
+      } else if (this.dialogType === 'behavior') {
+        const invalidVariables = validateStoredVariables(this.profileForm.variables, { scope: 'connection' })
+        if (invalidVariables.length) {
+          this.$message.error(this.$t('configs.variableDefinitionInvalid') as string)
+          return
+        }
+        const parentId = this.profileForm.parentId || null
+        if (
+          parentId &&
+          !behaviorParentChoices(this.behaviorTemplates, this.editingId).some((item) => item.id === parentId)
+        ) {
+          this.$message.error(this.$t('configs.behaviorParentCycle') as string)
+          return
+        }
+        saveBehaviorTemplate({
+          id: this.editingId ?? undefined,
+          name: String(this.profileForm.name ?? '').trim(),
+          parentId,
+          defaultServerId: this.profileForm.defaultServerId || null,
+          username: this.profileForm.usernameFrom === 'template' ? this.profileForm.username || undefined : undefined,
+          password: this.profileForm.passwordFrom === 'template' ? this.profileForm.password || undefined : undefined,
+          usernameFrom: this.profileForm.usernameFrom || null,
+          passwordFrom: this.profileForm.passwordFrom || null,
+          variables: { ...(this.profileForm.variables ?? {}) },
+          autoSubscriptions: this.profileForm.autoSubscriptions ?? [],
+          timedReports: this.profileForm.timedReports ?? [],
+          autoReplies: this.profileForm.autoReplies ?? [],
+          messageSequences: this.profileForm.messageSequences ?? [],
+          session: compactBehaviorConfig(this.profileForm.session),
+          will: compactBehaviorConfig(this.profileForm.will),
+        })
       } else {
+        const previous = this.editingId
+          ? getClientProfiles().find((profile) => profile.id === this.editingId)
+          : undefined
         const invalidVariables = validateStoredVariables(this.profileForm.variables, { scope: 'connection' })
         if (invalidVariables.length) {
           this.$message.error(this.$t('configs.variableDefinitionInvalid') as string)
           return
         }
         saveClientProfile({
+          ...(previous ?? {}),
           id: this.editingId ?? undefined,
           alias: this.profileForm.alias,
           clientId: this.profileForm.clientId,
           username: this.profileForm.username || undefined,
           password: this.profileForm.password || undefined,
-          mqttVersion: this.profileForm.mqttVersion,
-          connectTimeout: Number(this.profileForm.connectTimeout) || 0,
-          keepalive: Number(this.profileForm.keepalive) || 0,
-          reconnect: Boolean(this.profileForm.reconnect),
-          reconnectPeriod: Number(this.profileForm.reconnectPeriod) || 4000,
-          clean: Boolean(this.profileForm.clean),
           variables: { ...(this.profileForm.variables ?? {}) },
-          autoSubscriptions: this.profileForm.autoSubscriptions ?? [],
-          autoReplies: this.profileForm.autoReplies ?? [],
-          messageSequences: this.profileForm.messageSequences ?? [],
         })
       }
       this.loadData()
@@ -1388,6 +1659,30 @@ export default class Configs extends Vue {
 
   .titlebar {
     padding: 16px 0;
+  }
+  .behavior-inherited {
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    background: var(--color-bg-primary);
+    border-radius: 4px;
+  }
+  .behavior-inherited-title,
+  .behavior-own-title {
+    margin: 0 0 8px;
+    color: var(--color-text-light);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .behavior-inherited-list {
+    margin: 0 0 8px;
+    padding-left: 18px;
+    color: var(--color-text-default);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .behavior-inherited-empty {
+    margin: 0 0 8px;
+    color: var(--color-text-light);
   }
   .configs-view-header {
     display: flex;

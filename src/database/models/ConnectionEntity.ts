@@ -113,6 +113,10 @@ export default class ConnectionEntity {
   @Column({ type: 'simple-json', nullable: true, default: null })
   messageSequences?: MessageSequenceModel[] | null
 
+  // Publishes started after the connection succeeds, see ConnectionModel['timedReports']
+  @Column({ type: 'simple-json', nullable: true, default: null })
+  timedReports?: TimedReportModel[] | null
+
   @OneToOne(() => WillEntity, (will) => will.connection, { onDelete: 'CASCADE' })
   @JoinColumn()
   will?: WillEntity

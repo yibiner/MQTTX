@@ -312,6 +312,7 @@ export default class ConnectionService {
       autoSubscriptions?: AutoSubscribeGroupModel[]
       autoReplies?: AutoReplyRuleModel[]
       messageSequences?: MessageSequenceModel[]
+      timedReports?: TimedReportModel[]
       variables?: { [name: string]: StoredVariable } | null
     },
   ): Promise<void> {
@@ -324,6 +325,9 @@ export default class ConnectionService {
     }
     if (automation.messageSequences !== undefined) {
       patch.messageSequences = automation.messageSequences
+    }
+    if (automation.timedReports !== undefined) {
+      patch.timedReports = automation.timedReports
     }
     if (automation.variables !== undefined) {
       patch.variables = automation.variables

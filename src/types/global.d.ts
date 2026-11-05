@@ -215,6 +215,99 @@ declare global {
     createAt?: string
   }
 
+  /**
+   * A publish prepared ahead of time. After the connection succeeds it is started through the
+   * same timed-message runner as a send started from the publish panel.
+   */
+  interface TimedReportModel {
+    id: string
+    /** seconds between publishes; the same unit the timed-message runner uses */
+    interval: number
+    topic: string
+    payload: string
+    qos?: QoS
+    retain?: boolean
+    payloadType?: PayloadType
+    /** false keeps the row but does not start it after connecting */
+    enabled?: boolean
+  }
+
+  /** Where a behavior template takes the MQTT username or password from. */
+  type BehaviorCredentialSource = 'template' | 'device'
+
+  /**
+   * Advanced connection options a behaviour template can set.
+   * A missing key follows the parent. `null` on a number clears that parent value.
+   * `null` inside `properties` clears that MQTT 5 field.
+   */
+  interface BehaviorSessionConfig {
+    mqttVersion?: '3.1' | '3.1.1' | '5.0'
+    connectTimeout?: number | null
+    keepalive?: number | null
+    reconnect?: boolean
+    reconnectPeriod?: number | null
+    clean?: boolean
+    properties?: {
+      sessionExpiryInterval?: number | null
+      receiveMaximum?: number | null
+      maximumPacketSize?: number | null
+      topicAliasMaximum?: number | null
+      requestResponseInformation?: boolean | null
+      requestProblemInformation?: boolean | null
+      userProperties?: { [key: string]: string | string[] } | null
+      authenticationMethod?: string | null
+    } | null
+  }
+
+  /** Last-will options a behaviour template can set. A missing key follows the parent. */
+  interface BehaviorWillConfig {
+    lastWillTopic?: string
+    lastWillPayload?: string
+    lastWillQos?: QoS
+    lastWillRetain?: boolean
+    properties?: {
+      willDelayInterval?: number | null
+      payloadFormatIndicator?: boolean | null
+      messageExpiryInterval?: number | null
+      contentType?: string | null
+      responseTopic?: string | null
+      correlationData?: string | null
+    } | null
+  }
+
+  /**
+   * A reusable device behaviour, stacked on an optional parent.
+   *
+   * While `parentId` is set, the parent's resolved behaviour is inherited and is not editable on
+   * this template. "不再同步" copies that resolved behaviour into this template and clears
+   * `parentId`, after which the parent can change without affecting it. A connection copies the
+   * resolved result once and does not stay linked.
+   */
+  interface BehaviorTemplateModel {
+    id: string
+    name: string
+    parentId?: string | null
+    /** server preset applied when a connection is created from this template; empty inherits */
+    defaultServerId?: string | null
+    username?: string
+    password?: string
+    /** empty inherits the parent's source; the default for a template with no parent is `template` */
+    usernameFrom?: BehaviorCredentialSource | null
+    passwordFrom?: BehaviorCredentialSource | null
+    /**
+     * MQTT client options from the connection form's Advanced section.
+     * Only keys this template sets are stored; the rest follow the parent.
+     */
+    session?: BehaviorSessionConfig | null
+    /** Last-will fields this template sets. Missing keys follow the parent. */
+    will?: BehaviorWillConfig | null
+    variables?: { [name: string]: StoredVariable } | null
+    autoSubscriptions?: AutoSubscribeGroupModel[] | null
+    timedReports?: TimedReportModel[] | null
+    autoReplies?: AutoReplyRuleModel[] | null
+    messageSequences?: MessageSequenceModel[] | null
+  }
+
   /** A currently running timed message (owned by the global timed message manager). */
   interface TimedMessageRuntime {
     id: number
@@ -240,7 +333,11 @@ declare global {
     path?: string
   }
 
-  /** Reusable MQTT client identity (clientId/username/password), selectable when creating a connection. */
+  /**
+   * A saved client: the name, client id, account and variables used to fill a new connection.
+   * Session parameters may still be present on profiles saved before the client form was shortened;
+   * applying one copies them so those clients keep working. New clients do not store them.
+   */
   interface ClientProfileModel {
     id: string
     alias: string
@@ -450,6 +547,8 @@ declare global {
      * resolves its templates at send time, then applies its variable assignments.
      */
     messageSequences?: MessageSequenceModel[] | null
+    /** Publishes started after this connection succeeds. */
+    timedReports?: TimedReportModel[] | null
   }
 
   /** One topic filter of an automatic subscription batch. */
