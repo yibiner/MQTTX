@@ -8,7 +8,7 @@
  */
 import { ipcMain, WebContents } from 'electron'
 import { randomBytes, randomUUID } from 'crypto'
-import version from '@/version'
+import { fullVersion } from '@/version'
 import { agentBridgeClientConfig, agentBridgeSseUrl } from '@/utils/agentBridge'
 import type { AgentMessagePage, AgentWaitResult } from '@/utils/agentBridge'
 import { startAgentBridgeServer, AgentBridgeServer } from './http'
@@ -150,7 +150,7 @@ async function startServerOnce(): Promise<string> {
       token,
       ports: portCandidates(Number(store.get(PORT_KEY)) || DEFAULT_PORT),
       context: {
-        serverVersion: version,
+        serverVersion: fullVersion,
         tools: rendererTools(),
       },
     })

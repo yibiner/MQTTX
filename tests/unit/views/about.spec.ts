@@ -3,7 +3,7 @@ import Vue from 'vue'
 import Vuex from 'vuex'
 import { createLocalVue, mount, Wrapper } from '@vue/test-utils'
 import About from '@/views/about/index.vue'
-import version from '@/version'
+import version, { mqttxPlusVersion } from '@/version'
 import { APP_NAME } from '@/appIdentity'
 
 const { ipcRenderer } = require('electron')
@@ -59,6 +59,14 @@ describe('about view', () => {
 
     expect(text).to.contain(APP_NAME)
     expect(text).to.contain('about.mqttxDesc')
+    expect(text).to.contain(`v${version}`)
+  })
+
+  it('shows the MQTTX Plus build number next to the upstream version', () => {
+    const text = wrapper.text()
+
+    expect(text).to.contain(`Plus ${mqttxPlusVersion}`)
+    // The upstream version stays visible: this build is still based on that release.
     expect(text).to.contain(`v${version}`)
   })
 

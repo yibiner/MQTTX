@@ -5,6 +5,11 @@ const path = require('path')
 const identity = require('./app.identity.json')
 // "MQTTX Plus" -> "MQTTX-Plus", used for the artifact file names.
 const artifactPrefix = identity.name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+// Our own build number (package.json "mqttxPlusVersion"), appended to every artifact name. Without
+// it two different builds of the same upstream version both ship as "MQTTX-Plus-1.13.1-arm64.dmg",
+// and the file a colleague installed can no longer be told apart from the next one.
+const { mqttxPlusVersion = '' } = require('./package.json')
+const buildSuffix = mqttxPlusVersion ? `-${mqttxPlusVersion}` : ''
 
 /**
  * Redirects the Node builtin imports written with the "node:" scheme.
@@ -193,10 +198,10 @@ module.exports = {
           allowToChangeInstallationDirectory: true,
           createDesktopShortcut: true,
           createStartMenuShortcut: true,
-          artifactName: `${artifactPrefix}-Setup-\${version}-\${arch}.\${ext}`,
+          artifactName: `${artifactPrefix}-Setup-\${version}${buildSuffix}-\${arch}.\${ext}`,
         },
         win: {
-          artifactName: `${artifactPrefix}-\${version}-\${arch}-win.\${ext}`,
+          artifactName: `${artifactPrefix}-\${version}${buildSuffix}-\${arch}-win.\${ext}`,
           icon: './public/icons/app.ico',
           target: [
             {
@@ -217,7 +222,7 @@ module.exports = {
         },
         mac: {
           icon: './public/icons/mac/Icon.icns',
-          artifactName: `${artifactPrefix}-\${version}-\${arch}.\${ext}`,
+          artifactName: `${artifactPrefix}-\${version}${buildSuffix}-\${arch}.\${ext}`,
           target: [
             {
               target: 'dmg',
@@ -237,6 +242,7 @@ module.exports = {
         },
         linux: {
           icon: './public/icons/512x512.png',
+          artifactName: `${artifactPrefix}-\${version}${buildSuffix}-\${arch}.\${ext}`,
           target: [
             { target: 'AppImage', arch: ['x64', 'arm64'] },
             { target: 'deb', arch: ['x64', 'arm64'] },

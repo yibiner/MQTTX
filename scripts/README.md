@@ -8,13 +8,12 @@ This directory contains utility scripts that help with development, build proces
 
 A version generator script that updates version information before builds.
 
-**Function**: Creates a version file with the current application version from package.json. This ensures that the application displays the correct version information at runtime.
+**Function**: Writes `src/version.ts` from `package.json`. The upstream `version` and the Plus build number `mqttxPlusVersion` (`year.month.day.nth`) are copied together, plus a combined `fullVersion` (`1.13.1+2026.11.06.1`) used by the local agent.
 
 **When to run**:
 
-- Before building the application
-- After changing the version in package.json
-- This script is automatically run during the build process
+- `node scripts/gen-version.js` copies the numbers already in package.json. Dev startup does this and does not change the build number.
+- `node scripts/gen-version.js --bump` advances the Plus build number (same day increments, a new day starts at `.1`), saves it back to package.json, then regenerates `src/version.ts`. The packaging scripts pass `--bump`.
 
 ### 2. patch-mcp-sdk.js
 
@@ -54,8 +53,11 @@ The patch scripts run automatically after `yarn install` through the `postinstal
 If you need to run them manually:
 
 ```bash
-# Generate version info
+# Copy the current version into src/version.ts
 node scripts/gen-version.js
+
+# Advance the Plus build number, then copy it (what packaging runs)
+node scripts/gen-version.js --bump
 
 # Run Monaco Editor clipboard patch
 node scripts/patch-monaco-clipboard.js

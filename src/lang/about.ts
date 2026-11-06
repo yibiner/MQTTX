@@ -23,6 +23,14 @@ export default {
     hu: 'Helyi erőforrások',
     ko: '로컬 리소스',
   },
+  plusBuild: {
+    zh: 'MQTTX Plus 构建号，与上游 MQTTX 版本号相互独立',
+    en: 'MQTTX Plus build number, independent of the upstream MQTTX version',
+    tr: 'Upstream MQTTX sürümünden bağımsız MQTTX Plus derleme numarası',
+    ja: '上流の MQTTX バージョンとは独立した MQTTX Plus のビルド番号',
+    hu: 'Az upstream MQTTX verziótól független MQTTX Plus build szám',
+    ko: '업스트림 MQTTX 버전과 별개인 MQTTX Plus 빌드 번호',
+  },
   dataDirectory: {
     zh: '数据目录',
     en: 'Data directory',

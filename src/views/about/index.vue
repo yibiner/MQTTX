@@ -24,6 +24,7 @@
           <div class="version-badge">
             <span class="version-label">{{ $t('common.version') }}</span>
             <span class="version-number">v{{ version }}</span>
+            <span v-if="plusVersion" class="plus-version" :title="$t('about.plusBuild')">Plus {{ plusVersion }}</span>
           </div>
         </div>
 
@@ -77,7 +78,7 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { Getter } from 'vuex-class'
 import { ipcRenderer } from 'electron'
-import version from '@/version'
+import version, { mqttxPlusVersion } from '@/version'
 import { APP_NAME } from '@/appIdentity'
 
 /**
@@ -111,6 +112,11 @@ export default class About extends Vue {
 
   get version(): string {
     return version
+  }
+
+  /** Build number of this MQTTX Plus build, shown next to the upstream version. Empty when unset. */
+  get plusVersion(): string {
+    return mqttxPlusVersion
   }
 
   get appName(): string {
@@ -383,6 +389,17 @@ export default class About extends Vue {
   color: var(--color-main-green);
   font-weight: 600;
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', monospace;
+}
+
+/* Our own build number, so a screenshot identifies the build and not only the upstream release. */
+.plus-version {
+  padding-left: 8px;
+  border-left: 1px solid var(--color-border-default);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-light);
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', monospace;
+  white-space: nowrap;
 }
 
 /* Right Column - Local resources */
