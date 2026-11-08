@@ -13,6 +13,7 @@ const routes: Routes[] = [
         name: 'ConnectionDetails',
         component: () => import('../views/connections/index.vue'),
       },
+      { path: '/configs', name: 'Configs', component: () => import('../views/configs/index.vue') },
       { path: '/settings', name: 'Settings', component: () => import('../views/settings/index.vue') },
       { path: '/about', name: 'About', component: () => import('../views/about/index.vue') },
       { path: '/help', name: 'Help', component: () => import('@/views/help/index.vue') },

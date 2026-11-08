@@ -542,4 +542,539 @@ export default {
     en: 'Authentication Method',
     ja: '認証方法',
   },
+  autoSubscribeSection: {
+    zh: '自动化',
+    en: 'Automation',
+    ja: '自動化',
+  },
+  autoSubscribeTitle: {
+    zh: '连接后自动订阅',
+    en: 'Subscribe automatically after connecting',
+    ja: '接続後に自動購読',
+  },
+  autoSubscribeGroupTitle: {
+    zh: '分组',
+    en: 'Group',
+    ja: 'グループ',
+  },
+  autoSubscribeDelay: {
+    zh: '延时',
+    en: 'Delay',
+    ja: '遅延',
+  },
+  autoSubscribeMergeIntoOne: {
+    zh: '合并为一个 SUBSCRIBE 包',
+    en: 'Send as one SUBSCRIBE packet',
+    ja: '1 つの SUBSCRIBE にまとめる',
+  },
+  autoSubscribeTopicPlaceholder: {
+    zh: '主题，支持 ${变量}，如 app/${productType}/${clientId}/cmd',
+    en: 'Topic, ${variable} allowed, e.g. app/${productType}/${clientId}/cmd',
+    ja: 'トピック（${変数} 可）例: app/${productType}/${clientId}/cmd',
+  },
+  autoSubscribeAddTopic: {
+    zh: '添加主题',
+    en: 'Add topic',
+    ja: 'トピックを追加',
+  },
+  autoSubscribeAddGroup: {
+    zh: '添加分组',
+    en: 'Add group',
+    ja: 'グループを追加',
+  },
+  autoSubscribeHint: {
+    zh: '连接成功后按分组订阅，每组有各自的延时，可模拟设备逐步上线。主题里的 ${变量} 会用连接变量与全局变量填充，无法解析的主题不会订阅。',
+    en: 'After a successful connect the groups are subscribed with their own delay, which simulates devices coming online one by one. ${variables} are filled from the connection and the global variables; a topic that cannot be resolved is not subscribed.',
+    ja: '接続成功後、グループごとに遅延して購読します。${変数} は接続変数とグローバル変数で置換され、解決できないトピックは購読しません。',
+  },
+  autoSubscribeUnresolved: {
+    zh: '这些占位符无法解析，已跳过订阅：{names}',
+    en: 'These placeholders could not be resolved, their topics were not subscribed: {names}',
+    ja: '解決できないプレースホルダーのため購読しませんでした: {names}',
+  },
+  connectReportTitle: {
+    zh: '连接后上报',
+    en: 'Report once after connecting',
+    ja: '接続後に一度送信',
+  },
+  connectReportItem: {
+    zh: '上报',
+    en: 'Report',
+    ja: '送信',
+  },
+  connectReportDelay: {
+    zh: '延时',
+    en: 'Delay',
+    ja: '遅延',
+  },
+  connectReportRetain: {
+    zh: '保留消息',
+    en: 'Retain',
+    ja: 'Retain',
+  },
+  connectReportTopicPlaceholder: {
+    zh: '主题，支持 ${变量}',
+    en: 'Topic, ${variable} allowed',
+    ja: 'トピック（${変数} 可）',
+  },
+  connectReportPayloadPlaceholder: {
+    zh: '报文，支持 ${变量}',
+    en: 'Payload, ${variable} allowed',
+    ja: 'ペイロード（${変数} 可）',
+  },
+  connectReportAdd: {
+    zh: '添加上报',
+    en: 'Add report',
+    ja: '送信を追加',
+  },
+  connectReportHint: {
+    zh: '连接成功后按各自的延时发送一次，适合模拟设备上线。报文里的 ${变量} 会按连接上下文填充；主题里还有无法解析的占位符时该条不会发送。',
+    en: 'After a successful connect each row is sent once, after its own delay - handy for simulating a device coming online. ${variables} are filled from the connection; a row whose topic still has an unresolvable placeholder is not sent.',
+    ja: '接続成功後、各行をそれぞれの遅延で一度だけ送信します。${変数} は接続情報で置換され、解決できないトピックの行は送信しません。',
+  },
+  connectReportSkipped: {
+    zh: '这些占位符无法解析，对应的上报已跳过：{names}',
+    en: 'These placeholders could not be resolved, so those reports were skipped: {names}',
+    ja: '解決できないプレースホルダーのため、該当の送信をスキップしました: {names}',
+  },
+  variableTitle: {
+    zh: '客户端变量',
+    en: 'Client variables',
+    ja: 'クライアント変数',
+  },
+  variableNamePlaceholder: {
+    zh: '变量名',
+    en: 'Name',
+    ja: '変数名',
+  },
+  variableValuePlaceholder: {
+    zh: '值，可用 ${其它变量}',
+    en: 'Value, may use ${otherVariables}',
+    ja: '値（${他の変数} 可）',
+  },
+  variableKindConstant: {
+    zh: '固定值',
+    en: 'Constant',
+    ja: '固定値',
+  },
+  variableKindSequence: {
+    zh: '自增/自减',
+    en: 'Counter',
+    ja: 'カウンタ',
+  },
+  variableInitial: {
+    zh: '起始',
+    en: 'Initial',
+    ja: '初期値',
+  },
+  variableStep: {
+    zh: '步长',
+    en: 'Step',
+    ja: '増分',
+  },
+  variableMin: {
+    zh: '下限',
+    en: 'Min',
+    ja: '下限',
+  },
+  variableMax: {
+    zh: '上限',
+    en: 'Max',
+    ja: '上限',
+  },
+  variableAdd: {
+    zh: '添加变量',
+    en: 'Add variable',
+    ja: '変数を追加',
+  },
+  variableHint: {
+    zh: '这些变量在主题和报文里用 ${变量名} 引用。内置变量：',
+    en: 'Reference these as ${name} in topics and payloads. Built-in variables:',
+    ja: 'トピックとペイロードで ${変数名} として参照します。組み込み変数:',
+  },
+  variableIssueInvalid: {
+    zh: '变量名只能用字母、数字和下划线，且不能以数字开头',
+    en: 'Use letters, digits and underscores only, and do not start with a digit',
+    ja: '英数字とアンダースコアのみ、数字で始めることはできません',
+  },
+  variableIssueReserved: {
+    zh: '这个名称是内置变量，请换一个',
+    en: 'This name is a built-in variable, pick another one',
+    ja: 'この名前は組み込み変数です。別の名前にしてください',
+  },
+  variableIssueDuplicate: {
+    zh: '变量名重复',
+    en: 'Duplicate variable name',
+    ja: '変数名が重複しています',
+  },
+  unresolvedVariablesTitle: {
+    zh: '存在未解析的变量',
+    en: 'Unresolved variables',
+    ja: '未解決の変数があります',
+  },
+  unresolvedVariablesTip: {
+    zh: '这些变量没有值，将按原样发送：{variables}',
+    en: 'These variables have no value and will be sent as written: {variables}',
+    ja: 'これらの変数に値がないため、そのまま送信されます: {variables}',
+  },
+  unresolvedVariablesSend: {
+    zh: '仍然发送',
+    en: 'Send anyway',
+    ja: 'そのまま送信',
+  },
+  presetPicker: {
+    zh: '消息预设',
+    en: 'Message preset',
+    ja: 'メッセージプリセット',
+  },
+  presetPickerEmpty: {
+    zh: '还没有预设',
+    en: 'No presets yet',
+    ja: 'プリセットがありません',
+  },
+  variablePreview: {
+    zh: '变量解析预览',
+    en: 'Resolved preview',
+    ja: '変数の解決プレビュー',
+  },
+  autoReplyTitle: {
+    zh: '自动回复',
+    en: 'Automatic replies',
+    ja: '自動応答',
+  },
+  autoReplyNamePlaceholder: {
+    zh: '规则名（可选）',
+    en: 'Rule name (optional)',
+    ja: 'ルール名（任意）',
+  },
+  autoReplyMatchTopic: {
+    zh: '匹配主题',
+    en: 'Match topic',
+    ja: '一致するトピック',
+  },
+  autoReplyMatchTopicPlaceholder: {
+    zh: '支持通配符，如 app/+/cmd',
+    en: 'Wildcards allowed, e.g. app/+/cmd',
+    ja: 'ワイルドカード可（例: app/+/cmd）',
+  },
+  autoReplyMatchCondition: {
+    zh: '匹配条件',
+    en: 'Condition',
+    ja: '条件',
+  },
+  autoReplyMatchConditionPlaceholder: {
+    zh: 'JMESPath，可留空，如 cmd == `reboot`',
+    en: 'JMESPath, may be empty, e.g. cmd == `reboot`',
+    ja: 'JMESPath（空欄可）例: cmd == `reboot`',
+  },
+  autoReplyReplyMode: {
+    zh: '回复方式',
+    en: 'Reply mode',
+    ja: '応答方法',
+  },
+  autoReplyModeEcho: {
+    zh: '合并收到的报文',
+    en: 'Merge into received',
+    ja: '受信内容にマージ',
+  },
+  autoReplyModeFixed: {
+    zh: '固定报文',
+    en: 'Fixed payload',
+    ja: '固定ペイロード',
+  },
+  autoReplyRetain: {
+    zh: 'Retain',
+    en: 'Retain',
+    ja: 'Retain',
+  },
+  autoReplyDelay: {
+    zh: '延时',
+    en: 'Delay',
+    ja: '遅延',
+  },
+  autoReplyReplyTopic: {
+    zh: '回复主题',
+    en: 'Reply topic',
+    ja: '応答トピック',
+  },
+  autoReplyReplyTopicPlaceholder: {
+    zh: '留空则回复到原主题，可用 ${topic} / ${msg.x}',
+    en: 'Empty replies to the same topic; ${topic} / ${msg.x} allowed',
+    ja: '空欄なら同じトピックへ。${topic} / ${msg.x} 可',
+  },
+  autoReplyReplyPayload: {
+    zh: '回复报文',
+    en: 'Reply payload',
+    ja: '応答ペイロード',
+  },
+  autoReplyReplyPayloadPlaceholder: {
+    zh: '可用 ${msg.x} 引用收到的字段',
+    en: 'Use ${msg.x} to reference fields of the received message',
+    ja: '${msg.x} で受信フィールドを参照できます',
+  },
+  autoReplyAdd: {
+    zh: '添加规则',
+    en: 'Add rule',
+    ja: 'ルールを追加',
+  },
+  autoReplyHint: {
+    zh: '收到匹配的消息后自动回复。为避免自触发，本连接回复发出的报文在 5 秒内不会被再次匹配；同一条消息（同主题同规则）60 秒内只回复一次。',
+    en: 'Answers matching messages automatically. To avoid a reply triggering itself, what this connection publishes is not matched again for 5 seconds, and the same message is answered once per minute.',
+    ja: '一致したメッセージに自動応答します。自己トリガーを避けるため、この接続が送信した内容は 5 秒間マッチングされず、同じメッセージには 60 秒に一度だけ応答します。',
+  },
+  autoReplyRuleError: {
+    zh: '自动回复规则无法执行：{error}',
+    en: 'An automatic reply rule could not run: {error}',
+    ja: '自動応答ルールを実行できませんでした: {error}',
+  },
+  sequenceTitle: {
+    zh: '消息序列',
+    en: 'Message sequences',
+    ja: 'メッセージシーケンス',
+  },
+  sequenceNamePlaceholder: {
+    zh: '序列名',
+    en: 'Sequence name',
+    ja: 'シーケンス名',
+  },
+  sequenceTriggerManual: {
+    zh: '手动启动',
+    en: 'Manual',
+    ja: '手動',
+  },
+  sequenceTriggerConnect: {
+    zh: '连上后启动',
+    en: 'On connect',
+    ja: '接続時',
+  },
+  sequenceTriggerMessage: {
+    zh: '收到消息后启动',
+    en: 'On message',
+    ja: '受信時',
+  },
+  sequenceLoop: {
+    zh: '循环',
+    en: 'Loop',
+    ja: 'ループ',
+  },
+  sequenceStopWhen: {
+    zh: '下一轮前停止，当',
+    en: 'Stop before the next round when',
+    ja: '次の周回の前に停止:',
+  },
+  sequenceStopEmpty: {
+    zh: '留空则一直循环',
+    en: 'Leave empty to keep looping',
+    ja: '空欄ならループを続ける',
+  },
+  sequenceSet: {
+    zh: '发出后赋值',
+    en: 'Assign after send',
+    ja: '送信後に代入',
+  },
+  sequenceSetHint: {
+    zh: '先按当前变量生成这条消息，发出去之后再写入。下一步读到的是新值。例如水量写成 ${water - 20}。',
+    en: 'The message is built from the current variables and sent first; the assignment is written afterwards. The next step reads the new value. For the water level use ${water - 20}.',
+    ja: 'メッセージは今の変数で作ってから送り、代入はその後です。次のステップは新しい値を読みます。水量は ${water - 20} のように書きます。',
+  },
+  sequenceSetAdd: {
+    zh: '添加赋值',
+    en: 'Add assignment',
+    ja: '代入を追加',
+  },
+  autoSubscribedBadge: {
+    zh: '连接后',
+    en: 'On connect',
+    ja: '接続後',
+  },
+  autoSubscribedBadgeHint: {
+    zh: '该 topic 由「连接后订阅」订阅，删除或暂停之后配置会跟着改，角标也会消失。',
+    en: 'Subscribed by "Subscribe on connect". Deleting or pausing it updates that configuration, and the badge goes away.',
+    ja: '「接続後の購読」で購読されました。削除または一時停止すると設定も更新され、バッジは消えます。',
+  },
+  sequenceMatchTopic: {
+    zh: '匹配主题',
+    en: 'Match topic',
+    ja: '一致するトピック',
+  },
+  sequenceMatchCondition: {
+    zh: '匹配条件',
+    en: 'Condition',
+    ja: '条件',
+  },
+  sequenceRetain: {
+    zh: 'Retain',
+    en: 'Retain',
+    ja: 'Retain',
+  },
+  sequenceAddStep: {
+    zh: '添加步骤',
+    en: 'Add step',
+    ja: 'ステップを追加',
+  },
+  sequenceAdd: {
+    zh: '添加序列',
+    en: 'Add sequence',
+    ja: 'シーケンスを追加',
+  },
+  sequenceHint: {
+    zh: '按顺序发送各步骤，步骤间的延时相对上一步。延时为 0 的循环会停止（每秒超过 20 步判定为空转）。序列自己发出的报文 5 秒内不会再次触发自己。',
+    en: 'Sends the steps in order, each delay relative to the previous step. A delay-0 loop is stopped (more than 20 steps per second means it spins). What a sequence sends does not retrigger it for 5 seconds.',
+    ja: 'ステップを順に送信し、遅延は前のステップからの相対値です。遅延 0 のループは停止します（毎秒 20 ステップ超は空回りと判定）。自身の送信は 5 秒間トリガーになりません。',
+  },
+  sequenceStopped: {
+    zh: '序列已停止：{reason}',
+    en: 'A message sequence stopped: {reason}',
+    ja: 'シーケンスを停止しました: {reason}',
+  },
+  timedReportTitle: {
+    zh: '定时消息',
+    en: 'Timed messages',
+    ja: 'タイマーメッセージ',
+  },
+  timedReportInterval: {
+    zh: '间隔',
+    en: 'Interval',
+    ja: '間隔',
+  },
+  timedReportRetain: {
+    zh: 'Retain',
+    en: 'Retain',
+    ja: 'Retain',
+  },
+  timedReportAdd: {
+    zh: '添加定时消息',
+    en: 'Add timed message',
+    ja: 'タイマーメッセージを追加',
+  },
+  timedReportHint: {
+    zh: '连上后按间隔循环发送，最小 1 秒、每条连接最多同时 10 条。浏览器限制：关闭标签页或页面休眠时不会发送，恢复后也不会补发错过的间隔。',
+    en: 'Sends on its interval after connecting: at least one second, at most 10 running at once. Browser limit: nothing is sent while the tab is closed or suspended, and missed intervals are not replayed.',
+    ja: '接続後、指定間隔で繰り返し送信します（最小 1 秒、同時 10 件まで）。ブラウザの制限: タブを閉じた/スリープ中は送信されず、逃した間隔も再送しません。',
+  },
+  topicPresetPicker: {
+    zh: 'Topic 预设',
+    en: 'Topic preset',
+    ja: 'トピックプリセット',
+  },
+  behaviorTemplateTitle: {
+    zh: '行为模板',
+    en: 'Behaviour template',
+    ja: '動作テンプレート',
+  },
+  behaviorTemplateNone: {
+    zh: '不使用模板',
+    en: 'No template',
+    ja: 'テンプレートなし',
+  },
+  behaviorTemplateSave: {
+    zh: '保存当前为模板',
+    en: 'Save as template',
+    ja: '現在の設定をテンプレート保存',
+  },
+  behaviorTemplateHint: {
+    zh: '选择模板会套用它的账号、客户端参数和全部自动化配置（变量、自动订阅、连接后上报、定时消息、自动回复、消息序列）；清空选择则恢复到套用前的状态。',
+    en: 'Picking a template applies its account, client options and every automation list (variables, automatic subscriptions, connect reports, timed messages, automatic replies, message sequences). Clearing the selection restores what the form looked like before.',
+    ja: 'テンプレートを選ぶと、アカウント・クライアント設定・すべての自動化設定を適用します。選択を解除すると適用前に戻ります。',
+  },
+  behaviorTemplateNamePrompt: {
+    zh: '模板名称',
+    en: 'Template name',
+    ja: 'テンプレート名',
+  },
+  behaviorTemplateDefaultName: {
+    zh: '未命名模板',
+    en: 'Untitled template',
+    ja: '無題のテンプレート',
+  },
+  behaviorTemplateSaved: {
+    zh: '已保存为行为模板',
+    en: 'Saved as a behaviour template',
+    ja: '動作テンプレートとして保存しました',
+  },
+  presetSectionTitle: {
+    zh: '预设',
+    en: 'Presets',
+    ja: 'プリセット',
+  },
+  serverPresetTitle: {
+    zh: '服务器预设',
+    en: 'Server preset',
+    ja: 'サーバープリセット',
+  },
+  clientPresetTitle: {
+    zh: '客户端预设',
+    en: 'Client preset',
+    ja: 'クライアントプリセット',
+  },
+  presetNone: {
+    zh: '不使用预设',
+    en: 'No preset',
+    ja: 'プリセットなし',
+  },
+  presetSave: {
+    zh: '保存当前为预设',
+    en: 'Save as preset',
+    ja: '現在の設定をプリセット保存',
+  },
+  presetNamePrompt: {
+    zh: '预设名称',
+    en: 'Preset name',
+    ja: 'プリセット名',
+  },
+  presetSaved: {
+    zh: '已保存预设',
+    en: 'Preset saved',
+    ja: 'プリセットを保存しました',
+  },
+  presetNotFound: {
+    zh: '找不到该预设',
+    en: 'That preset no longer exists',
+    ja: 'プリセットが見つかりません',
+  },
+  presetProtocolNotSupported: {
+    zh: '浏览器只能用 ws / wss 连接，该服务器预设使用 mqtt / mqtts，已跳过',
+    en: 'A browser can only connect over ws / wss; this server preset uses mqtt / mqtts and was skipped',
+    ja: 'ブラウザは ws / wss のみ接続できます。このプリセットは mqtt / mqtts のため適用しませんでした',
+  },
+  presetHint: {
+    zh: '服务器预设套用协议、地址与端口；客户端预设套用 Client ID、账号与变量。浏览器只能用 ws / wss，使用 mqtt / mqtts 的预设会被拒绝。',
+    en: 'A server preset applies protocol, host and port; a client preset applies the client id, the account and the variables. A browser can only use ws / wss, so presets with mqtt / mqtts are refused.',
+    ja: 'サーバープリセットはプロトコル・ホスト・ポート、クライアントプリセットは Client ID・アカウント・変数を適用します。ブラウザは ws / wss のみ対応のため、mqtt / mqtts のプリセットは適用しません。',
+  },
+  sequenceRun: {
+    zh: '启动消息序列',
+    en: 'Start a message sequence',
+    ja: 'シーケンスを開始',
+  },
+  sequenceRunning: {
+    zh: '运行中',
+    en: 'running',
+    ja: '実行中',
+  },
+  sequenceStopAll: {
+    zh: '停止全部序列',
+    en: 'Stop all sequences',
+    ja: 'すべて停止',
+  },
+  sequenceCannotStart: {
+    zh: '无法启动该序列，请检查它是否有步骤与主题',
+    en: 'That sequence cannot start: check that it has steps with a topic',
+    ja: 'このシーケンスを開始できません。ステップとトピックを確認してください',
+  },
+  placeholderTopic: {
+    zh: '主题',
+    en: 'Topic',
+    ja: 'トピック',
+  },
+  placeholderPayload: {
+    zh: '报文',
+    en: 'Payload',
+    ja: 'ペイロード',
+  },
+  presetLoad: {
+    zh: '从预设载入',
+    en: 'Load from preset',
+    ja: 'プリセットから読み込む',
+  },
 }

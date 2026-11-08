@@ -180,4 +180,9 @@ export default {
     en: 'Need a Fully Managed, Cloud-Native MQTT Messaging Service? Try <a href="https://www.emqx.com/en/cloud/?utm_source=emqx.io&utm_medium=referral&utm_campaign=mqttx-web-to-cloud" target="_blank" rel="noopener noreferrer">EMQX Cloud</a> now! 14-day trial, no credit card required.',
     ja: 'フルマネージドのクラウドネイティブMQTTメッセージングサービスが必要ですか？今すぐ <a href="https://www.emqx.com/en/cloud/?utm_source=emqx.io&utm_medium=referral&utm_campaign=mqttx-web-to-cloud" target="_blank" rel="noopener noreferrer">EMQX Cloud</a> をお試しください。30日間の試用版で、クレジットカードは必要ありません。',
   },
+  neverExpire: {
+    zh: '永不过期',
+    en: 'Never Expire',
+    ja: '期限なし',
+  },
 }

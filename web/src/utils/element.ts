@@ -27,8 +27,8 @@ import {
   OptionGroup,
   Button,
   // ButtonGroup,
-  // Table,
-  // TableColumn,
+  Table,
+  TableColumn,
   // DatePicker,
   // TimeSelect,
   // TimePicker,
@@ -38,8 +38,8 @@ import {
   // BreadcrumbItem,
   Form,
   FormItem,
-  // Tabs,
-  // TabPane,
+  Tabs,
+  TabPane,
   // Tag,
   // Tree,
   Alert,
@@ -98,8 +98,8 @@ export default (Vue: any) => {
   Vue.use(OptionGroup)
   Vue.use(Button)
   // Vue.use(ButtonGroup)
-  // Vue.use(Table)
-  // Vue.use(TableColumn)
+  Vue.use(Table)
+  Vue.use(TableColumn)
   // Vue.use(DatePicker)
   // Vue.use(TimeSelect)
   // Vue.use(TimePicker)
@@ -109,8 +109,8 @@ export default (Vue: any) => {
   // Vue.use(BreadcrumbItem)
   Vue.use(Form)
   Vue.use(FormItem)
-  // Vue.use(Tabs)
-  // Vue.use(TabPane)
+  Vue.use(Tabs)
+  Vue.use(TabPane)
   // Vue.use(Tag)
   // Vue.use(Tree)
   Vue.use(Alert)

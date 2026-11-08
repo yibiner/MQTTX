@@ -15,7 +15,8 @@
     "start:docker": "yarn build:docker && http-server dist -o /",
     "test:unit": "yarn vue:cli test:unit",
     "test:e2e": "yarn vue:cli test:e2e",
-    "lint": "yarn vue:cli lint"
+    "lint": "yarn vue:cli lint",
+    "check:i18n": "node scripts/check-i18n.js"
   },
   "engines": {
     "node": ">=18"
@@ -27,6 +28,7 @@
     "element-ui": "^2.13.0",
     "fs-extra": "^8.1.0",
     "highlight.js": "^10.7.3",
+    "jmespath": "^0.16.0",
     "json-bigint": "^1.0.0",
     "lodash-id": "^0.14.0",
     "lowdb": "^1.0.0",

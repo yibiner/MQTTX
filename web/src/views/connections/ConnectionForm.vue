@@ -398,6 +398,156 @@
           </el-row>
         </el-card>
 
+        <!-- MQTTX Plus: server / client presets -->
+        <div class="info-header">
+          <h3>{{ $t('connections.presetSectionTitle') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-form-item label-width="200px">
+            <template slot="label">
+              {{ $t('connections.serverPresetTitle') }}
+              <HintIcon :text="$t('connections.presetHint')" />
+            </template>
+            <div class="behavior-row">
+              <el-select
+                class="behavior-select"
+                size="mini"
+                clearable
+                :placeholder="$t('connections.presetNone')"
+                v-model="serverProfileId"
+                @change="applyServerPreset"
+                @focus="loadPresets"
+              >
+                <el-option
+                  v-for="profile in serverProfiles"
+                  :key="profile.id"
+                  :label="profile.alias"
+                  :value="profile.id"
+                />
+              </el-select>
+              <el-button size="mini" @click="saveCurrentAsServerPreset">
+                {{ $t('connections.presetSave') }}
+              </el-button>
+            </div>
+          </el-form-item>
+
+          <el-form-item label-width="200px">
+            <template slot="label">
+              {{ $t('connections.clientPresetTitle') }}
+              <HintIcon :text="$t('connections.presetHint')" />
+            </template>
+            <div class="behavior-row">
+              <el-select
+                class="behavior-select"
+                size="mini"
+                clearable
+                :placeholder="$t('connections.presetNone')"
+                v-model="clientProfileId"
+                @change="applyClientPreset"
+                @focus="loadPresets"
+              >
+                <el-option
+                  v-for="profile in clientProfiles"
+                  :key="profile.id"
+                  :label="profile.alias"
+                  :value="profile.id"
+                />
+              </el-select>
+              <el-button size="mini" @click="saveCurrentAsClientPreset">
+                {{ $t('connections.presetSave') }}
+              </el-button>
+            </div>
+          </el-form-item>
+
+        </el-card>
+
+        <!-- MQTTX Plus: behaviour template -->
+        <div class="info-header">
+          <h3>{{ $t('connections.behaviorTemplateTitle') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-form-item label-width="200px">
+            <template slot="label">
+              {{ $t('connections.behaviorTemplateTitle') }}
+              <HintIcon :text="$t('connections.behaviorTemplateHint')" />
+            </template>
+            <div class="behavior-row">
+              <el-select
+                class="behavior-select"
+                size="mini"
+                clearable
+                :placeholder="$t('connections.behaviorTemplateNone')"
+                v-model="behaviorTemplateId"
+                @change="applyBehaviorTemplate"
+                @focus="loadBehaviorTemplates"
+              >
+                <el-option
+                  v-for="template in behaviorTemplates"
+                  :key="template.id"
+                  :label="template.name"
+                  :value="template.id"
+                />
+              </el-select>
+              <el-button size="mini" @click="saveCurrentAsBehaviorTemplate">
+                {{ $t('connections.behaviorTemplateSave') }}
+              </el-button>
+            </div>
+          </el-form-item>
+        </el-card>
+
+        <!-- Automation: client variables, automatic subscriptions, connect reports (MQTTX Plus) -->
+        <div class="info-header">
+          <h3>{{ $t('connections.autoSubscribeSection') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-form-item :label="$t('connections.variableTitle')" label-width="200px">
+            <VariableListEditor v-model="record.variables" />
+          </el-form-item>
+          <el-form-item :label="$t('connections.autoSubscribeTitle')" label-width="200px">
+            <AutoSubscribeEditor v-model="record.autoSubscriptions" />
+          </el-form-item>
+        </el-card>
+
+        <div class="info-header">
+          <h3>{{ $t('connections.timedReportTitle') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-form-item :label="$t('connections.timedReportTitle')" label-width="200px">
+            <TimedReportEditor v-model="record.timedReports" />
+          </el-form-item>
+        </el-card>
+
+        <div class="info-header">
+          <h3>{{ $t('connections.sequenceTitle') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-form-item :label="$t('connections.sequenceTitle')" label-width="200px">
+            <MessageSequenceEditor
+              v-model="record.messageSequences"
+              :variable-names="sequenceVariableNames"
+              @example="applySequenceVariables"
+            />
+          </el-form-item>
+        </el-card>
+
+        <div class="info-header">
+          <h3>{{ $t('connections.autoReplyTitle') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-form-item :label="$t('connections.autoReplyTitle')" label-width="200px">
+            <AutoReplyEditor v-model="record.autoReplies" />
+          </el-form-item>
+        </el-card>
+
+        <div class="info-header">
+          <h3>{{ $t('connections.connectReportTitle') }}</h3>
+        </div>
+        <el-card shadow="never" class="info-body item-card">
+          <el-form-item :label="$t('connections.connectReportTitle')" label-width="200px">
+            <ConnectReportEditor v-model="record.connectReports" />
+          </el-form-item>
+        </el-card>
+
         <!-- Last-Will Message -->
         <div class="info-header">
           <h3>
@@ -582,11 +732,41 @@ import { getClientId } from '@/utils/idGenerator'
 import { getMQTTProtocol, getDefaultRecord } from '@/utils/mqttUtils'
 import Editor from '@/components/Editor.vue'
 import KeyValueEditor from '@/components/KeyValueEditor.vue'
+import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
+import ConnectReportEditor from '@/components/ConnectReportEditor.vue'
+import VariableListEditor from '@/components/VariableListEditor.vue'
+import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
+import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
+import HintIcon from '@/components/HintIcon.vue'
+import TimedReportEditor from '@/components/TimedReportEditor.vue'
+import {
+  getBehaviorTemplates,
+  getClientProfiles,
+  getServerProfiles,
+  saveBehaviorTemplate,
+  saveClientProfile,
+  saveServerProfile,
+} from '@/utils/configProfiles'
+import {
+  applyClientProfileToRecord,
+  applyServerProfileToRecord,
+  clientProfileFromRecord,
+  serverProfileFromRecord,
+} from '@/utils/applyPresets'
+import { BehaviorFormBaseline, copyBehaviorLists } from '@/utils/behaviorTemplates'
+import { applyBehaviorTemplateToRecord } from '@/utils/behaviorApply'
 
 @Component({
   components: {
     Editor,
     KeyValueEditor,
+    AutoSubscribeEditor,
+    ConnectReportEditor,
+    VariableListEditor,
+    AutoReplyEditor,
+    MessageSequenceEditor,
+    TimedReportEditor,
+    HintIcon,
   },
 })
 export default class ConnectionCreate extends Vue {
@@ -670,6 +850,181 @@ export default class ConnectionCreate extends Vue {
       this.record = res
       this.oldName = res.name
       this.record.protocol = getMQTTProtocol(res)
+      this.normalizeRecord()
+    }
+  }
+
+  // ---- presets ("预设管理") ----
+  private serverProfiles: ServerProfileModel[] = []
+
+  private clientProfiles: ClientProfileModel[] = []
+
+  private serverProfileId: string | null = null
+
+  private clientProfileId: string | null = null
+
+  private loadPresets() {
+    this.serverProfiles = getServerProfiles()
+    this.clientProfiles = getClientProfiles()
+  }
+
+  /**
+   * Applies the server part of a preset. A preset that names `mqtt`/`mqtts` is refused: a browser
+   * can only open a websocket, and silently rewriting the protocol would connect to a port that is
+   * not the one the preset describes.
+   */
+  private applyServerPreset(id: string | null) {
+    if (!id) {
+      return
+    }
+    const profile = this.serverProfiles.find((item) => item.id === id)
+    const result = applyServerProfileToRecord(this.record, profile)
+    if (!result.applied) {
+      this.$message.warning(
+        result.reason === 'protocolNotSupportedInBrowser'
+          ? (this.$t('connections.presetProtocolNotSupported') as string)
+          : (this.$t('connections.presetNotFound') as string),
+      )
+      // Nothing was applied: do not leave the select showing a preset the form does not match.
+      this.serverProfileId = null
+    }
+  }
+
+  private applyClientPreset(id: string | null) {
+    if (!id) {
+      return
+    }
+    const profile = this.clientProfiles.find((item) => item.id === id)
+    const result = applyClientProfileToRecord(this.record, profile)
+    if (!result.applied) {
+      this.$message.warning(this.$t('connections.presetNotFound') as string)
+      this.clientProfileId = null
+    }
+  }
+
+  private askPresetName(fallback: string): string | null {
+    const name = window.prompt(this.$t('connections.presetNamePrompt') as string, fallback)
+    return name ? name : null
+  }
+
+  private saveCurrentAsServerPreset() {
+    const alias = this.askPresetName(this.record.host)
+    if (!alias) {
+      return
+    }
+    const saved = saveServerProfile(serverProfileFromRecord(this.record, alias))
+    this.loadPresets()
+    this.serverProfileId = saved.id
+    this.$message.success(this.$t('connections.presetSaved') as string)
+  }
+
+  private saveCurrentAsClientPreset() {
+    const alias = this.askPresetName(this.record.name || this.record.clientId)
+    if (!alias) {
+      return
+    }
+    const saved = saveClientProfile(clientProfileFromRecord(this.record, alias))
+    this.loadPresets()
+    this.clientProfileId = saved.id
+    this.$message.success(this.$t('connections.presetSaved') as string)
+  }
+
+  /** Behaviour templates ("行为模板") available to fill this connection from. */
+  private behaviorTemplates: BehaviorTemplateModel[] = []
+
+  private behaviorTemplateId: string | null = null
+
+  /** What the form looked like before a template was applied, so it can be undone. */
+  private behaviorBaseline: BehaviorFormBaseline | null = null
+
+  private loadBehaviorTemplates() {
+    this.behaviorTemplates = getBehaviorTemplates()
+  }
+
+  /**
+   * Applies a behaviour template: the account, the client options and every automation list.
+   *
+   * Applying twice, or switching templates, first restores what the form looked like before the
+   * first application, so a template never stacks on top of another one by accident.
+   */
+  private applyBehaviorTemplate(id: string | null) {
+    this.loadBehaviorTemplates()
+    const result = applyBehaviorTemplateToRecord(this.record, this.behaviorTemplates, id, this.behaviorBaseline)
+    this.behaviorBaseline = result.baseline
+    this.behaviorTemplateId = id
+  }
+
+  /** Stores what this connection currently does as a reusable behaviour template. */
+  private saveCurrentAsBehaviorTemplate() {
+    const suggested = (this.record.name ?? '').trim() || this.$t('connections.behaviorTemplateDefaultName')
+    const name = window.prompt(this.$t('connections.behaviorTemplateNamePrompt') as string, suggested as string)
+    if (!name) {
+      return false
+    }
+    // `copyBehaviorLists` gives every copied row a new id, so the template and the connection do not
+    // share the runtime state of a subscription group, a report or a sequence run.
+    const lists = copyBehaviorLists({
+      autoSubscriptions: this.record.autoSubscriptions ?? [],
+      connectReports: this.record.connectReports ?? [],
+      timedReports: this.record.timedReports ?? [],
+      autoReplies: this.record.autoReplies ?? [],
+      messageSequences: this.record.messageSequences ?? [],
+    })
+    saveBehaviorTemplate({
+      name,
+      username: this.record.username,
+      password: this.record.password,
+      variables: { ...(this.record.variables ?? {}) },
+      ...lists,
+    })
+    this.loadBehaviorTemplates()
+    this.$message.success(this.$t('connections.behaviorTemplateSaved') as string)
+    return true
+  }
+
+  get sequenceVariableNames(): string[] {
+    return Object.keys(this.record.variables ?? {})
+  }
+
+  /** A sequence preset can carry the variables it needs, such as `water` for the built-in cycle. */
+  private applySequenceVariables(payload: { variables?: { [name: string]: StoredVariable } }) {
+    const incoming = payload?.variables ?? {}
+    const current = { ...(this.record.variables ?? {}) }
+    let changed = false
+    Object.keys(incoming).forEach((name) => {
+      if (current[name] === undefined) {
+        current[name] = incoming[name]
+        changed = true
+      }
+    })
+    if (changed) {
+      // `variables` is absent from the default record, so a plain assignment is invisible to Vue 2.
+      Vue.set(this.record, 'variables', current)
+    }
+  }
+
+  /**
+   * Gives the record the fields MQTTX Plus added, so the editors bound to them always have a value.
+   * Connections created by the upstream web build simply have no `autoSubscriptions` key.
+   */
+  private normalizeRecord() {
+    if (!Array.isArray(this.record.autoSubscriptions)) {
+      Vue.set(this.record, 'autoSubscriptions', [])
+    }
+    if (!Array.isArray(this.record.connectReports)) {
+      Vue.set(this.record, 'connectReports', [])
+    }
+    if (!this.record.variables || typeof this.record.variables !== 'object' || Array.isArray(this.record.variables)) {
+      Vue.set(this.record, 'variables', {})
+    }
+    if (!Array.isArray(this.record.autoReplies)) {
+      Vue.set(this.record, 'autoReplies', [])
+    }
+    if (!Array.isArray(this.record.messageSequences)) {
+      Vue.set(this.record, 'messageSequences', [])
+    }
+    if (!Array.isArray(this.record.timedReports)) {
+      Vue.set(this.record, 'timedReports', [])
     }
   }
 
@@ -829,6 +1184,7 @@ export default class ConnectionCreate extends Vue {
     const { id } = this.$route.params
     if (this.oper === 'create') {
       this.record = _.cloneDeep(this.defaultRecord)
+      this.normalizeRecord()
     } else if (this.oper === 'edit' && id !== '0') {
       this.loadDetail(id)
     }
@@ -845,6 +1201,17 @@ export default class ConnectionCreate extends Vue {
 
 <style lang="scss">
 @import '~@/assets/scss/mixins.scss';
+
+.behavior-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.behavior-select {
+  width: 220px;
+}
+
 
 .connection-form {
   padding: 0 16px;

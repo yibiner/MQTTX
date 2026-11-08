@@ -52,6 +52,34 @@
                   <i v-else class="iconfont icon-disconnect"></i>
                 </a>
               </el-tooltip>
+              <el-dropdown
+                v-if="!showClientInfo && client.connected && manualSequences.length"
+                class="sequence-dropdown"
+                trigger="click"
+                size="mini"
+                @command="handleSequenceCommand"
+              >
+                <a class="sequence-btn" href="javascript:;" :title="$t('connections.sequenceRun')">
+                  <i class="el-icon-video-play"></i>
+                </a>
+                <el-dropdown-menu slot="dropdown">
+                  <el-dropdown-item
+                    v-for="sequence in manualSequences"
+                    :key="sequence.id"
+                    :command="sequence.id"
+                    :disabled="runningSequenceIds.includes(sequence.id)"
+                  >
+                    {{ sequence.name || sequence.id }}
+                    <span v-if="runningSequenceIds.includes(sequence.id)" class="sequence-running">
+                      ({{ $t('connections.sequenceRunning') }})
+                    </span>
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="runningSequenceIds.length" command="__stop__" divided>
+                    {{ $t('connections.sequenceStopAll') }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </el-dropdown>
+
               <el-tooltip
                 v-if="!showClientInfo && !client.connected"
                 placement="bottom"
@@ -202,6 +230,7 @@
         <ResizeHeight v-model="inputHeight" />
         <MsgPublish
           :mqtt5PropsEnable="record.mqttVersion === '5.0'"
+          :connection="record"
           ref="msgPublish"
           :editor-height="inputHeight - 75"
           :subs-visible="showSubs"
@@ -244,6 +273,12 @@ import historyMessageHeaderService from '@/utils/api/historyMessageHeaderService
 import historyMessagePayloadService from '@/utils/api/historyMessagePayloadService'
 import { jsonParse, jsonStringify } from '@/utils/jsonUtils'
 import getErrorReason from '@/utils/mqttErrorReason'
+import { applyConnectSubscriptions } from '@/utils/connectSubscriptions'
+import { runConnectReports, RunConnectReportsResult } from '@/utils/connectReportRunner'
+import { findUnresolvedForPublish, resolveForPublish } from '@/utils/publishVariables'
+import { createAutoReplyRunner, AutoReplyRunner } from '@/utils/autoReplyRunner'
+import { createMessageSequenceRunner, MessageSequenceRunner } from '@/utils/messageSequenceRunner'
+import { createTimedReportRunner, TimedReportRunner } from '@/utils/timedReportRunner'
 
 type MessageType = 'all' | 'received' | 'publish'
 type CommandType = 'searchByTopic' | 'disconnect' | 'deleteConnect'
@@ -279,6 +314,7 @@ export default class ConnectionsDetail extends Vue {
 
   @Getter('currentLang') private getterLang!: Language
   @Getter('activeConnection') private activeConnection: $TSFixed
+  @Getter('autoResub') private autoResub!: boolean
   @Getter('autoScroll') private autoScroll!: boolean
   @Getter('autoScrollInterval') private autoScrollInterval!: number
   @Getter('maxReconnectTimes') private maxReconnectTimes!: number
@@ -316,6 +352,16 @@ export default class ConnectionsDetail extends Vue {
   private largeDesktop = false
   private screenWidth = document.body.clientWidth
   private connectLoading = false
+  /** timers of the connect reports of the current connect, cancelled on disconnect */
+  private connectReportRun: RunConnectReportsResult | null = null
+  /** delayed automatic subscriptions of the current connect, cancelled on disconnect */
+  private connectSubscriptionRun: { cancel: () => void } | null = null
+  /** automatic replies ("自动回复") of this connect, disposed on disconnect */
+  private autoReplyRunner: AutoReplyRunner | null = null
+  /** message sequences ("消息序列") of this connect, disposed on disconnect */
+  private sequenceRunner: MessageSequenceRunner | null = null
+  /** timed messages ("定时消息") of this connect, disposed on disconnect */
+  private timedReportRunner: TimedReportRunner | null = null
   private disconnectLoding = false
   private isReconnect = false
   private searchVisible = false
@@ -765,7 +811,239 @@ export default class ConnectionsDetail extends Vue {
       offset: 30,
     })
     this.setShowClientInfo(false)
-    this.$emit('reload', false, false, this.handleReSubTopics)
+    this.$emit('reload', false, false)
+    this.runConnectSubscriptions()
+    this.runConnectReports()
+    this.startAutoReplies()
+    this.startMessageSequences()
+    this.startTimedReports()
+  }
+
+  /**
+   * Starts the timed messages of this connection ("定时消息").
+   *
+   * The rows are saved on the connection and start on every successful connect, like the desktop
+   * build. The difference is the lifetime: a browser tab that is closed or suspended fires no
+   * timers, and the missed intervals are skipped rather than replayed in a burst.
+   */
+  private startTimedReports() {
+    this.timedReportRunner?.dispose()
+    if (!this.record || !this.client) {
+      return
+    }
+    this.timedReportRunner = createTimedReportRunner({
+      connection: this.record,
+      onSkipped: (reportId, reason) => {
+        console.warn(`[timed] ${reportId} skipped: ${reason}`)
+      },
+      publish: (message) => this.publishRecorded(message),
+    })
+    this.timedReportRunner.startFromConnection()
+  }
+
+  /** Sequences the user can start by hand (everything not triggered by connect or by a message). */
+  get manualSequences(): MessageSequenceModel[] {
+    return (this.record?.messageSequences ?? []).filter(
+      (sequence) => sequence && sequence.enabled !== false && sequence.trigger === 'manual',
+    )
+  }
+
+  get runningSequenceIds(): string[] {
+    return this.sequenceRunner?.runningIds() ?? []
+  }
+
+  private handleSequenceCommand(command: string) {
+    if (!this.sequenceRunner) {
+      return
+    }
+    if (command === '__stop__') {
+      this.sequenceRunner.stopAll()
+      return
+    }
+    const started = this.sequenceRunner.start(command)
+    if (!started) {
+      this.$message.warning(this.$t('connections.sequenceCannotStart') as string)
+      return
+    }
+    // `runningIds()` is read during render, so a start has to re-render to show the stop entry.
+    this.$forceUpdate()
+  }
+
+  /**
+   * Starts the message sequences of this connection ("消息序列").
+   *
+   * Connect-triggered sequences start now; the others wait for the user or for a matching message
+   * (see the incoming handler). Steps are published through the same client as a manual publish, so
+   * they land in the message list and in the stored history.
+   */
+  private startMessageSequences() {
+    this.sequenceRunner?.dispose()
+    if (!this.record || !this.client) {
+      return
+    }
+    this.sequenceRunner = createMessageSequenceRunner({
+      connection: this.record,
+      onRunChanged: () => {
+        // runningIds() reads a Map the runner owns, which Vue does not observe.
+        this.$forceUpdate()
+      },
+      onStopped: (sequenceId, reason) => {
+        this.$notify({
+          title: this.$t('connections.sequenceStopped', { reason }) as string,
+          message: '',
+          type: 'warning',
+          duration: 5000,
+          offset: 30,
+        })
+        console.warn(`[sequence] ${sequenceId} stopped: ${reason}`)
+      },
+      publish: (message) => this.publishRecorded(message),
+    })
+    this.sequenceRunner.startOnConnect()
+  }
+
+  /**
+   * Starts answering the messages of this connection ("自动回复").
+   *
+   * The matching rules live in `utils/autoReply.ts` (shared with the desktop build); this only wires
+   * them to the client of the page. A reply is published through the same `client.publish` the
+   * publish panel uses, so it shows up in the message list and in the stored history.
+   */
+  private startAutoReplies() {
+    this.autoReplyRunner?.dispose()
+    if (!this.record || !this.client) {
+      return
+    }
+    this.autoReplyRunner = createAutoReplyRunner({
+      connection: this.record,
+      onRuleError: (ruleId, error) => {
+        this.$notify({
+          title: this.$t('connections.autoReplyRuleError', { error }) as string,
+          message: '',
+          type: 'warning',
+          duration: 5000,
+          offset: 30,
+        })
+        // The web build has no log file: the console is where a rule error can be inspected.
+        console.warn(`[auto-reply] rule ${ruleId} skipped: ${error}`)
+      },
+      publish: (reply) => this.publishRecorded(reply),
+    })
+  }
+
+  /**
+   * Publishes one automation message and records it after the broker accepts it.
+   *
+   * The returned promise rejects when the publish fails, so a sequence or a reply can avoid
+   * advancing counters for a message that never left.
+   */
+  private publishRecorded(message: { topic: string; payload: string; qos: QoS; retain: boolean }): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.client.publish || !this.client.connected) {
+        reject(new Error('not connected'))
+        return
+      }
+      this.client.publish(message.topic, message.payload, { qos: message.qos, retain: message.retain }, (error?: Error) => {
+        if (error) {
+          this.$message.error(error.toString())
+          reject(error)
+          return
+        }
+        const publishMessage: MessageModel = {
+          id: getMessageId(),
+          out: true,
+          createAt: time.getNowDate(),
+          topic: message.topic,
+          payload: message.payload,
+          qos: message.qos,
+          retain: message.retain,
+        }
+        this.record.messages.push({ ...publishMessage })
+        if (this.record.id) {
+          updateConnectionMessage(this.record.id, { ...publishMessage })
+        }
+        if (this.msgType !== 'received') {
+          this.messages.push(publishMessage)
+          this.messagesAddedNewItem = true
+          this.scrollToBottom()
+        }
+        resolve()
+      })
+    })
+  }
+
+  /**
+   * Subscribes what this connection needs after a successful connect.
+   *
+   * This is the only restore path: saved rows (when auto resubscribe is on) and the automatic
+   * groups. A topic that could not be resolved is reported instead of being subscribed with a
+   * literal `${...}`. Delays that have not fired yet are cancelled on disconnect.
+   */
+  private async runConnectSubscriptions() {
+    this.connectSubscriptionRun?.cancel()
+    this.connectSubscriptionRun = null
+    if (!this.record || !this.client) {
+      return
+    }
+    const run = applyConnectSubscriptions({
+      // The guard above makes the client exist; the component types it as `Partial<MqttClient>`
+      // because it is assigned while connecting.
+      client: this.client as Pick<MqttClient, 'subscribe'>,
+      connection: this.record,
+      restoreManual: this.autoResub,
+      onUnresolved: (names) => {
+        this.$notify({
+          title: this.$t('connections.autoSubscribeUnresolved', { names: names.join(', ') }) as string,
+          message: '',
+          type: 'warning',
+          duration: 5000,
+          offset: 30,
+        })
+      },
+      persistRows: () => {
+        if (this.record.id) {
+          updateConnection(this.record.id, this.record)
+        }
+      },
+      onRowsChanged: () => {
+        this.$emit('reload')
+      },
+    })
+    this.connectSubscriptionRun = run
+    const result = await run
+    if (this.connectSubscriptionRun !== run) {
+      return
+    }
+    if (result.subscribed.length) {
+      this.$emit('reload')
+    }
+  }
+
+  /**
+   * Publishes the reports configured on this connection after a successful connect ("连接后上报").
+   *
+   * The messages are published as written - the browser build has no script/schema pipeline - and are
+   * recorded in the connection like any other outgoing message. Timers are kept so a disconnect stops
+   * the reports that have not been sent yet.
+   */
+  private runConnectReports() {
+    if (!this.record || !this.client) {
+      return
+    }
+    this.connectReportRun?.cancel()
+    this.connectReportRun = runConnectReports({
+      connection: this.record,
+      onUnresolved: (names) => {
+        this.$notify({
+          title: this.$t('connections.connectReportSkipped', { names: names.join(', ') }) as string,
+          message: '',
+          type: 'warning',
+          duration: 5000,
+          offset: 30,
+        })
+      },
+      publish: (message) => this.publishRecorded(message).catch(() => undefined),
+    })
   }
 
   // Error callback
@@ -821,10 +1099,25 @@ export default class ConnectionsDetail extends Vue {
     }
   }
 
+  /** Stops every timer this page started. A disconnect and leaving the page both use it. */
+  private stopAutomation() {
+    this.connectReportRun?.cancel()
+    this.connectReportRun = null
+    this.connectSubscriptionRun?.cancel()
+    this.connectSubscriptionRun = null
+    this.autoReplyRunner?.dispose()
+    this.autoReplyRunner = null
+    this.sequenceRunner?.dispose()
+    this.sequenceRunner = null
+    this.timedReportRunner?.dispose()
+    this.timedReportRunner = null
+  }
+
   // Close connection callback
   private onClose() {
     this.connectLoading = false
     this.isReconnect = false
+    this.stopAutomation()
   }
 
   // Emitted after receiving disconnect packet from broker. MQTT 5.0 feature.
@@ -843,6 +1136,13 @@ export default class ConnectionsDetail extends Vue {
   private onMessageArrived(id: string) {
     return (topic: string, payload: Buffer, packet: IPublishPacket) => {
       const { qos, retain, properties } = packet
+      // Automatic replies run before anything is rendered: a reply must not depend on the page
+      // showing the message. The raw payload is passed on, so a rule's condition and `${msg.x}`
+      // see exactly what the broker sent.
+      if (id === this.$route.params.id) {
+        this.autoReplyRunner?.handleIncoming(topic, payload.toString(), packet.messageId)
+        this.sequenceRunner?.handleIncoming(topic, payload.toString())
+      }
       const convertPayload = this.convertPayloadByType(payload, this.receivedMsgType, 'receive') as string
       const receivedMessage: MessageModel = {
         id: getMessageId(),
@@ -936,9 +1236,36 @@ export default class ConnectionsDetail extends Vue {
       }
     }
 
-    const $payload = this.convertPayloadByType(payload, type, 'publish')
+    /*
+     * Variables of the connection ("客户端变量", the global ones and the connection fields) are
+     * resolved in the topic as well as in the payload. An unresolved placeholder is never published
+     * silently: the user is asked first, because sending a literal `${name}` is occasionally
+     * intended but usually a typo.
+     */
+    const unresolved = findUnresolvedForPublish(this.record, { topic, payload, type })
+    if (unresolved.length) {
+      const sendAnyway = await this.confirmUnresolvedVariables(unresolved)
+      if (!sendAnyway) {
+        return false
+      }
+    }
+    const resolved = resolveForPublish(this.record, { topic, payload, type }, { commit: false })
+    const publishTopic = resolved.topic
+    const publishPayload = resolved.payload ?? payload
+
+    // A variable can expand into a wildcard. The check above only sees the template.
+    if (publishTopic && (publishTopic.includes('+') || publishTopic.includes('#'))) {
+      const msgPublish = this.$refs.msgPublish as MsgPublish
+      if (msgPublish) {
+        msgPublish.setTopicInvalid()
+      }
+      this.$message.warning(this.$tc('connections.topicCannotContain'))
+      return false
+    }
+
+    const $payload = this.convertPayloadByType(publishPayload, type, 'publish')
     this.client.publish!(
-      topic,
+      publishTopic,
       $payload,
       { qos, retain, properties: props as IClientPublishOptions['properties'] },
       (error: Error) => {
@@ -947,18 +1274,21 @@ export default class ConnectionsDetail extends Vue {
           this.$message.error(errorMsg)
           return false
         }
+        // Counters move only after the broker accepts the message.
+        resolved.commit()
         const properties = this.record.mqttVersion === '5.0' ? props : undefined
+        const recordedPayload = typeof publishPayload === 'string' ? publishPayload : payload
         const publishMessage: MessageModel = {
           id,
           out: true,
           createAt: time.getNowDate(),
-          topic,
-          payload,
+          topic: publishTopic,
+          payload: recordedPayload,
           qos,
           retain,
           properties,
         }
-        const isActiveTopicMessages = matchTopicMethod(this.activeTopic, topic)
+        const isActiveTopicMessages = matchTopicMethod(this.activeTopic, publishTopic)
         this.record.messages.push({ ...publishMessage })
         updateConnectionMessage(this.record.id as string, { ...publishMessage })
         if (this.msgType !== 'received' && !this.activeTopic) {
@@ -971,7 +1301,7 @@ export default class ConnectionsDetail extends Vue {
       },
     )
 
-    // insert message into local storage
+    // The editor history keeps the template, so the next send can reuse `${...}`.
     const { isNewPayload } = await this.insertHistory({ payload, payloadType: type }, { qos, topic, retain })
 
     afterSendCallback && afterSendCallback(isNewPayload)
@@ -1008,6 +1338,30 @@ export default class ConnectionsDetail extends Vue {
         showClientInfo: this.showClientInfo,
       })
     }, 500)
+  }
+
+  /**
+   * Asks before a message whose unresolved placeholders would be published verbatim.
+   *
+   * Sending the raw `${name}` is occasionally what the user wants (a message that documents a
+   * template), so it stays possible - but never silently.
+   */
+  private async confirmUnresolvedVariables(names: string[]): Promise<boolean> {
+    const variables = names.map((name) => '${' + name + '}').join(', ')
+    try {
+      await this.$confirm(
+        this.$t('connections.unresolvedVariablesTip', { variables }) as string,
+        this.$t('connections.unresolvedVariablesTitle') as string,
+        {
+          type: 'warning',
+          confirmButtonText: this.$t('connections.unresolvedVariablesSend') as string,
+          cancelButtonText: this.$tc('common.cancel'),
+        },
+      )
+      return true
+    } catch (error) {
+      return false
+    }
   }
 
   private convertPayloadByType(value: Buffer | string, type: PayloadType, way: 'publish' | 'receive'): Buffer | string {
@@ -1048,18 +1402,6 @@ export default class ConnectionsDetail extends Vue {
       return genReceivePayload(type, value)
     }
     return value
-  }
-
-  // Re-subscribe topic
-  private handleReSubTopics() {
-    if (this.client.options) {
-      const { resubscribe } = this.client.options
-      const { subscriptions } = this.record
-      const needResub = resubscribe && subscriptions.length
-      if (needResub) {
-        this.subListRef.resubscribe()
-      }
-    }
   }
 
   private created() {
@@ -1125,6 +1467,7 @@ export default class ConnectionsDetail extends Vue {
 
   private beforeDestroy() {
     // ipcRenderer.removeAllListeners('searchByTopic')
+    this.stopAutomation()
     this.removeClinetsMessageListener()
     this.scrollSubject.unsubscribe()
   }
@@ -1172,7 +1515,27 @@ export default class ConnectionsDetail extends Vue {
         }
         @include collapse-btn-transform(90deg, -90deg);
       }
-      .connection-tail {
+      .sequence-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 6px;
+  border-radius: 6px;
+  color: var(--color-text-default, #606266);
+}
+
+.sequence-btn:hover {
+  background: rgba(144, 147, 153, 0.12);
+}
+
+.sequence-running {
+  color: #909399;
+  font-size: 12px;
+}
+
+.connection-tail {
         i {
           font-size: 20px;
           color: var(--color-text-title);

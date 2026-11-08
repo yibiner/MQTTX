@@ -169,6 +169,43 @@
             </div>
           </el-option>
         </el-select>
+        <el-select
+          class="preset-select"
+          popper-class="header-select--popper"
+          v-model="presetValue"
+          :placeholder="$t('connections.presetPicker')"
+          size="mini"
+          @focus="loadMessagePresets"
+          @change="applyMessagePreset"
+        >
+          <el-option v-if="!messagePresets.length" :value="''" :label="$t('connections.presetPickerEmpty')" disabled />
+          <el-option
+            v-for="preset in messagePresets"
+            :key="preset.id"
+            :label="preset.name"
+            :value="preset.id"
+          />
+        </el-select>
+        <el-select
+          class="preset-select"
+          popper-class="header-select--popper"
+          v-model="topicPresetValue"
+          :placeholder="$t('connections.topicPresetPicker')"
+          size="mini"
+          @focus="loadTopicPresets"
+          @change="applyTopicPreset"
+        >
+          <el-option v-if="!topicPresets.length" :value="''" :label="$t('connections.presetPickerEmpty')" disabled />
+          <el-option v-for="preset in topicPresets" :key="preset.id" :label="preset.name" :value="preset.id" />
+        </el-select>
+      </div>
+      <div v-if="resolvedTopicPreview || resolvedPayloadPreview || previewUnresolved.length" class="variable-preview">
+        <span class="preview-label">{{ $t('connections.variablePreview') }}:</span>
+        <span v-if="resolvedTopicPreview" class="preview-topic">{{ resolvedTopicPreview }}</span>
+        <span v-if="resolvedPayloadPreview" class="preview-payload">{{ resolvedPayloadPreview }}</span>
+        <span v-if="previewUnresolved.length" class="preview-unresolved">
+          {{ previewUnresolved.map((name) => '${' + name + '}').join(', ') }}
+        </span>
       </div>
     </div>
     <div class="editor-container">
@@ -208,6 +245,8 @@ import validFormatJson from '@/utils/validFormatJson'
 import time from '@/utils/time'
 import { emptyToNull } from '@/utils/handleString'
 import { getConnectionPushProp, updateConnectionPushProp } from '@/utils/api/connection'
+import { getMessagePresets, getTopicPresets } from '@/utils/configProfiles'
+import { connectionVariableOptions, resolvePayloadVariables } from '@/utils/payloadVariables'
 import historyMessageHeaderService from '@/utils/api/historyMessageHeaderService'
 import historyMessagePayloadService from '@/utils/api/historyMessagePayloadService'
 
@@ -224,6 +263,8 @@ export default class MsgPublish extends Vue {
   @Prop({ required: true }) public editorHeight!: number
   @Prop({ required: true }) public subsVisible!: boolean
   @Prop({ default: false }) public mqtt5PropsEnable!: boolean
+  /** The connection this panel publishes on; used to resolve `${variables}` in the preview. */
+  @Prop({ default: null }) public connection!: ConnectionModel | null
 
   @Getter('currentTheme') private currentTheme!: Theme
 
@@ -278,6 +319,92 @@ export default class MsgPublish extends Vue {
     qos: this.msgRecord.qos,
     retain: this.msgRecord.retain,
     topic: this.msgRecord.topic,
+  }
+
+  /** Message presets ("消息预设") offered next to the topic input. */
+  private messagePresets: MessagePresetModel[] = []
+
+  private presetValue = ''
+
+  /** Topic presets ("Topic 预设") offered next to the message presets. */
+  private topicPresets: TopicPresetModel[] = []
+
+  private topicPresetValue = ''
+
+  private loadTopicPresets() {
+    this.topicPresets = getTopicPresets()
+  }
+
+  /** Fills only the topic; the payload the user already typed is kept. */
+  private applyTopicPreset(presetId: string) {
+    const preset = this.topicPresets.find((item) => item.id === presetId)
+    if (preset) {
+      this.msgRecord.topic = preset.topic
+    }
+    // Cleared so choosing the same preset again fires change.
+    this.$nextTick(() => {
+      this.topicPresetValue = ''
+    })
+  }
+
+  private loadMessagePresets() {
+    this.messagePresets = getMessagePresets()
+  }
+
+  /**
+   * Fills topic and payload from a preset. Everything stays editable afterwards: a preset is a
+   * starting point, not a lock - same behaviour as the desktop publish panel.
+   */
+  private applyMessagePreset(presetId: string) {
+    const preset = this.messagePresets.find((item) => item.id === presetId)
+    if (!preset) {
+      return
+    }
+    this.msgRecord.topic = preset.topic
+    this.msgRecord.payload = preset.payload
+    this.payloadLang = 'json'
+    this.$nextTick(() => {
+      this.presetValue = ''
+    })
+  }
+
+  /** Preview of the topic with its variables filled in, without advancing any counter. */
+  get resolvedTopicPreview(): string {
+    const topic = this.msgRecord.topic ?? ''
+    if (!topic.includes('${')) {
+      return ''
+    }
+    return resolvePayloadVariables(topic, { ...connectionVariableOptions(this.connection), commitCounters: false })
+      .text
+  }
+
+  get resolvedPayloadPreview(): string {
+    const payload = this.msgRecord.payload ?? ''
+    if (this.payloadType !== 'JSON' && this.payloadType !== 'Plaintext') {
+      return ''
+    }
+    if (!payload.includes('${')) {
+      return ''
+    }
+    return resolvePayloadVariables(payload, { ...connectionVariableOptions(this.connection), commitCounters: false })
+      .text
+  }
+
+  get previewUnresolved(): string[] {
+    const options = { ...connectionVariableOptions(this.connection), commitCounters: false }
+    const names: string[] = []
+    const collect = (text: string) => {
+      resolvePayloadVariables(text, options).unresolved.forEach((name) => {
+        if (!names.includes(name)) {
+          names.push(name)
+        }
+      })
+    }
+    collect(this.msgRecord.topic ?? '')
+    if (this.payloadType === 'JSON' || this.payloadType === 'Plaintext') {
+      collect(this.msgRecord.payload ?? '')
+    }
+    return names
   }
 
   private payloadLang = 'json'
@@ -503,6 +630,42 @@ export default class MsgPublish extends Vue {
 <style lang="scss">
 @import '~@/assets/scss/variable.scss';
 @import '~@/assets/scss/mixins.scss';
+
+.variable-preview {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 8px 4px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.variable-preview .preview-label {
+  color: #909399;
+}
+
+.variable-preview .preview-topic,
+.variable-preview .preview-payload {
+  color: #409eff;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  word-break: break-all;
+}
+
+.variable-preview .preview-payload {
+  max-height: 4.5em;
+  overflow: hidden;
+}
+
+.variable-preview .preview-unresolved {
+  color: #e6a23c;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+}
+
+.preset-select {
+  width: 140px;
+  margin-left: 6px;
+}
 
 .msg-publish {
   position: relative;

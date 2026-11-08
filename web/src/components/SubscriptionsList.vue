@@ -73,6 +73,9 @@
               {{ sub.alias || sub.topic }}
             </a>
           </el-popover>
+          <span v-if="sub.autoSubscribed" class="auto-badge" :title="$t('connections.autoSubscribedBadgeHint')">
+            {{ $t('connections.autoSubscribedBadge') }}
+          </span>
           <span class="qos">QoS {{ sub.qos }}</span>
           <a href="javascript:;" class="close" @click.stop="removeSubscription(sub)">
             <i :class="unsubLoading ? 'el-icon-loading' : 'el-icon-close'"></i>
@@ -257,6 +260,8 @@ import time from '@/utils/time'
 import { getSubscriptionId } from '@/utils/idGenerator'
 import getErrorReason from '@/utils/mqttErrorReason'
 import { hasPersistentSession, setSubscribeMQTT5Properties } from '@/utils/subscriptionUtils'
+import { reconcileAutoSubscriptions } from '@/utils/autoSubscribe'
+import { connectionVariableOptions } from '@/utils/connectionVariables'
 
 @Component({
   components: {
@@ -503,6 +508,7 @@ export default class SubscriptionsList extends Vue {
           isFinished = true
           return false
         }
+        const previousRows = this.subscriptionSnapshot()
         if (enable) {
           this.subsList = this.setSubsDisable(topic, disabled)
         } else {
@@ -516,6 +522,7 @@ export default class SubscriptionsList extends Vue {
             })
           }
         }
+        this.syncAutoSubscriptions(previousRows)
         this.record.subscriptions = this.subsList
         if (this.record.id) {
           updateConnection(this.record.id, this.record)
@@ -612,16 +619,44 @@ export default class SubscriptionsList extends Vue {
   }
 
   private removeLocalSubscription({ topic, disabled }: SubscriptionModel, disable?: boolean) {
+    const previousRows = this.subscriptionSnapshot()
     const subscriptions = disable
       ? this.setSubsDisable(topic, disabled)
       : this.subsList.filter((sub: SubscriptionModel) => sub.topic !== topic)
+    this.subsList = subscriptions
+    this.syncAutoSubscriptions(previousRows)
     this.record.subscriptions = subscriptions
     if (this.record.id) {
       updateConnection(this.record.id, this.record)
       this.changeSubs({ id: this.record.id, subscriptions })
     }
     this.$emit('deleteTopic')
-    this.subsList = subscriptions
+  }
+
+  private subscriptionSnapshot(): Array<{ topic: string; disabled?: boolean }> {
+    return this.subsList.map((sub) => ({ topic: sub.topic, disabled: sub.disabled }))
+  }
+
+  /**
+   * The subscription list is the source of truth for topics it already showed. Deleting one drops
+   * it from the automatic subscriptions, and pausing one marks that topic paused, so the next
+   * connect does not put the row back.
+   */
+  private syncAutoSubscriptions(previousRows: Array<{ topic: string; disabled?: boolean }>) {
+    const groups = this.record.autoSubscriptions
+    if (!Array.isArray(groups) || !groups.length) {
+      return
+    }
+    const { groups: nextGroups, changed } = reconcileAutoSubscriptions(
+      groups,
+      this.subsList,
+      previousRows,
+      {},
+      connectionVariableOptions(this.record),
+    )
+    if (changed) {
+      this.record.autoSubscriptions = nextGroups
+    }
   }
 
   private resetSubs() {
@@ -645,6 +680,8 @@ export default class SubscriptionsList extends Vue {
     return this.subsList.map((sub: SubscriptionModel) => {
       if (sub.topic === topic) {
         sub.disabled = disabled
+        // Pausing or resuming a row is the user taking it over.
+        sub.autoSubscribed = undefined
       }
       return sub
     })
@@ -862,6 +899,18 @@ export default class SubscriptionsList extends Vue {
         white-space: nowrap;
         text-overflow: ellipsis;
         overflow: hidden;
+      }
+      .auto-badge {
+        position: absolute;
+        top: -6px;
+        left: 10px;
+        padding: 0 4px;
+        font-size: 10px;
+        line-height: 14px;
+        color: var(--color-main-green);
+        background: var(--color-light-green);
+        border: 1px solid var(--color-main-green);
+        border-radius: 3px;
       }
       .qos {
         float: right;

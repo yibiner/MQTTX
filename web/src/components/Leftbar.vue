@@ -16,6 +16,11 @@
           <i class="iconfont icon-new"></i>
         </a>
       </div>
+      <div :class="[{ active: isConfigs }, 'leftbar-item']">
+        <a href="javascript:;" @click="routeToPage('/configs')" :title="$t('configs.title')">
+          <i class="el-icon-collection leftbar-el-icon"></i>
+        </a>
+      </div>
     </section>
 
     <section class="leftbar-bottom">
@@ -59,6 +64,9 @@ export default class Leftbar extends Vue {
   }
   get isCreate(): boolean {
     return this.$route.name === 'ConnectionDetails' && this.$route.query.oper === 'create'
+  }
+  get isConfigs(): boolean {
+    return this.$route.name === 'Configs'
   }
   get isSettings(): boolean {
     return this.$route.path === '/settings'
@@ -154,14 +162,16 @@ export default class Leftbar extends Vue {
       &::before {
         transform: translateY(-50%) scaleY(1);
       }
-      .iconfont {
+      .iconfont,
+      .leftbar-el-icon {
         color: var(--color-main-green);
       }
     }
     a:hover {
       background: var(--color-bg-leftbar_item);
       transform: scale(1.05);
-      .iconfont {
+      .iconfont,
+      .leftbar-el-icon {
         color: var(--color-main-white);
       }
     }
@@ -197,6 +207,16 @@ export default class Leftbar extends Vue {
   }
   .leftbar-bottom .iconfont {
     font-size: 22px;
+  }
+  /*
+   * This entry uses an element-ui icon (there is no iconfont glyph for "presets"), and element icons
+   * default to a much smaller size than the iconfont glyphs around them. Matching size and colour
+   * here keeps the column visually even - the desktop build mixes the two the same way.
+   */
+  .leftbar-el-icon {
+    font-size: 22px;
+    color: var(--color-text-leftbar_icon);
+    transition: color 0.2s ease;
   }
 
   @media (min-width: 1920px) {
