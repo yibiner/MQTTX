@@ -1307,6 +1307,7 @@ export default class ConnectionsDetail extends Vue {
   /** Persists the automation rules of a connected connection and applies them without reconnecting. */
   private async handleAutomationSave(payload: {
     autoSubscriptions: AutoSubscribeGroupModel[]
+    connectReports?: ConnectReportModel[]
     autoReplies: AutoReplyRuleModel[]
     messageSequences?: MessageSequenceModel[]
     variables?: { [name: string]: StoredVariable }
@@ -1327,6 +1328,7 @@ export default class ConnectionsDetail extends Vue {
    */
   private async persistAutomation(payload: {
     autoSubscriptions: AutoSubscribeGroupModel[]
+    connectReports?: ConnectReportModel[]
     autoReplies: AutoReplyRuleModel[]
     messageSequences?: MessageSequenceModel[]
     variables?: { [name: string]: StoredVariable }
@@ -1340,11 +1342,15 @@ export default class ConnectionsDetail extends Vue {
       await connectionService.updateAutomation(id, {
         autoSubscriptions: payload.autoSubscriptions,
         autoReplies: payload.autoReplies,
+        ...(payload.connectReports !== undefined ? { connectReports: payload.connectReports } : {}),
         ...(payload.messageSequences !== undefined ? { messageSequences: payload.messageSequences } : {}),
         ...(payload.variables !== undefined ? { variables: payload.variables } : {}),
       })
       this.record.autoSubscriptions = payload.autoSubscriptions
       this.record.autoReplies = payload.autoReplies
+      if (payload.connectReports !== undefined) {
+        this.record.connectReports = payload.connectReports
+      }
       if (payload.messageSequences !== undefined) {
         this.record.messageSequences = payload.messageSequences
       }
@@ -1356,6 +1362,7 @@ export default class ConnectionsDetail extends Vue {
       updateConnectSubscriptions(id, this.record)
       this.$log.info(
         `Automation rules updated while connected: ${payload.autoSubscriptions.length} subscription group(s), ` +
+          `${(payload.connectReports ?? []).length} connect report(s), ` +
           `${payload.autoReplies.length} reply rule(s), ` +
           `${(payload.messageSequences ?? []).length} sequence(s) (connection ${id})`,
       )
@@ -1371,6 +1378,7 @@ export default class ConnectionsDetail extends Vue {
   private async handleSequenceRun(payload: {
     sequenceId: string
     autoSubscriptions: AutoSubscribeGroupModel[]
+    connectReports?: ConnectReportModel[]
     autoReplies: AutoReplyRuleModel[]
     messageSequences?: MessageSequenceModel[]
     variables?: { [name: string]: StoredVariable }

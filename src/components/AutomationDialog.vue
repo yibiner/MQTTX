@@ -15,6 +15,10 @@
           <AutoSubscribeEditor v-model="draft.autoSubscriptions" />
           <p class="automation-dialog-note">{{ $t('connections.automationSubscribeNote') }}</p>
         </el-tab-pane>
+        <el-tab-pane :label="$t('connections.connectReports')" name="report">
+          <ConnectReportEditor v-model="draft.connectReports" />
+          <p class="automation-dialog-note">{{ $t('connections.automationConnectReportNote') }}</p>
+        </el-tab-pane>
         <el-tab-pane :label="$t('connections.messageSequence')" name="sequence">
           <MessageSequenceEditor
             v-model="draft.messageSequences"
@@ -87,6 +91,7 @@ import { Component, Prop, Vue, Watch } from 'vue-property-decorator'
 import MyDialog from '@/components/MyDialog.vue'
 import AutoSubscribeEditor from '@/components/AutoSubscribeEditor.vue'
 import AutoReplyEditor from '@/components/AutoReplyEditor.vue'
+import ConnectReportEditor from '@/components/ConnectReportEditor.vue'
 import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
 import { planAutoReplies } from '@/utils/autoReply'
 import { formatJsonText } from '@/utils/jmesPathCondition'
@@ -96,6 +101,7 @@ import { connectionVariableOptions } from '@/utils/payloadVariables'
 
 interface AutomationDraft {
   autoSubscriptions: AutoSubscribeGroupModel[]
+  connectReports: ConnectReportModel[]
   autoReplies: AutoReplyRuleModel[]
   messageSequences: MessageSequenceModel[]
 }
@@ -111,15 +117,22 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? ([] as unkn
  * Automation of a connection, editable while it is connected.
  *
  * The connection settings themselves need a disconnect, but the rules that describe the device (what
- * it subscribes to and how it answers) are what one tunes against a live broker, so they live in their
- * own dialog. Saving applies them immediately: the reply engine and the next connect use the new rules
- * without reconnecting.
+ * it subscribes to, what it reports once, and how it answers) are what one tunes against a live broker,
+ * so they live in their own dialog. Saving applies them immediately: the reply engine and the next
+ * connect use the new rules without reconnecting. A connect report waits for that next connect.
  *
  * The reply tab has a small debug panel: paste a message the device would receive, press test, and it
  * shows which rule matches and the payload that would be sent - nothing is published.
  */
 @Component({
-  components: { MyDialog, AutoSubscribeEditor, AutoReplyEditor, MessageSequenceEditor, TopicPresetPicker },
+  components: {
+    MyDialog,
+    AutoSubscribeEditor,
+    AutoReplyEditor,
+    ConnectReportEditor,
+    MessageSequenceEditor,
+    TopicPresetPicker,
+  },
 })
 export default class AutomationDialog extends Vue {
   @Prop({ default: false }) public visible!: boolean
@@ -128,8 +141,13 @@ export default class AutomationDialog extends Vue {
   /** Sequences of this connection that still have a step waiting. */
   @Prop({ required: false, default: () => [] }) public runningIds!: string[]
 
-  private activeTab: 'subscribe' | 'reply' | 'sequence' = 'reply'
-  private draft: AutomationDraft = { autoSubscriptions: [], autoReplies: [], messageSequences: [] }
+  private activeTab: 'subscribe' | 'report' | 'reply' | 'sequence' = 'reply'
+  private draft: AutomationDraft = {
+    autoSubscriptions: [],
+    connectReports: [],
+    autoReplies: [],
+    messageSequences: [],
+  }
   private previewTopic = ''
   private previewPayload = ''
   private previewResult: PreviewResult | null = null
@@ -172,6 +190,7 @@ export default class AutomationDialog extends Vue {
     this.sequencePresets = ensureMessageSequencePresets()
     this.draft = clone({
       autoSubscriptions: this.record?.autoSubscriptions ?? [],
+      connectReports: this.record?.connectReports ?? [],
       autoReplies: this.record?.autoReplies ?? [],
       messageSequences: this.record?.messageSequences ?? [],
     })

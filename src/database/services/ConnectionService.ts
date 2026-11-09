@@ -310,6 +310,7 @@ export default class ConnectionService {
     id: string,
     automation: {
       autoSubscriptions?: AutoSubscribeGroupModel[]
+      connectReports?: ConnectReportModel[]
       autoReplies?: AutoReplyRuleModel[]
       messageSequences?: MessageSequenceModel[]
       timedReports?: TimedReportModel[]
@@ -319,6 +320,9 @@ export default class ConnectionService {
     const patch: Partial<ConnectionEntity> = {}
     if (automation.autoSubscriptions !== undefined) {
       patch.autoSubscriptions = automation.autoSubscriptions
+    }
+    if (automation.connectReports !== undefined) {
+      patch.connectReports = automation.connectReports
     }
     if (automation.autoReplies !== undefined) {
       patch.autoReplies = automation.autoReplies

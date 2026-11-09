@@ -1039,6 +1039,14 @@ export default {
     hu: 'A csatlakozáskori feliratkozás módosításai a következő kapcsolódáskor lépnek életbe.',
     ko: '연결 후 구독 변경 사항은 다음 연결 후 적용됩니다.',
   },
+  automationConnectReportNote: {
+    zh: '连接后上报的改动在下次连接成功后生效。',
+    en: 'Changes to report-on-connect take effect after the next successful connection.',
+    tr: 'Bağlanınca bildir değişiklikleri bir sonraki bağlantıda etkinleşir.',
+    ja: '接続後の送信の変更は次回の接続後に有効になります。',
+    hu: 'A csatlakozáskori jelentés módosításai a következő kapcsolódáskor lépnek életbe.',
+    ko: '연결 후 보고 변경 사항은 다음 연결 후 적용됩니다.',
+  },
   messageSequence: {
     zh: '消息序列',
     en: 'Message sequences',
