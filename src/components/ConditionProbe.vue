@@ -5,6 +5,7 @@
     </el-button>
     <div v-if="open" class="probe-panel">
       <el-input
+        v-if="checkTopic"
         v-model="sampleTopic"
         class="probe-topic"
         :placeholder="$t('connections.conditionProbeTopicSample')"
@@ -20,6 +21,7 @@
       ></el-input>
       <div class="probe-row">
         <el-button size="mini" native-type="button" @click="run">{{ $t('connections.conditionProbeRun') }}</el-button>
+        <el-checkbox v-model="checkTopic" class="probe-check">{{ $t('connections.conditionProbeCheckTopic') }}</el-checkbox>
         <span v-if="verdict && verdictText" :class="['probe-verdict', verdict]">{{ verdictText }}</span>
       </div>
       <p v-for="(line, index) in hints" :key="index" class="probe-hint">{{ line }}</p>
@@ -35,10 +37,10 @@ import { matchTopicMethod } from '@/utils/topicMatch'
 type Verdict = 'ok' | 'no' | 'bad' | 'ask'
 
 /**
- * Tries the current rule against one received topic and one JSON payload.
+ * Tries the current condition against one JSON payload, and optionally the topic filter too.
  *
- * Both stay in the editor; neither is saved with the rule. Topic uses the same filter as a real
- * message, then the condition uses the same evaluator. A match is reported only when both agree.
+ * The sample stays in the editor and is not saved with the rule. Topic matching uses the filter as
+ * written, so a `${}` placeholder is not filled in. Clearing the checkbox judges the condition only.
  */
 @Component
 export default class ConditionProbe extends Vue {
@@ -48,6 +50,7 @@ export default class ConditionProbe extends Vue {
   @Prop({ required: false, default: '' }) private readonly topic!: string
 
   private open = false
+  private checkTopic = true
   private sampleTopic = ''
   private payload = ''
   private tested = false
@@ -58,20 +61,25 @@ export default class ConditionProbe extends Vue {
     if (this.verdict === 'ask') {
       return this.$t('connections.conditionProbeNeedTopic') as string
     }
+    const conditionOnly = !this.checkTopic
     if (this.verdict === 'ok' && !(this.expression || '').trim()) {
-      return this.$t('connections.conditionProbeEmpty') as string
+      const key = conditionOnly ? 'connections.conditionProbeEmptyCondition' : 'connections.conditionProbeEmpty'
+      return this.$t(key) as string
     }
     if (this.verdict === 'ok') {
-      return this.$t('connections.conditionProbeMatched') as string
+      const key = conditionOnly ? 'connections.conditionProbeConditionMatched' : 'connections.conditionProbeMatched'
+      return this.$t(key) as string
     }
     if (this.verdict === 'no') {
-      return this.$t('connections.conditionProbeMissed') as string
+      const key = conditionOnly ? 'connections.conditionProbeConditionMissed' : 'connections.conditionProbeMissed'
+      return this.$t(key) as string
     }
     return ''
   }
 
   @Watch('expression')
   @Watch('topic')
+  @Watch('checkTopic')
   private onRuleChanged() {
     this.rerun()
   }
@@ -101,6 +109,11 @@ export default class ConditionProbe extends Vue {
       const key = item.form === 'backtick' ? 'connections.conditionProbeBacktickHint' : 'connections.conditionProbeQuoteHint'
       return this.$t(key, { field: item.field, literal: item.literal }) as string
     })
+    if (!this.checkTopic) {
+      this.verdict = result.matched ? 'ok' : 'no'
+      this.hints = literalHints
+      return
+    }
     const filter = (this.topic || '').trim()
     const incoming = this.sampleTopic.trim()
     if (!incoming) {
@@ -147,6 +160,24 @@ export default class ConditionProbe extends Vue {
 
 .probe-topic {
   margin-bottom: 6px;
+}
+
+.probe-check {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  margin-right: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-default);
+}
+
+::v-deep .probe-check .el-checkbox__label {
+  padding-left: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 28px;
+  color: var(--color-text-default);
 }
 
 .probe-row {

@@ -13,6 +13,7 @@ localVue.prototype.$t = (key: string, params?: { [name: string]: string }) => {
 const stubs: { [name: string]: true } = {
   'el-input': true,
   'el-button': true,
+  'el-checkbox': true,
 }
 
 const receivedTopic = 'app/SN0106/device/system/post'
@@ -87,6 +88,37 @@ describe('ConditionProbe.vue', () => {
     vm.run()
     expect(vm.verdict).to.equal('no')
     expect(vm.hints).to.include('connections.conditionProbeTopicVariable')
+    wrapper.destroy()
+  })
+
+  it('judges only the condition when topic matching is turned off', async () => {
+    const wrapper = mountProbe('enabled == `true`', 'app/${productType}/#')
+    const vm = wrapper.vm as any
+    vm.checkTopic = false
+    vm.sampleTopic = receivedTopic
+    vm.payload = '{"enabled":true}'
+    vm.run()
+    expect(vm.verdict).to.equal('ok')
+    expect(vm.verdictText).to.equal('connections.conditionProbeConditionMatched')
+    expect(vm.hints).to.deep.equal([])
+    vm.open = true
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('el-input-stub')).to.have.lengthOf(1)
+    wrapper.destroy()
+  })
+
+  it('drops a topic miss after topic matching is turned off', async () => {
+    const wrapper = mountProbe('enabled == `true`', 'app/${productType}/#')
+    const vm = wrapper.vm as any
+    vm.sampleTopic = receivedTopic
+    vm.payload = '{"enabled":true}'
+    vm.run()
+    expect(vm.verdict).to.equal('no')
+
+    vm.checkTopic = false
+    await wrapper.vm.$nextTick()
+    expect(vm.verdict).to.equal('ok')
+    expect(vm.verdictText).to.equal('connections.conditionProbeConditionMatched')
     wrapper.destroy()
   })
 
