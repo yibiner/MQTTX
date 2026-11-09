@@ -249,6 +249,295 @@ export const evaluatePayloadCondition = (expression: string | null | undefined, 
   }
 }
 
+/**
+ * How a `true` / `false` comparison should be written for the value in the payload.
+ *
+ * A bare `true` is a field name, so a boolean has to be `` `true` ``. A string `"true"` has to be
+ * `'true'`. The backtick form is the JSON boolean, not the string.
+ */
+export interface LiteralComparisonHint {
+  field: string
+  /** `true` or `false`. */
+  literal: 'true' | 'false'
+  form: 'backtick' | 'quote'
+}
+
+/**
+ * What a simulated message does to a condition.
+ *
+ * `literals` is set only when rewriting those comparisons makes the whole condition match.
+ */
+export interface PayloadConditionProbe {
+  matched: boolean
+  /** The payload is not JSON, or the expression cannot be evaluated. */
+  error?: 'payload' | 'expression'
+  literals: LiteralComparisonHint[]
+}
+
+type LiteralForm = 'bare' | 'backtick' | 'quote'
+
+interface LiteralSite {
+  start: number
+  end: number
+  form: LiteralForm
+  literal: 'true' | 'false'
+  field: string
+}
+
+const isBooleanWord = (word: string): word is 'true' | 'false' => word === 'true' || word === 'false'
+
+/** The form that matches this payload value, when the comparison is about true or false. */
+const formForValue = (value: unknown, literal: 'true' | 'false'): 'backtick' | 'quote' | undefined => {
+  if (value === (literal === 'true')) {
+    return 'backtick'
+  }
+  if (value === literal) {
+    return 'quote'
+  }
+  return undefined
+}
+
+const writtenLiteral = (form: 'backtick' | 'quote', literal: 'true' | 'false'): string =>
+  form === 'backtick' ? `\`${literal}\`` : `'${literal}'`
+
+const isGap = (char: string | undefined): boolean =>
+  char === ' ' || char === '\t' || char === '\n' || char === '\r'
+
+/**
+ * Finds `true` / `false` comparisons and rewrites each one into the form the payload value needs.
+ * Regions that are already quoted are still inspected, so `` `true` `` can be turned into `'true'`
+ * when the field is a string. A suggestion is kept only if the rewritten expression matches.
+ */
+const rewriteBooleanComparisons = (
+  expression: string,
+  data: unknown,
+): { expression: string; hints: LiteralComparisonHint[] } | undefined => {
+  const sites: LiteralSite[] = []
+  let index = 0
+  while (index < expression.length) {
+    const char = expression[index]
+    if (char === "'") {
+      const end = closingQuote(expression, index + 1, "'")
+      const word = expression.slice(index + 1, end)
+      rememberBooleanSite(sites, expression, index, end + 1, 'quote', word)
+      index = end + 1
+      continue
+    }
+    if (char === '`') {
+      const end = closingQuote(expression, index + 1, '`')
+      const word = expression.slice(index + 1, end)
+      rememberBooleanSite(sites, expression, index, end + 1, 'backtick', word)
+      index = end + 1
+      continue
+    }
+    if (expression.startsWith('==', index) || expression.startsWith('!=', index)) {
+      let cursor = index + 2
+      while (isGap(expression[cursor])) {
+        cursor += 1
+      }
+      const word = booleanWordAt(expression, cursor)
+      if (word) {
+        sites.push({
+          start: cursor,
+          end: cursor + word.length,
+          form: 'bare',
+          literal: word,
+          field: fieldBeforeComparison(expression, index),
+        })
+        index = cursor + word.length
+        continue
+      }
+    }
+    index += 1
+  }
+
+  const replacements: Array<{ start: number; end: number; text: string; hint: LiteralComparisonHint }> = []
+  sites.forEach((site) => {
+    if (!site.field) {
+      return
+    }
+    let value: unknown
+    try {
+      value = jmespath.search(data, site.field)
+    } catch (error) {
+      return
+    }
+    const form = formForValue(value, site.literal)
+    if (!form || form === site.form) {
+      return
+    }
+    replacements.push({
+      start: site.start,
+      end: site.end,
+      text: writtenLiteral(form, site.literal),
+      hint: { field: site.field, literal: site.literal, form },
+    })
+  })
+  if (!replacements.length) {
+    return undefined
+  }
+  let next = expression
+  const hints: LiteralComparisonHint[] = []
+  for (let i = replacements.length - 1; i >= 0; i -= 1) {
+    const item = replacements[i]
+    next = next.slice(0, item.start) + item.text + next.slice(item.end)
+    hints.unshift(item.hint)
+  }
+  return { expression: next, hints }
+}
+
+const closingQuote = (expression: string, from: number, quote: "'" | '`'): number => {
+  let index = from
+  while (index < expression.length) {
+    if (expression[index] === '\\') {
+      index += 2
+      continue
+    }
+    if (expression[index] === quote) {
+      return index
+    }
+    index += 1
+  }
+  return expression.length
+}
+
+const booleanWordAt = (expression: string, index: number): 'true' | 'false' | undefined => {
+  const slice = expression.slice(index)
+  const word = slice.startsWith('true') ? 'true' : slice.startsWith('false') ? 'false' : ''
+  if (!word) {
+    return undefined
+  }
+  const after = expression[index + word.length]
+  if (after && /[A-Za-z0-9_]/.test(after)) {
+    return undefined
+  }
+  return word
+}
+
+const rememberBooleanSite = (
+  sites: LiteralSite[],
+  expression: string,
+  start: number,
+  end: number,
+  form: 'quote' | 'backtick',
+  word: string,
+) => {
+  if (!isBooleanWord(word)) {
+    return
+  }
+  let cursor = start - 1
+  while (cursor >= 0 && isGap(expression[cursor])) {
+    cursor -= 1
+  }
+  const pair = expression.slice(cursor - 1, cursor + 1)
+  if (pair !== '==' && pair !== '!=') {
+    return
+  }
+  sites.push({
+    start,
+    end,
+    form,
+    literal: word,
+    field: fieldBeforeComparison(expression, cursor - 1),
+  })
+}
+
+/**
+ * The path immediately left of a comparison operator.
+ *
+ * Index steps stay in the path, so `items[0].enabled` is looked up as that path. A bracket
+ * that never opens, or a quote that never closes, is dropped instead of searched as a fragment.
+ */
+const fieldBeforeComparison = (expression: string, operatorIndex: number): string => {
+  let index = operatorIndex - 1
+  while (index >= 0 && isGap(expression[index])) {
+    index -= 1
+  }
+  const end = index + 1
+  let depth = 0
+  let quote = ''
+  while (index >= 0) {
+    const char = expression[index]
+    if (quote) {
+      if (char === quote) {
+        quote = ''
+      }
+      index -= 1
+      continue
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char
+      index -= 1
+      continue
+    }
+    if (char === ']') {
+      depth += 1
+      index -= 1
+      continue
+    }
+    if (char === '[') {
+      if (depth === 0) {
+        break
+      }
+      depth -= 1
+      index -= 1
+      continue
+    }
+    if (depth > 0) {
+      index -= 1
+      continue
+    }
+    if (/[A-Za-z0-9_.]/.test(char)) {
+      index -= 1
+      continue
+    }
+    break
+  }
+  if (quote || depth !== 0) {
+    return ''
+  }
+  const field = expression.slice(index + 1, end).trim()
+  if (!field || !/^[A-Za-z_*"]/.test(field)) {
+    return ''
+  }
+  return field
+}
+
+/**
+ * Evaluates a condition against one simulated payload, the same way a received message is judged.
+ * An empty condition matches any payload. When a `true` / `false` comparison misses only because it
+ * was written as a field name or as the wrong kind of literal, `literals` says which form matches.
+ */
+export const probePayloadCondition = (
+  expression: string | null | undefined,
+  payloadText: string,
+): PayloadConditionProbe => {
+  const parsed = parseJsonPayload(payloadText)
+  if (parsed.error !== undefined) {
+    return { matched: false, error: 'payload', literals: [] }
+  }
+  const text = (expression ?? '').trim()
+  if (!text) {
+    return { matched: true, literals: [] }
+  }
+  const current = evaluatePayloadCondition(text, parsed.value)
+  if (current.error) {
+    return { matched: false, error: 'expression', literals: [] }
+  }
+  if (current.matched) {
+    return { matched: true, literals: [] }
+  }
+  const rewritten = rewriteBooleanComparisons(text, parsed.value)
+  if (!rewritten) {
+    return { matched: false, literals: [] }
+  }
+  const again = evaluatePayloadCondition(rewritten.expression, parsed.value)
+  if (again.error || !again.matched) {
+    return { matched: false, literals: [] }
+  }
+  return { matched: false, literals: rewritten.hints }
+}
+
 /** `true` when the expression is syntactically valid JMESPath, used to validate the rule editor. */
 export const isValidCondition = (expression: string | null | undefined): boolean => {
   if (!expression || !expression.trim()) {

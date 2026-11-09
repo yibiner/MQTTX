@@ -5,6 +5,7 @@ import {
   isValidCondition,
   parseJsonKeepingBigIntegers,
   parseJsonPayload,
+  probePayloadCondition,
 } from '@/utils/jmesPathCondition'
 
 describe('jmesPathCondition utility', () => {
@@ -76,6 +77,55 @@ describe('parseJsonPayload big integers', () => {
 
   it('reports invalid JSON instead of throwing', () => {
     expect(parseJsonPayload('{oops}').error).to.be.a('string')
+  })
+})
+
+describe('probePayloadCondition', () => {
+  it('tells a bare true to use backticks when the payload value is a boolean', () => {
+    const payload = '{"cmd":"SET","enabled":true}'
+    const missed = probePayloadCondition("cmd == 'SET' && enabled == true", payload)
+    expect(missed.matched).to.equal(false)
+    expect(missed.literals).to.deep.equal([{ field: 'enabled', literal: 'true', form: 'backtick' }])
+
+    const matched = probePayloadCondition('cmd == \'SET\' && enabled == `true`', payload)
+    expect(matched.matched).to.equal(true)
+    expect(matched.literals).to.deep.equal([])
+  })
+
+  it('tells a backtick boolean to use quotes when the payload value is a string', () => {
+    const payload = '{"enabled":"true"}'
+    const missed = probePayloadCondition('enabled == `true`', payload)
+    expect(missed.matched).to.equal(false)
+    expect(missed.literals).to.deep.equal([{ field: 'enabled', literal: 'true', form: 'quote' }])
+    expect(probePayloadCondition("enabled == 'true'", payload).matched).to.equal(true)
+  })
+
+  it('follows an index when the boolean sits on an array item', () => {
+    const payload = '{"items":[{"enabled":true}]}'
+    const missed = probePayloadCondition('items[0].enabled == true', payload)
+    expect(missed.matched).to.equal(false)
+    expect(missed.literals).to.deep.equal([{ field: 'items[0].enabled', literal: 'true', form: 'backtick' }])
+    expect(probePayloadCondition('items[0].enabled == `true`', payload).matched).to.equal(true)
+    expect(probePayloadCondition('items[0].enabled\n== true', payload).literals[0].field).to.equal('items[0].enabled')
+  })
+
+  it('follows a quoted name when the boolean sits behind it', () => {
+    const payload = '{"foo":{"bar-baz":false}}'
+    const missed = probePayloadCondition('foo."bar-baz" == false', payload)
+    expect(missed.literals).to.deep.equal([{ field: 'foo."bar-baz"', literal: 'false', form: 'backtick' }])
+  })
+
+  it('suggests a fix only when that change is what makes the condition match', () => {
+    const result = probePayloadCondition("cmd == 'OTHER' && enabled == true", '{"cmd":"SET","enabled":true}')
+    expect(result.matched).to.equal(false)
+    expect(result.literals).to.deep.equal([])
+  })
+
+  it('matches an empty condition and reports a bad payload or expression', () => {
+    expect(probePayloadCondition('', '{"enabled":true}').matched).to.equal(true)
+    expect(probePayloadCondition('enabled == true', 'not json').error).to.equal('payload')
+    expect(probePayloadCondition('enabled ==', '{"enabled":true}').error).to.equal('expression')
+    expect(probePayloadCondition('code == 0', '{"code":0}').error).to.equal('expression')
   })
 })
 

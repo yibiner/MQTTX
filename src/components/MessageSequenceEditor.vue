@@ -101,7 +101,17 @@
             ></el-input>
             <TopicPresetPicker @select="applyMatchTopic(sequence, $event)" />
           </div>
-          <label>{{ $t('connections.autoReplyCondition') }}</label>
+          <label class="with-help">
+            {{ $t('connections.autoReplyCondition') }}
+            <el-tooltip placement="bottom" :effect="tooltipEffect" :open-delay="500">
+              <div slot="content" class="automation-tip">
+                <p class="condition-hint">{{ $t('connections.autoReplyConditionHint') }}</p>
+              </div>
+              <a href="javascript:;" class="field-help">
+                <i class="el-icon-warning-outline"></i>
+              </a>
+            </el-tooltip>
+          </label>
           <div>
             <el-input
               v-model="sequence.matchCondition"
@@ -112,6 +122,7 @@
             <p v-if="isConditionInvalid(sequence)" class="cell-error">
               {{ $t('connections.autoReplyConditionInvalid') }}
             </p>
+            <ConditionProbe :expression="sequence.matchCondition" :topic="sequence.matchTopic" />
           </div>
         </template>
 
@@ -270,6 +281,7 @@
 import { Component, Model, Prop, Vue, Watch } from 'vue-property-decorator'
 import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import PresetPicker from '@/components/PresetPicker.vue'
+import ConditionProbe from '@/components/ConditionProbe.vue'
 import type { PresetOption } from '@/components/PresetPicker.vue'
 import { isValidCondition } from '@/utils/jmesPathCondition'
 import { cloneMessageSequence } from '@/utils/messageSequenceExamples'
@@ -306,7 +318,7 @@ const createSequence = (): MessageSequenceModel => ({
  * Assignments are stored on the step and applied by the runner after that step is sent, so
  * this editor only records the template (`${water - 20}`), it does not evaluate it.
  */
-@Component({ components: { TopicPresetPicker, PresetPicker } })
+@Component({ components: { TopicPresetPicker, PresetPicker, ConditionProbe } })
 export default class MessageSequenceEditor extends Vue {
   @Model('change', { type: Array }) private readonly value!: MessageSequenceModel[] | null | undefined
   @Prop({ required: false, default: () => [] }) private readonly variableNames!: string[]
@@ -826,5 +838,14 @@ export default class MessageSequenceEditor extends Vue {
       color: var(--color-text-default);
     }
   }
+}
+
+.automation-tip p.condition-hint {
+  margin: 0;
+  max-width: 420px;
+  max-height: 50vh;
+  overflow-y: auto;
+  line-height: 1.6;
+  white-space: pre-line;
 }
 </style>

@@ -4,6 +4,7 @@ import MessageSequenceEditor from '@/components/MessageSequenceEditor.vue'
 import { createOtaSequence, createWaterCycleSequence, waterVariableDefinition } from '@/utils/messageSequenceExamples'
 
 const localVue = createLocalVue()
+localVue.prototype.$t = (key: string) => key
 const stubs: { [name: string]: true } = {
   'el-input': true,
   'el-input-number': true,
@@ -180,6 +181,14 @@ describe('MessageSequenceEditor.vue', () => {
     const saved = (wrapper.emitted('change').pop()[0] as MessageSequenceModel[])[0].steps[0]
     expect(saved.topic).to.equal('app/${clientId}/state')
     expect(saved.payload).to.equal('{"n":1}')
+  })
+
+  it('offers a simulated message only when the trigger is a received message', () => {
+    wrapper = buildWrapper([createOtaSequence()])
+    expect(wrapper.find('.condition-probe').exists()).to.equal(true)
+    wrapper.destroy()
+    wrapper = buildWrapper([createWaterCycleSequence()])
+    expect(wrapper.find('.condition-probe').exists()).to.equal(false)
   })
 
   it('emits run for a sequence that has a topic while the connection is up', () => {

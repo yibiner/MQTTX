@@ -64,9 +64,9 @@
 
         <label class="with-help">
           {{ $t('connections.autoReplyCondition') }}
-          <el-tooltip placement="top" :effect="tooltipEffect" :open-delay="500">
+          <el-tooltip placement="bottom" :effect="tooltipEffect" :open-delay="500">
             <div slot="content" class="automation-tip">
-              <p>{{ $t('connections.autoReplyConditionHint') }}</p>
+              <p class="condition-hint">{{ $t('connections.autoReplyConditionHint') }}</p>
             </div>
             <a href="javascript:;" class="field-help">
               <i class="el-icon-warning-outline"></i>
@@ -81,6 +81,7 @@
             @input="emitChange"
           ></el-input>
           <p v-if="isConditionInvalid(rule)" class="cell-error">{{ $t('connections.autoReplyConditionInvalid') }}</p>
+          <ConditionProbe :expression="rule.matchCondition" :topic="rule.matchTopic" />
         </div>
 
         <label>{{ $t('connections.autoReplyMode') }}</label>
@@ -223,6 +224,7 @@
 import { Component, Model, Prop, Vue, Watch } from 'vue-property-decorator'
 import TopicPresetPicker from '@/components/TopicPresetPicker.vue'
 import PresetPicker from '@/components/PresetPicker.vue'
+import ConditionProbe from '@/components/ConditionProbe.vue'
 import type { PresetOption } from '@/components/PresetPicker.vue'
 import { isValidCondition } from '@/utils/jmesPathCondition'
 import { replyPresetRules } from '@/utils/configProfiles'
@@ -265,7 +267,7 @@ export const createBlankAutoReplyRule = (): AutoReplyRuleModel => createRule()
  * write a field of the received message into one (`actions`), which is how a captured device state
  * travels from one reply to the next.
  */
-@Component({ components: { TopicPresetPicker, PresetPicker } })
+@Component({ components: { TopicPresetPicker, PresetPicker, ConditionProbe } })
 export default class AutoReplyEditor extends Vue {
   @Model('change', { type: Array }) private readonly value!: AutoReplyRuleModel[] | null | undefined
   /** Known variable names, offered by the reset picker (free text is still accepted). */
@@ -740,6 +742,12 @@ export default class AutoReplyEditor extends Vue {
   line-height: 1.6;
   &:last-child {
     margin-bottom: 0;
+  }
+  &.condition-hint {
+    max-width: 420px;
+    max-height: 50vh;
+    overflow-y: auto;
+    white-space: pre-line;
   }
 }
 </style>

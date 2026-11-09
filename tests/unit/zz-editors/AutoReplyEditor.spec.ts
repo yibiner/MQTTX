@@ -4,6 +4,7 @@ import AutoReplyEditor, { createBlankAutoReplyRule } from '@/components/AutoRepl
 
 // Element UI is stubbed: mounting its dropdowns in jsdom leaves popover state behind.
 const localVue = createLocalVue()
+localVue.prototype.$t = (key: string) => key
 const stubs: { [name: string]: true } = {
   'el-input': true,
   'el-input-number': true,
@@ -176,6 +177,11 @@ describe('AutoReplyEditor.vue', () => {
     const rules = wrapper.emitted('change').pop()[0] as AutoReplyRuleModel[]
     expect(rules).to.have.lengthOf(1)
     expect(rules[0].matchTopic).to.equal('app/+/+/device/system/post')
+  })
+
+  it('offers a simulated message next to the match condition', () => {
+    wrapper = buildWrapper()
+    expect(wrapper.find('.condition-probe').exists()).to.equal(true)
   })
 
   it('points out an invalid JMESPath condition', () => {
