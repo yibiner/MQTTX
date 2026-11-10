@@ -1,7 +1,8 @@
 import { Service } from 'typedi'
 import { InjectRepository } from 'typeorm-typedi-extensions'
 import MessageEntity from '../models/MessageEntity'
-import { Repository } from 'typeorm'
+import { Repository, SelectQueryBuilder } from 'typeorm'
+import { MessageKeywordQuery, messageKeywordSql } from '@/utils/messageKeywordFilter'
 import ConnectionEntity from '../models/ConnectionEntity'
 import ConnectionService from './ConnectionService'
 
@@ -114,6 +115,18 @@ export default class MessageService {
     return query
   }
 
+  /** Hides or keeps keyword matches. An empty keyword list leaves the query unchanged. */
+  private applyKeywordFilter(
+    query: SelectQueryBuilder<MessageEntity>,
+    keywordFilter?: MessageKeywordQuery,
+  ): SelectQueryBuilder<MessageEntity> {
+    const clause = messageKeywordSql(keywordFilter)
+    if (!clause) {
+      return query
+    }
+    return query.andWhere(clause.sql, clause.params)
+  }
+
   public async get(
     connectionId: string,
     options: {
@@ -123,6 +136,7 @@ export default class MessageService {
       topic?: string
       preserveOrder?: boolean
       searchParams?: { topic?: string; payload?: string }
+      keywordFilter?: MessageKeywordQuery
     } = {},
   ): Promise<MessagePaginationModel> {
     const defaultOpts = { page: 1, limit: 20, msgType: 'all' }
@@ -150,6 +164,8 @@ export default class MessageService {
         query.andWhere('msg.payload LIKE :payload', { payload: `%${payload}%` })
       }
     }
+
+    query = this.applyKeywordFilter(query, options.keywordFilter)
 
     const res = await query
       .orderBy('msg.createAt', 'DESC')
@@ -180,6 +196,7 @@ export default class MessageService {
       msgType?: MessageType
       topic?: string
       searchParams?: { topic?: string; payload?: string }
+      keywordFilter?: MessageKeywordQuery
     } = {},
   ) {
     const defaultOpts = { limit: 20, msgType: 'all' }
@@ -203,6 +220,8 @@ export default class MessageService {
         query.andWhere('msg.payload LIKE :payload', { payload: `%${payload}%` })
       }
     }
+
+    query = this.applyKeywordFilter(query, options.keywordFilter)
 
     const res = await query
       .andWhere('msg.createAt ' + (mode === 'before' ? '<' : '>') + ' :createAt', { createAt })

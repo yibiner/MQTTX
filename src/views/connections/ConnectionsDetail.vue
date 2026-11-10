@@ -329,7 +329,32 @@
                 </el-option>
               </el-option-group>
             </el-select>
-            <MsgTypeTabs v-model="msgType" @change="handleMsgTypeChanged" />
+            <div class="message-type-actions">
+              <MsgTypeTabs v-model="msgType" @change="handleMsgTypeChanged" />
+              <div class="message-keyword">
+                <el-input
+                  v-model="messageKeywords"
+                  size="mini"
+                  class="keyword-input"
+                  :placeholder="$t('connections.messageKeywordPlaceholder')"
+                  @change="persistMessageKeywords"
+                ></el-input>
+                <div class="keyword-modes">
+                  <a
+                    href="javascript:;"
+                    :class="['keyword-mode-item', { active: keywordFilterActive && messageKeywordMode === 'hide' }]"
+                    @click="chooseMessageKeywordMode('hide')"
+                    >{{ $t('connections.messageKeywordHide') }}</a
+                  >
+                  <a
+                    href="javascript:;"
+                    :class="['keyword-mode-item', { active: keywordFilterActive && messageKeywordMode === 'show' }]"
+                    @click="chooseMessageKeywordMode('show')"
+                    >{{ $t('connections.messageKeywordShow') }}</a
+                  >
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <SubscriptionsList
@@ -420,6 +445,15 @@ import { pack, unpack } from 'msgpackr'
 import time from '@/utils/time'
 import matchMultipleSearch from '@/utils/matchMultipleSearch'
 import { matchTopicMethod } from '@/utils/topicMatch'
+import {
+  MessageKeywordMode,
+  MESSAGE_KEYWORD_MODE_STORAGE_KEY,
+  MESSAGE_KEYWORD_STORAGE_KEY,
+  parseMessageKeywords,
+  passesMessageKeywordFilter,
+  readStoredMessageKeywordMode,
+  readStoredMessageKeywords,
+} from '@/utils/messageKeywordFilter'
 import { createClient, ignoreQoS0Message } from '@/utils/mqttUtils'
 import validFormatJson from '@/utils/validFormatJson'
 
@@ -652,6 +686,10 @@ export default class ConnectionsDetail extends Vue {
   private agentBridgeLastCall: { tool: string; error: string; at: string } | null = null
   private receivedMsgType: PayloadType = this.getReceivedMsgType()
   private msgType: MessageType = 'all'
+  private messageKeywords = readStoredMessageKeywords()
+  /** Keywords the list is using. The input can change before enter or blur commits them. */
+  private activeMessageKeywords = readStoredMessageKeywords()
+  private messageKeywordMode: MessageKeywordMode = readStoredMessageKeywordMode()
 
   private client: Partial<MqttClient> = {
     connected: false,
@@ -1429,6 +1467,7 @@ export default class ConnectionsDetail extends Vue {
       msgType: this.msgType,
       topic: this.activeTopic,
       searchParams: this.searchParams,
+      keywordFilter: this.keywordFilterQuery(),
     })
     this.moreMsgAfter = true
     this.moreMsgBefore = this.recordMsgs.total > limit
@@ -1476,6 +1515,7 @@ export default class ConnectionsDetail extends Vue {
       msgType: this.msgType,
       topic: this.activeTopic,
       searchParams: this.searchParams,
+      keywordFilter: this.keywordFilterQuery(),
     })
     return { curMsgId: id, list, moreMsg }
   }
@@ -1563,6 +1603,30 @@ export default class ConnectionsDetail extends Vue {
   private handleMsgTypeChanged(type: MessageType) {
     this.msgType = type
     this.loadMessages()
+  }
+
+  private keywordFilterQuery() {
+    return { keywords: this.activeMessageKeywords, mode: this.messageKeywordMode }
+  }
+
+  private get keywordFilterActive(): boolean {
+    return parseMessageKeywords(this.activeMessageKeywords).length > 0
+  }
+
+  private persistMessageKeywords(value: string) {
+    this.messageKeywords = value
+    this.activeMessageKeywords = value
+    localStorage.setItem(MESSAGE_KEYWORD_STORAGE_KEY, value)
+    localStorage.setItem(MESSAGE_KEYWORD_MODE_STORAGE_KEY, this.messageKeywordMode)
+    this.loadMessages()
+  }
+
+  private chooseMessageKeywordMode(mode: MessageKeywordMode) {
+    this.messageKeywordMode = mode
+    localStorage.setItem(MESSAGE_KEYWORD_MODE_STORAGE_KEY, mode)
+    if (this.keywordFilterActive) {
+      this.loadMessages()
+    }
   }
 
   // Search messages
@@ -1991,25 +2055,31 @@ export default class ConnectionsDetail extends Vue {
     )
   }
 
+  /**
+   * Whether this row is drawn in the current list.
+   * Direction, topic and search still keep a local-agent publish on screen, so that send can be
+   * checked there. The keyword filter applies to it the same way as to any other row.
+   */
+  private messageStaysOnList(msg: MessageModel): boolean {
+    const fromAgent = messageFromAgent(msg)
+    const passesFilter =
+      this.isMessageTypeActive(msg) && (!this.activeTopic || matchTopicMethod(this.activeTopic, msg.topic))
+    const passesKeyword = passesMessageKeywordFilter(msg, this.activeMessageKeywords, this.messageKeywordMode)
+    if (!((fromAgent || passesFilter) && passesKeyword)) {
+      return false
+    }
+    if (!fromAgent && (this.searchParams.topic !== '' || this.searchParams.payload !== '')) {
+      return this.searchMessage(msg)
+    }
+    return true
+  }
+
   // Push messages to the list
   private batchUpdateMsgs(incomingMsgs: MessageModel[]) {
     let _messages = _.cloneDeep(this.recordMsgs.list)
     for (const msg of incomingMsgs) {
-      const isActiveTopicMessages = matchTopicMethod(this.activeTopic, msg.topic)
-      const isActiveMsgType = this.isMessageTypeActive(msg)
-      const fromAgent = messageFromAgent(msg)
-      const passesFilter = isActiveMsgType && (!this.activeTopic || isActiveTopicMessages)
-      // A publish from the local agent has to stay on screen even when a direction, topic or
-      // search filter would hide an ordinary message. That list is how the send is checked.
-      if (fromAgent || passesFilter) {
-        if (!fromAgent && (this.searchParams.topic !== '' || this.searchParams.payload !== '')) {
-          const isMatch = this.searchMessage(msg)
-          if (isMatch) {
-            _messages.push(msg)
-          }
-        } else {
-          _messages.push(msg)
-        }
+      if (this.messageStaysOnList(msg)) {
+        _messages.push(msg)
       }
     }
     if (_messages.length > MAX_MESSAGES_COUNT) {
@@ -2054,11 +2124,19 @@ export default class ConnectionsDetail extends Vue {
       const publishedMsgs = msgs.filter((msg: MessageModel) => msg.out)
       publishedTotalIncrement(publishedMsgs.length)
 
-      // Check scroll position and handle new message notifications
+      // A row the list will not draw must not pull the viewport or clear the new-message tip.
+      // Counts above still include it. A visible publish still follows the list to the bottom.
+      const visibleMsgs = msgs.filter((msg) => this.messageStaysOnList(msg))
       const newMsgsCountIncrement = (count: number) => (this.newMsgsCount += count)
       const isReceivedMsg = msgType === 'received'
       if (isReceivedMsg && !isScrollBottom) {
-        newMsgsCountIncrement(receivedMsgs.length)
+        const visibleReceived = visibleMsgs.filter((msg) => !msg.out)
+        if (visibleReceived.length) {
+          newMsgsCountIncrement(visibleReceived.length)
+        }
+        return
+      }
+      if (!visibleMsgs.length) {
         return
       }
       this.newMsgsCount = 0
@@ -3539,6 +3617,40 @@ export default class ConnectionsDetail extends Vue {
         }
         .message-type {
           @include flex-space-between;
+          .message-type-actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 8px;
+          }
+          .message-keyword {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            .keyword-input {
+              width: 180px;
+            }
+            .keyword-modes {
+              display: flex;
+              align-items: center;
+            }
+            .keyword-mode-item {
+              padding: 0 8px;
+              color: var(--color-text-default);
+              border-right: 1px solid var(--color-border-default);
+              font-size: 12px;
+              line-height: 20px;
+              &:last-child {
+                border-right: none;
+                padding-right: 0;
+              }
+              &.active {
+                color: var(--color-main-green);
+                font-weight: 600;
+              }
+            }
+          }
           .received-type-select {
             width: 88px;
             .el-input__inner {

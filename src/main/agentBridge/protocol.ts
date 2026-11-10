@@ -7,7 +7,7 @@
  *
  * Reading is deliberately not tied to the view: `list_messages` and `wait_for_message` see the
  * stored messages of the connection plus what the page just received, so the direction tab, the
- * topic filter, the search box and the scroll position never hide a message from an agent.
+ * topic filter, the keyword filter, the search box and the scroll position never hide a message from an agent.
  */
 import type { AgentMessageFilter, AgentMessagePage, AgentPublishInput, AgentWaitResult } from '@/utils/agentBridge'
 import { MAX_WAIT_MS } from '@/utils/agentBridge'

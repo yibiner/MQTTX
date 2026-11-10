@@ -1,7 +1,7 @@
 {
   "name": "mqttx-plus",
   "version": "1.13.1",
-  "mqttxPlusVersion": "2026.11.09.1",
+  "mqttxPlusVersion": "2026.11.10.2",
   "description": "An enhanced MQTT client for developers and teams.",
   "author": "EMQX Team <yusf@emqx.io>",
   "scripts": {

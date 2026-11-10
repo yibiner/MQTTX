@@ -69,8 +69,8 @@ text after variables are filled; its script is not applied.
 
 ### Reading messages
 
-`list_messages` is independent of the human's screen. The direction tab, the topic filter, the search
-box and the scroll position do not hide anything from you. It merges the app's stored history with
+`list_messages` is independent of the human's screen. The direction tab, the topic filter, the keyword
+filter, the search box and the scroll position do not hide anything from you. It merges the app's stored history with
 the messages the page just received, so a QoS 0 message the app chose not to store is still readable
 while the page is open.
 
