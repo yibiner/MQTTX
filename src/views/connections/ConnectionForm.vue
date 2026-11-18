@@ -45,9 +45,9 @@
             <h3>{{ $t('settings.general') }}</h3>
           </div>
           <el-card shadow="never" class="info-body item-card">
-            <el-row v-if="oper === 'create'" :gutter="10">
+            <el-row :gutter="10">
               <el-col :span="11">
-                <el-form-item label-width="93px" :label="$t('configs.profiles')">
+                <el-form-item label-width="93px" :label="$t('configs.serverProfiles')">
                   <el-select
                     size="mini"
                     v-model="serverProfileId"
@@ -65,7 +65,7 @@
                   </el-select>
                 </el-form-item>
               </el-col>
-              <el-col :span="11">
+              <el-col v-if="oper === 'create'" :span="11">
                 <el-tooltip
                   placement="top"
                   :effect="theme !== 'light' ? 'light' : 'dark'"
@@ -1280,9 +1280,9 @@ export default class ConnectionForm extends Vue {
     await this.loadSuggestConnections()
     this.advancedVisible = this.getterAdvancedVisible
     this.willMessageVisible = this.getterWillMessageVisible
-    // Reusable profiles (dev / test servers, client identities) for quick form filling.
+    // Server presets fill the broker address. Editing an existing connection uses the same list.
+    this.serverProfiles = getServerProfiles()
     if (this.oper === 'create') {
-      this.serverProfiles = getServerProfiles()
       this.clientProfiles = getClientProfiles()
       this.behaviorTemplates = getBehaviorTemplates()
     }
